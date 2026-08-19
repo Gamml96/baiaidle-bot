@@ -1096,7 +1096,7 @@ async def wait_until_sell_available(
 
 async def validate_sale(
     tab,
-    timeout: float = 60,
+    timeout: float = 120,
 ) -> bool:
     """
     Valida a sessão.
@@ -1140,7 +1140,7 @@ async def validate_sale(
 
     if not await wait_until_sell_available(
         tab,
-        timeout=30,
+        timeout=180,
     ):
 
         print(
