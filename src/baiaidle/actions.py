@@ -141,11 +141,13 @@ async def click_element(
     timeout: float = 10,
 ) -> bool:
     """
-    Localiza um elemento pelo ID e realiza clique humanizado.
+    Localiza um elemento pelo ID e realiza clique direto.
+
+    O clique humanizado foi removido para melhorar
+    a compatibilidade com Chromium headless no Linux.
     """
 
     try:
-
         element = await tab.find(
             id=element_id,
             timeout=timeout,
@@ -154,21 +156,17 @@ async def click_element(
     except Exception as e:
 
         print(
-            f"ERRO ao localizar "
-            f"#{element_id}: {e}"
+            f"ERRO ao localizar #{element_id}: {e}"
         )
 
         return False
 
     try:
 
-        await element.click(
-            humanize=True
-        )
+        await element.click()
 
         print(
-            f"Clique humanizado em "
-            f"#{element_id}."
+            f"Clique em #{element_id}."
         )
 
         return True
@@ -176,8 +174,7 @@ async def click_element(
     except Exception as e:
 
         print(
-            f"ERRO ao clicar "
-            f"#{element_id}: {e}"
+            f"ERRO ao clicar em #{element_id}: {e}"
         )
 
         return False
