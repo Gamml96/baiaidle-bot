@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 
 
 # ================================================================
@@ -14,7 +15,12 @@ def extract_execute_result(result):
 
     try:
         return result["result"]["result"].get("value")
-    except (TypeError, KeyError, AttributeError):
+
+    except (
+        TypeError,
+        KeyError,
+        AttributeError,
+    ):
         return result
 
 
@@ -23,17 +29,22 @@ def extract_execute_result(result):
 # ================================================================
 
 
-async def element_state(tab, element_id: str):
+async def element_state(
+    tab,
+    element_id: str,
+):
     """
     Obtém o estado atual de um elemento pelo ID.
     """
 
     js = f"""
     (() => {{
+
         const element =
             document.getElementById({element_id!r});
 
         if (!element) {{
+
             return JSON.stringify({{
                 found: false
             }});
@@ -46,6 +57,7 @@ async def element_state(tab, element_id: str):
             getComputedStyle(element);
 
         return JSON.stringify({{
+
             found: true,
 
             tag:
@@ -91,7 +103,9 @@ async def element_state(tab, element_id: str):
                 rect.height > 0 &&
                 style.display !== 'none' &&
                 style.visibility !== 'hidden'
+
         }});
+
     }})()
     """
 
@@ -100,11 +114,13 @@ async def element_state(tab, element_id: str):
     value = extract_execute_result(result)
 
     if not isinstance(value, str):
+
         return {
             "found": False
         }
 
     try:
+
         return json.loads(value)
 
     except json.JSONDecodeError:
@@ -138,7 +154,8 @@ async def click_element(
     except Exception as e:
 
         print(
-            f"ERRO ao localizar #{element_id}: {e}"
+            f"ERRO ao localizar "
+            f"#{element_id}: {e}"
         )
 
         return False
@@ -150,7 +167,8 @@ async def click_element(
         )
 
         print(
-            f"Clique humanizado em #{element_id}."
+            f"Clique humanizado em "
+            f"#{element_id}."
         )
 
         return True
@@ -158,7 +176,8 @@ async def click_element(
     except Exception as e:
 
         print(
-            f"ERRO ao clicar #{element_id}: {e}"
+            f"ERRO ao clicar "
+            f"#{element_id}: {e}"
         )
 
         return False
@@ -178,7 +197,9 @@ async def wait_for_element(
     Aguarda um elemento ficar visível.
     """
 
-    start = asyncio.get_running_loop().time()
+    start = (
+        asyncio.get_running_loop().time()
+    )
 
     while True:
 
@@ -203,7 +224,9 @@ async def wait_for_element(
 
             return False
 
-        await asyncio.sleep(0.25)
+        await asyncio.sleep(
+            0.25
+        )
 
 
 # ================================================================
@@ -220,7 +243,9 @@ async def wait_for_element_hidden(
     Aguarda um elemento desaparecer.
     """
 
-    start = asyncio.get_running_loop().time()
+    start = (
+        asyncio.get_running_loop().time()
+    )
 
     while True:
 
@@ -245,7 +270,9 @@ async def wait_for_element_hidden(
 
             return False
 
-        await asyncio.sleep(0.25)
+        await asyncio.sleep(
+            0.25
+        )
 
 
 # ================================================================
@@ -253,7 +280,9 @@ async def wait_for_element_hidden(
 # ================================================================
 
 
-async def detect_cloudflare(tab) -> bool:
+async def detect_cloudflare(
+    tab,
+) -> bool:
     """
     Detecta um desafio Cloudflare visível.
     """
@@ -262,16 +291,23 @@ async def detect_cloudflare(tab) -> bool:
     (() => {
 
         const selectors = [
+
             'iframe[src*="challenges.cloudflare.com"]',
+
             'iframe[src*="cloudflare"]',
+
             '[class*="cf-turnstile"]',
+
             '[id*="cf-turnstile"]'
+
         ];
 
         for (const selector of selectors) {
 
             const elements =
-                document.querySelectorAll(selector);
+                document.querySelectorAll(
+                    selector
+                );
 
             for (const element of elements) {
 
@@ -299,9 +335,13 @@ async def detect_cloudflare(tab) -> bool:
     })()
     """
 
-    result = await tab.execute_script(js)
+    result = await tab.execute_script(
+        js
+    )
 
-    value = extract_execute_result(result)
+    value = extract_execute_result(
+        result
+    )
 
     return value is True
 
@@ -332,12 +372,15 @@ async def click_cloudflare_challenge(
             '[class*="cf-turnstile"]',
 
             '[id*="cf-turnstile"]'
+
         ];
 
         for (const selector of selectors) {
 
             const elements =
-                document.querySelectorAll(selector);
+                document.querySelectorAll(
+                    selector
+                );
 
             for (const element of elements) {
 
@@ -379,9 +422,13 @@ async def click_cloudflare_challenge(
     })()
     """
 
-    result = await tab.execute_script(js)
+    result = await tab.execute_script(
+        js
+    )
 
-    value = extract_execute_result(result)
+    value = extract_execute_result(
+        result
+    )
 
     return value is True
 
@@ -398,17 +445,18 @@ async def wait_for_cloudflare(
     """
     Aguarda a validação Cloudflare.
 
-    Se aparecer:
+    Se o desafio aparecer:
 
         detecta
         ↓
-        tenta clique automático
+        tenta clicar
         ↓
         aguarda desaparecer
 
-    Se passar automaticamente:
+    Se não aparecer:
 
-        continua normalmente.
+        considera que não houve desafio
+        e continua.
     """
 
     print()
@@ -416,18 +464,22 @@ async def wait_for_cloudflare(
         "Observando validação Cloudflare..."
     )
 
-    start = asyncio.get_running_loop().time()
+    start = (
+        asyncio.get_running_loop().time()
+    )
 
     challenge_seen = False
     click_attempted = False
 
     while True:
 
-        challenge = await detect_cloudflare(tab)
+        challenge = await detect_cloudflare(
+            tab
+        )
 
-        # ========================================================
+        # --------------------------------------------------------
         # DESAFIO VISÍVEL
-        # ========================================================
+        # --------------------------------------------------------
 
         if challenge:
 
@@ -436,7 +488,8 @@ async def wait_for_cloudflare(
                 challenge_seen = True
 
                 print(
-                    "Validador Cloudflare detectado."
+                    "Validador Cloudflare "
+                    "detectado."
                 )
 
             if not click_attempted:
@@ -444,8 +497,9 @@ async def wait_for_cloudflare(
                 click_attempted = True
 
                 print(
-                    "Tentando clicar automaticamente "
-                    "no validador Cloudflare..."
+                    "Tentando clicar "
+                    "automaticamente no "
+                    "validador Cloudflare..."
                 )
 
                 clicked = (
@@ -468,21 +522,17 @@ async def wait_for_cloudflare(
                         "diretamente no validador."
                     )
 
-                    print(
-                        "Continuando a aguardar "
-                        "a validação."
-                    )
-
-        # ========================================================
+        # --------------------------------------------------------
         # DESAFIO NÃO VISÍVEL
-        # ========================================================
+        # --------------------------------------------------------
 
         else:
 
             if challenge_seen:
 
                 print(
-                    "Validação Cloudflare concluída."
+                    "Validação Cloudflare "
+                    "concluída."
                 )
 
                 return True
@@ -500,14 +550,15 @@ async def wait_for_cloudflare(
                 )
 
                 print(
-                    "Validação concluída automaticamente."
+                    "Validação concluída "
+                    "automaticamente."
                 )
 
                 return True
 
-        # ========================================================
+        # --------------------------------------------------------
         # TIMEOUT
-        # ========================================================
+        # --------------------------------------------------------
 
         elapsed = (
             asyncio.get_running_loop().time()
@@ -523,7 +574,9 @@ async def wait_for_cloudflare(
 
             return False
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(
+            0.5
+        )
 
 
 # ================================================================
@@ -531,9 +584,11 @@ async def wait_for_cloudflare(
 # ================================================================
 
 
-async def get_sale_value(tab) -> int:
+async def get_sale_value(
+    tab,
+) -> int:
     """
-    Obtém o valor da venda no modal.
+    Obtém o valor da venda exibido no modal.
 
     XPath:
 
@@ -543,7 +598,7 @@ async def get_sale_value(tab) -> int:
 
         ≈ 145.440
 
-    Retorna:
+    Retorno:
 
         145440
     """
@@ -551,268 +606,75 @@ async def get_sale_value(tab) -> int:
     js = """
     (() => {
 
-        const element = document.evaluate(
-            '//*[@id="confirm-modal-body"]/div/div[4]/span[2]',
-            document,
-            null,
-            XPathResult.FIRST_ORDERED_NODE_TYPE,
-            null
-        ).singleNodeValue;
+        const element =
+            document.evaluate(
+                '//*[@id="confirm-modal-body"]/div/div[4]/span[2]',
+                document,
+                null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE,
+                null
+            ).singleNodeValue;
 
         if (!element) {
-            return "";
+
+            return null;
         }
 
-        return (element.innerText || element.textContent || "").trim();
+        return (
+            element.innerText ||
+            element.textContent ||
+            ''
+        ).trim();
 
     })()
     """
 
-    result = await tab.execute_script(js)
-
-    value = extract_execute_result(result)
-
-    if not value:
-        return 0
-
-    text = str(value)
-
-    digits = "".join(
-        char
-        for char in text
-        if char.isdigit()
+    result = await tab.execute_script(
+        js
     )
 
-    if not digits:
+    value = extract_execute_result(
+        result
+    )
+
+    if value is None:
+
+        print(
+            "ERRO: valor da venda não encontrado."
+        )
+
+        return 0
+
+    text = str(value).strip()
+
+    # Remove símbolos e mantém somente números.
+    numbers = re.sub(
+        r"[^0-9]",
+        "",
+        text,
+    )
+
+    if not numbers:
+
+        print(
+            "ERRO: não foi possível "
+            "interpretar o valor da venda."
+        )
+
         return 0
 
     try:
-        return int(digits)
+
+        return int(numbers)
 
     except ValueError:
+
+        print(
+            "ERRO: valor da venda inválido:",
+            text,
+        )
+
         return 0
-
-
-# ================================================================
-# ESTADO DO BOTÃO DE VENDA
-# ================================================================
-
-
-async def get_sell_button_state(tab):
-    """
-    Obtém o estado atual do #sell-all.
-    """
-
-    state = await element_state(
-        tab,
-        "sell-all",
-    )
-
-    print()
-    print(
-        "Estado do botão #sell-all:"
-    )
-
-    print(
-        json.dumps(
-            state,
-            ensure_ascii=False,
-            indent=2,
-        )
-    )
-
-    return state
-
-
-# ================================================================
-# VERIFICAR DISPONIBILIDADE
-# ================================================================
-
-
-def sell_button_in_cooldown(
-    state,
-) -> bool:
-    """
-    Retorna True se o botão estiver em cooldown.
-    """
-
-    if not state.get("found"):
-
-        return False
-
-    if state.get("disabled"):
-
-        return True
-
-    if state.get(
-        "has_disabled_attribute"
-    ):
-
-        return True
-
-    if str(
-        state.get(
-            "aria_disabled",
-            "",
-        )
-    ).lower() == "true":
-
-        return True
-
-    text = (
-        state.get("text")
-        or ""
-    ).lower()
-
-    value = (
-        state.get("value")
-        or ""
-    ).lower()
-
-    combined = (
-        text + " " + value
-    )
-
-    cooldown_signals = [
-        "cooldown",
-        "aguarde",
-        "esperar",
-        "wait",
-        "min",
-        "sec",
-        ":",
-    ]
-
-    return any(
-        signal in combined
-        for signal in cooldown_signals
-    )
-
-
-def sell_button_available(
-    state,
-) -> bool:
-    """
-    Retorna True somente quando #sell-all
-    está disponível para venda.
-    """
-
-    if not state.get("found"):
-
-        return False
-
-    if not state.get("visible"):
-
-        return False
-
-    if state.get("disabled"):
-
-        return False
-
-    if state.get(
-        "has_disabled_attribute"
-    ):
-
-        return False
-
-    if str(
-        state.get(
-            "aria_disabled",
-            "",
-        )
-    ).lower() == "true":
-
-        return False
-
-    return True
-
-
-# ================================================================
-# AGUARDAR VENDA DISPONÍVEL
-# ================================================================
-
-
-async def wait_until_sell_available(
-    tab,
-    retry_interval: float = 15,
-    jitter_min: float = 5,
-    jitter_max: float = 10,
-) -> bool:
-    """
-    Aguarda #sell-all ficar disponível.
-
-    Cada tentativa:
-
-        15 segundos
-        +
-        jitter de 5–10 segundos
-    """
-
-    while True:
-
-        state = await get_sell_button_state(
-            tab
-        )
-
-        if sell_button_available(
-            state
-        ):
-
-            print()
-            print(
-                "Venda disponível."
-            )
-
-            return True
-
-        text = (
-            state.get("text")
-            or ""
-        )
-
-        print()
-        print(
-            "Venda ainda está "
-            "em cooldown."
-        )
-
-        if text:
-
-            print(
-                "Contador atual:",
-                text,
-            )
-
-        jitter = __import__(
-            "random"
-        ).uniform(
-            jitter_min,
-            jitter_max,
-        )
-
-        delay = (
-            retry_interval
-            + jitter
-        )
-
-        print(
-            f"Nova verificação em "
-            f"{delay:.1f} segundos."
-        )
-
-        print(
-            f"Intervalo: "
-            f"{retry_interval}s"
-        )
-
-        print(
-            f"Jitter: "
-            f"+{jitter:.1f}s"
-        )
-
-        await asyncio.sleep(
-            delay
-        )
 
 
 # ================================================================
@@ -835,29 +697,6 @@ async def open_sale_confirmation(
         "Clicando em vender..."
     )
 
-    # ------------------------------------------------------------
-    # VERIFICAR DISPONIBILIDADE ANTES DO CLIQUE
-    # ------------------------------------------------------------
-
-    state = await get_sell_button_state(
-        tab
-    )
-
-    if not sell_button_available(
-        state
-    ):
-
-        print(
-            "O botão #sell-all "
-            "não está disponível."
-        )
-
-        return False
-
-    # ------------------------------------------------------------
-    # CLIQUE
-    # ------------------------------------------------------------
-
     if not await click_element(
         tab,
         "sell-all",
@@ -873,10 +712,6 @@ async def open_sale_confirmation(
     print(
         "Aguardando confirmação da venda..."
     )
-
-    # ------------------------------------------------------------
-    # AGUARDAR MODAL
-    # ------------------------------------------------------------
 
     if not await wait_for_element(
         tab,
@@ -934,16 +769,183 @@ async def confirm_sale(
 
 
 # ================================================================
+# ESTADO DO BOTÃO DE VENDA
+# ================================================================
+
+
+async def get_sell_button_state(
+    tab,
+):
+    """
+    Obtém o estado atual do #sell-all.
+    """
+
+    state = await element_state(
+        tab,
+        "sell-all",
+    )
+
+    return state
+
+
+# ================================================================
+# IMPRIMIR ESTADO DO BOTÃO
+# ================================================================
+
+
+def print_sell_button_state(
+    state,
+):
+    """
+    Imprime uma versão resumida do estado do botão.
+    """
+
+    print(
+        f"Botão #sell-all:"
+    )
+
+    print(
+        f"  encontrado: "
+        f"{state.get('found')}"
+    )
+
+    print(
+        f"  visível: "
+        f"{state.get('visible')}"
+    )
+
+    print(
+        f"  texto: "
+        f"{state.get('text', '')}"
+    )
+
+    print(
+        f"  disabled: "
+        f"{state.get('disabled')}"
+    )
+
+    print(
+        f"  disabled attribute: "
+        f"{state.get('has_disabled_attribute')}"
+    )
+
+    print(
+        f"  aria-disabled: "
+        f"{state.get('aria_disabled')}"
+    )
+
+    print(
+        f"  classe: "
+        f"{state.get('class_name', '')}"
+    )
+
+
+# ================================================================
+# VERIFICAR COOLDOWN
+# ================================================================
+
+
+def sell_button_in_cooldown(
+    state,
+) -> bool:
+    """
+    Verifica se #sell-all está em cooldown.
+
+    Consideramos cooldown somente quando existe
+    uma indicação real de botão desabilitado.
+    """
+
+    if not state.get("found"):
+
+        return False
+
+    if state.get("disabled") is True:
+
+        return True
+
+    if state.get(
+        "has_disabled_attribute"
+    ) is True:
+
+        return True
+
+    if (
+        str(
+            state.get(
+                "aria_disabled",
+                "",
+            )
+        ).lower()
+        == "true"
+    ):
+
+        return True
+
+    return False
+
+
+# ================================================================
+# VERIFICAR DISPONIBILIDADE
+# ================================================================
+
+
+def sell_button_available(
+    state,
+) -> bool:
+    """
+    Retorna True somente quando o botão está disponível.
+    """
+
+    if not state.get("found"):
+
+        return False
+
+    if not state.get("visible"):
+
+        return False
+
+    if state.get("disabled"):
+
+        return False
+
+    if state.get(
+        "has_disabled_attribute"
+    ):
+
+        return False
+
+    if (
+        str(
+            state.get(
+                "aria_disabled",
+                "",
+            )
+        ).lower()
+        == "true"
+    ):
+
+        return False
+
+    return True
+
+
+# ================================================================
 # AGUARDAR COOLDOWN
 # ================================================================
 
 
 async def wait_for_sell_cooldown(
     tab,
-    timeout: float = 15,
+    timeout: float = 30,
+    check_interval: float = 1.0,
 ) -> bool:
     """
     Aguarda o #sell-all entrar em cooldown.
+
+    Usado após uma venda que deve ter sido efetivamente
+    processada.
+
+    Não imprime o JSON inteiro em cada tentativa.
     """
 
     print()
@@ -951,13 +953,19 @@ async def wait_for_sell_cooldown(
         "Verificando cooldown da venda..."
     )
 
-    start = asyncio.get_running_loop().time()
+    start = (
+        asyncio.get_running_loop().time()
+    )
+
+    last_state = None
 
     while True:
 
         state = await get_sell_button_state(
             tab
         )
+
+        last_state = state
 
         if sell_button_in_cooldown(
             state
@@ -968,12 +976,17 @@ async def wait_for_sell_cooldown(
                 "Cooldown da venda detectado."
             )
 
-            if state.get("text"):
+            print(
+                "Texto do botão:",
+                state.get(
+                    "text",
+                    "",
+                ),
+            )
 
-                print(
-                    "Texto do botão:",
-                    state["text"],
-                )
+            print(
+                "Estado: disabled"
+            )
 
             return True
 
@@ -990,13 +1003,97 @@ async def wait_for_sell_cooldown(
                 "não entrou em cooldown."
             )
 
+            if last_state:
+
+                print(
+                    "Último estado do botão:"
+                )
+
+                print_sell_button_state(
+                    last_state
+                )
+
             return False
 
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(
+            check_interval
+        )
 
 
 # ================================================================
-# VALIDAR SESSÃO
+# AGUARDAR VENDA DISPONÍVEL
+# ================================================================
+
+
+async def wait_until_sell_available(
+    tab,
+    timeout: float = 0,
+    check_interval: float = 1.0,
+) -> bool:
+    """
+    Aguarda o #sell-all ficar disponível.
+
+    timeout=0 significa aguardar indefinidamente.
+    """
+
+    print()
+    print(
+        "Verificando disponibilidade da venda..."
+    )
+
+    start = (
+        asyncio.get_running_loop().time()
+    )
+
+    while True:
+
+        state = await get_sell_button_state(
+            tab
+        )
+
+        if sell_button_available(
+            state
+        ):
+
+            print()
+            print(
+                "Venda disponível."
+            )
+
+            print(
+                "Texto do botão:",
+                state.get(
+                    "text",
+                    "",
+                ),
+            )
+
+            return True
+
+        if timeout > 0:
+
+            elapsed = (
+                asyncio.get_running_loop().time()
+                - start
+            )
+
+            if elapsed >= timeout:
+
+                print()
+                print(
+                    "Timeout aguardando "
+                    "a venda ficar disponível."
+                )
+
+                return False
+
+        await asyncio.sleep(
+            check_interval
+        )
+
+
+# ================================================================
+# VALIDAÇÃO DA SESSÃO
 # ================================================================
 
 
@@ -1005,30 +1102,28 @@ async def validate_sale(
     timeout: float = 60,
 ) -> bool:
     """
-    Valida a sessão através de uma venda real.
+    Valida a sessão.
 
-    Fluxo:
+    PRIMEIRA VENDA
+    --------------
+    Serve para disparar a validação Cloudflare.
 
-        verificar #sell-all
-            ↓
-        se estiver disabled:
-            aguardar disponibilidade
-            ↓
+    Não exige cooldown.
+
+    SEGUNDA VENDA
+    -------------
+    É a venda usada para confirmar que a sessão
+    está realmente validada.
+
+    Após a segunda venda:
+
         #sell-all
             ↓
-        #confirm-modal-body
+        disabled
             ↓
-        capturar valor
-            ↓
-        #confirm-yes
-            ↓
-        Cloudflare
-            ↓
-        aguardar processamento
-            ↓
-        verificar cooldown
-            ↓
-        sessão validada
+        cooldown confirmado
+
+    somente então a validação é considerada concluída.
     """
 
     print()
@@ -1037,7 +1132,7 @@ async def validate_sale(
     )
 
     # ============================================================
-    # GARANTIR QUE A VENDA ESTEJA DISPONÍVEL
+    # PRIMEIRA VENDA
     # ============================================================
 
     print()
@@ -1047,18 +1142,16 @@ async def validate_sale(
     )
 
     if not await wait_until_sell_available(
-        tab
+        tab,
+        timeout=30,
     ):
 
         print(
-            "ERRO: venda não ficou disponível."
+            "ERRO: primeira venda "
+            "não está disponível."
         )
 
         return False
-
-    # ============================================================
-    # ABRIR VENDA
-    # ============================================================
 
     print()
     print(
@@ -1075,41 +1168,34 @@ async def validate_sale(
     ):
 
         print(
-            "ERRO: não foi possível "
-            "abrir a primeira venda."
+            "ERRO: primeira venda "
+            "não pôde ser iniciada."
         )
 
         return False
 
-    # ============================================================
+    # ------------------------------------------------------------
     # CAPTURAR VALOR
-    # ============================================================
+    # ------------------------------------------------------------
 
-    sale_value = await get_sale_value(
+    first_sale_value = await get_sale_value(
         tab
     )
 
-    if sale_value:
+    if first_sale_value > 0:
 
         print(
             "Valor da venda:",
-            f"{sale_value:,}".replace(
+            f"{first_sale_value:,}".replace(
                 ",",
                 ".",
             ),
             "gold",
         )
 
-    else:
-
-        print(
-            "AVISO: não foi possível "
-            "capturar o valor da venda."
-        )
-
-    # ============================================================
+    # ------------------------------------------------------------
     # CONFIRMAR
-    # ============================================================
+    # ------------------------------------------------------------
 
     if not await confirm_sale(
         tab
@@ -1139,30 +1225,161 @@ async def validate_sale(
         return False
 
     # ============================================================
+    # PROCESSAMENTO DA PRIMEIRA VENDA
+    # ============================================================
+
+    print()
+    print(
+        "Aguardando processamento "
+        "da primeira venda..."
+    )
+
+    await asyncio.sleep(
+        3
+    )
+
+    print()
+    print(
+        "Primeira venda processada."
+    )
+
+    print(
+        "O cooldown da primeira venda "
+        "não será usado como critério "
+        "de validação."
+    )
+
+    # ============================================================
+    # AGUARDAR SEGUNDA VENDA DISPONÍVEL
+    # ============================================================
+
+    print()
+    print(
+        "Aguardando disponibilidade "
+        "para a segunda venda..."
+    )
+
+    if not await wait_until_sell_available(
+        tab,
+        timeout=180,
+    ):
+
+        print(
+            "ERRO: segunda venda "
+            "não ficou disponível."
+        )
+
+        return False
+
+    # ============================================================
+    # SEGUNDA VENDA
+    # ============================================================
+
+    print()
+    print(
+        "=== SEGUNDA VENDA ==="
+    )
+
+    print(
+        "Executando a segunda venda "
+        "para confirmar a validação."
+    )
+
+    if not await open_sale_confirmation(
+        tab
+    ):
+
+        print(
+            "ERRO: segunda venda "
+            "não pôde ser iniciada."
+        )
+
+        return False
+
+    # ------------------------------------------------------------
+    # VALOR
+    # ------------------------------------------------------------
+
+    second_sale_value = await get_sale_value(
+        tab
+    )
+
+    if second_sale_value > 0:
+
+        print(
+            "Valor da venda:",
+            f"{second_sale_value:,}".replace(
+                ",",
+                ".",
+            ),
+            "gold",
+        )
+
+    # ------------------------------------------------------------
+    # CONFIRMAR
+    # ------------------------------------------------------------
+
+    if not await confirm_sale(
+        tab
+    ):
+
+        print(
+            "ERRO: segunda venda "
+            "não pôde ser confirmada."
+        )
+
+        return False
+
+    # ============================================================
+    # CLOUDFLARE
+    # ============================================================
+
+    if not await wait_for_cloudflare(
+        tab,
+        timeout=timeout,
+    ):
+
+        print(
+            "ERRO: validação Cloudflare "
+            "da segunda venda falhou."
+        )
+
+        return False
+
+    # ============================================================
     # PROCESSAMENTO
     # ============================================================
 
     print()
     print(
         "Aguardando processamento "
-        "da venda..."
+        "da segunda venda..."
     )
 
-    await asyncio.sleep(2)
+    await asyncio.sleep(
+        3
+    )
 
     # ============================================================
-    # CONFIRMAR COOLDOWN
+    # COOLDOWN
     # ============================================================
 
     if not await wait_for_sell_cooldown(
         tab,
-        timeout=15,
+        timeout=30,
+        check_interval=1.0,
     ):
 
         print()
         print(
-            "ERRO: a venda foi confirmada, "
-            "mas o cooldown não foi detectado."
+            "ERRO: a segunda venda foi "
+            "confirmada, mas o cooldown "
+            "não foi detectado."
+        )
+
+        print(
+            "A sessão NÃO será considerada "
+            "validada."
         )
 
         return False
@@ -1181,23 +1398,16 @@ async def validate_sale(
     )
 
     print(
-        "Venda confirmada."
+        "Primeira venda: validação disparada."
     )
 
     print(
         "Cloudflare: validação concluída."
     )
 
-    if sale_value:
-
-        print(
-            "Valor da venda:",
-            f"{sale_value:,}".replace(
-                ",",
-                ".",
-            ),
-            "gold",
-        )
+    print(
+        "Segunda venda: venda efetiva."
+    )
 
     print(
         "Cooldown do #sell-all confirmado."
