@@ -683,9 +683,13 @@ async def open_sale_confirmation(
     tab,
 ) -> bool:
     """
-    Executa:
+    Abre o modal de confirmação da venda.
+
+    Fluxo:
 
         #sell-all
+            ↓
+        aguardar abertura do modal
             ↓
         #confirm-modal-body
     """
@@ -698,7 +702,6 @@ async def open_sale_confirmation(
         tab,
         "sell-all",
     ):
-
         print(
             "ERRO: botão #sell-all "
             "não encontrado."
@@ -707,7 +710,22 @@ async def open_sale_confirmation(
         return False
 
     print(
-        "Aguardando confirmação da venda..."
+        "Clique em #sell-all."
+    )
+
+    print(
+        "Aguardando abertura "
+        "do modal de confirmação..."
+    )
+
+    # Dá tempo para o JavaScript do jogo
+    # criar/animar o modal.
+    await asyncio.sleep(
+        1.5
+    )
+
+    print(
+        "Procurando modal de confirmação..."
     )
 
     if not await wait_for_element(
@@ -715,7 +733,6 @@ async def open_sale_confirmation(
         "confirm-modal-body",
         timeout=10,
     ):
-
         print(
             "ERRO: modal de confirmação "
             "não apareceu."
