@@ -1088,6 +1088,16 @@ async def wait_until_sell_available(
             check_interval
         )
 
+def format_gold(value: int) -> str:
+    """
+    Formata valores de gold usando ponto
+    como separador de milhares.
+
+    Exemplo:
+        195240 -> 195.240
+    """
+
+    return f"{value:,}".replace(",", ".")
 
 # ================================================================
 # VALIDAÇÃO DA SESSÃO
