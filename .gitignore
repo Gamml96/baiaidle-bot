@@ -1,0 +1,29 @@
+# Virtual environment
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Testes
+.pytest_cache/
+
+# Type checking
+.mypy_cache/
+
+# Linters
+.ruff_cache/
+
+# Environment / secrets
+.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+src/*.egg-info/

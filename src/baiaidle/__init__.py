@@ -1,0 +1,1 @@
+"""Baiak Idle bot."""
