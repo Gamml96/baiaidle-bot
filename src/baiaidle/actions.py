@@ -679,6 +679,11 @@ async def get_sale_value(
 # ================================================================
 
 
+# ================================================================
+# ABRIR CONFIRMAÇÃO DE VENDA
+# ================================================================
+
+
 async def open_sale_confirmation(
     tab,
 ) -> bool:
@@ -687,99 +692,134 @@ async def open_sale_confirmation(
 
     Fluxo:
 
-        #sell-all
+        verificar botão
             ↓
-        aguardar abertura do modal
+        clicar uma única vez
             ↓
-        #confirm-modal-body
+        aguardar JavaScript da página
+            ↓
+        procurar modal
+            ↓
+        confirmar modal encontrado
     """
 
     print(
         "Clicando em vender..."
     )
 
+    # ------------------------------------------------------------
+    # VERIFICAR BOTÃO ANTES DO CLIQUE
+    # ------------------------------------------------------------
+
+    state = await get_sell_button_state(
+        tab
+    )
+
+    if not sell_button_available(
+        state
+    ):
+        print(
+            "ERRO: #sell-all não está "
+            "disponível no momento do clique."
+        )
+
+        return False
+
+    # ------------------------------------------------------------
+    # CLIQUE ÚNICO
+    # ------------------------------------------------------------
+
     if not await click_element(
         tab,
         "sell-all",
     ):
         print(
-            "ERRO: botão #sell-all "
-            "não encontrado."
+            "ERRO: não foi possível clicar "
+            "em #sell-all."
         )
 
         return False
 
-    print(
-        "Clique em #sell-all."
-    )
+    # ------------------------------------------------------------
+    # AGUARDAR ABERTURA DO MODAL
+    # ------------------------------------------------------------
 
     print(
         "Aguardando abertura "
         "do modal de confirmação..."
     )
 
-    # Dá tempo para o JavaScript do jogo
-    # criar/animar o modal.
     await asyncio.sleep(
         1.5
     )
+
+    # ------------------------------------------------------------
+    # PROCURAR MODAL
+    # ------------------------------------------------------------
 
     print(
         "Procurando modal de confirmação..."
     )
 
-    if not await wait_for_element(
+    if await wait_for_element(
         tab,
         "confirm-modal-body",
         timeout=10,
     ):
+
         print(
-            "ERRO: modal de confirmação "
-            "não apareceu."
+            "Modal de confirmação encontrado."
         )
 
-        return False
+        return True
+
+    # ------------------------------------------------------------
+    # SEGUNDA VERIFICAÇÃO
+    #
+    # O primeiro wait pode ter terminado exatamente
+    # durante uma atualização do DOM.
+    # ------------------------------------------------------------
 
     print(
-        "Modal de confirmação encontrado."
+        "Modal ainda não encontrado."
     )
-
-    return True
-
-
-# ================================================================
-# CONFIRMAR VENDA
-# ================================================================
-
-
-async def confirm_sale(
-    tab,
-) -> bool:
-    """
-    Clica em #confirm-yes.
-    """
 
     print(
-        "Confirmando venda..."
+        "Aguardando mais 2 segundos..."
     )
 
-    if not await click_element(
+    await asyncio.sleep(
+        2
+    )
+
+    if await wait_for_element(
         tab,
-        "confirm-yes",
+        "confirm-modal-body",
+        timeout=5,
     ):
 
         print(
-            "ERRO: botão #confirm-yes "
-            "não encontrado."
+            "Modal de confirmação encontrado "
+            "na segunda verificação."
         )
 
-        return False
+        return True
+
+    # ------------------------------------------------------------
+    # FALHA
+    # ------------------------------------------------------------
 
     print(
-        "Venda confirmada."
+        "ERRO: modal de confirmação "
+        "não apareceu após o clique."
     )
 
-    return True
+    # Não clicar novamente.
+    #
+    # Isso é importante para evitar que uma tentativa
+    # de recuperação gere um segundo clique na venda.
+
+    return False
 
 
 # ================================================================
