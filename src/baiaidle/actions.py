@@ -24,6 +24,18 @@ def extract_execute_result(result):
         return result
 
 
+def format_gold(value: int) -> str:
+    """
+    Formata gold usando ponto como separador de milhares.
+
+    Exemplo:
+
+        195240 -> 195.240
+    """
+
+    return f"{value:,}".replace(",", ".")
+
+
 # ================================================================
 # ESTADO DE ELEMENTO
 # ================================================================
@@ -114,24 +126,21 @@ async def element_state(
     value = extract_execute_result(result)
 
     if not isinstance(value, str):
-
         return {
             "found": False
         }
 
     try:
-
         return json.loads(value)
 
     except json.JSONDecodeError:
-
         return {
             "found": False
         }
 
 
 # ================================================================
-# CLIQUE HUMANIZADO
+# CLIQUE DIRETO
 # ================================================================
 
 
@@ -141,13 +150,13 @@ async def click_element(
     timeout: float = 10,
 ) -> bool:
     """
-    Localiza um elemento pelo ID e realiza clique direto.
+    Localiza um elemento pelo ID e realiza um único clique direto.
 
-    O clique humanizado foi removido para melhorar
-    a compatibilidade com Chromium headless no Linux.
+    Não utiliza humanização.
     """
 
     try:
+
         element = await tab.find(
             id=element_id,
             timeout=timeout,
@@ -218,7 +227,6 @@ async def wait_for_element(
         )
 
         if elapsed >= timeout:
-
             return False
 
         await asyncio.sleep(
@@ -264,7 +272,6 @@ async def wait_for_element_hidden(
         )
 
         if elapsed >= timeout:
-
             return False
 
         await asyncio.sleep(
@@ -394,7 +401,6 @@ async def click_cloudflare_challenge(
                     style.visibility !== 'hidden';
 
                 if (!visible) {
-
                     continue;
                 }
 
@@ -442,18 +448,8 @@ async def wait_for_cloudflare(
     """
     Aguarda a validação Cloudflare.
 
-    Se o desafio aparecer:
-
-        detecta
-        ↓
-        tenta clicar
-        ↓
-        aguarda desaparecer
-
-    Se não aparecer:
-
-        considera que não houve desafio
-        e continua.
+    Se nenhum desafio permanecer visível,
+    continua automaticamente.
     """
 
     print()
@@ -473,10 +469,6 @@ async def wait_for_cloudflare(
         challenge = await detect_cloudflare(
             tab
         )
-
-        # --------------------------------------------------------
-        # DESAFIO VISÍVEL
-        # --------------------------------------------------------
 
         if challenge:
 
@@ -519,10 +511,6 @@ async def wait_for_cloudflare(
                         "diretamente no validador."
                     )
 
-        # --------------------------------------------------------
-        # DESAFIO NÃO VISÍVEL
-        # --------------------------------------------------------
-
         else:
 
             if challenge_seen:
@@ -553,10 +541,6 @@ async def wait_for_cloudflare(
 
                 return True
 
-        # --------------------------------------------------------
-        # TIMEOUT
-        # --------------------------------------------------------
-
         elapsed = (
             asyncio.get_running_loop().time()
             - start
@@ -586,18 +570,6 @@ async def get_sale_value(
 ) -> int:
     """
     Obtém o valor da venda exibido no modal.
-
-    XPath:
-
-        //*[@id="confirm-modal-body"]/div/div[4]/span[2]
-
-    Exemplo:
-
-        ≈ 145.440
-
-    Retorno:
-
-        145440
     """
 
     js = """
@@ -613,7 +585,6 @@ async def get_sale_value(
             ).singleNodeValue;
 
         if (!element) {
-
             return null;
         }
 
@@ -644,7 +615,6 @@ async def get_sale_value(
 
     text = str(value).strip()
 
-    # Remove símbolos e mantém somente números.
     numbers = re.sub(
         r"[^0-9]",
         "",
@@ -679,28 +649,16 @@ async def get_sale_value(
 # ================================================================
 
 
-# ================================================================
-# ABRIR CONFIRMAÇÃO DE VENDA
-# ================================================================
-
-
 async def open_sale_confirmation(
     tab,
 ) -> bool:
     """
     Abre o modal de confirmação da venda.
 
-    Fluxo:
+    O botão é clicado somente uma vez.
 
-        verificar botão
-            ↓
-        clicar uma única vez
-            ↓
-        aguardar JavaScript da página
-            ↓
-        procurar modal
-            ↓
-        confirmar modal encontrado
+    Depois do clique existe uma espera para permitir
+    que o JavaScript do jogo crie o modal.
     """
 
     print(
@@ -718,6 +676,7 @@ async def open_sale_confirmation(
     if not sell_button_available(
         state
     ):
+
         print(
             "ERRO: #sell-all não está "
             "disponível no momento do clique."
@@ -733,6 +692,7 @@ async def open_sale_confirmation(
         tab,
         "sell-all",
     ):
+
         print(
             "ERRO: não foi possível clicar "
             "em #sell-all."
@@ -741,7 +701,7 @@ async def open_sale_confirmation(
         return False
 
     # ------------------------------------------------------------
-    # AGUARDAR ABERTURA DO MODAL
+    # AGUARDAR JAVASCRIPT
     # ------------------------------------------------------------
 
     print(
@@ -774,10 +734,7 @@ async def open_sale_confirmation(
         return True
 
     # ------------------------------------------------------------
-    # SEGUNDA VERIFICAÇÃO
-    #
-    # O primeiro wait pode ter terminado exatamente
-    # durante uma atualização do DOM.
+    # SEGUNDA ESPERA
     # ------------------------------------------------------------
 
     print(
@@ -814,12 +771,66 @@ async def open_sale_confirmation(
         "não apareceu após o clique."
     )
 
-    # Não clicar novamente.
-    #
-    # Isso é importante para evitar que uma tentativa
-    # de recuperação gere um segundo clique na venda.
-
     return False
+
+
+# ================================================================
+# CONFIRMAR VENDA
+# ================================================================
+
+
+async def confirm_sale(
+    tab,
+) -> bool:
+    """
+    Confirma a venda clicando em #confirm-yes.
+
+    Esta função existe para manter compatibilidade
+    com hunt.py.
+    """
+
+    print(
+        "Confirmando venda..."
+    )
+
+    # ------------------------------------------------------------
+    # AGUARDAR BOTÃO DE CONFIRMAÇÃO
+    # ------------------------------------------------------------
+
+    if not await wait_for_element(
+        tab,
+        "confirm-yes",
+        timeout=10,
+    ):
+
+        print(
+            "ERRO: botão #confirm-yes "
+            "não apareceu."
+        )
+
+        return False
+
+    # ------------------------------------------------------------
+    # CLIQUE
+    # ------------------------------------------------------------
+
+    if not await click_element(
+        tab,
+        "confirm-yes",
+    ):
+
+        print(
+            "ERRO: não foi possível clicar "
+            "em #confirm-yes."
+        )
+
+        return False
+
+    print(
+        "Venda confirmada."
+    )
+
+    return True
 
 
 # ================================================================
@@ -834,12 +845,10 @@ async def get_sell_button_state(
     Obtém o estado atual do #sell-all.
     """
 
-    state = await element_state(
+    return await element_state(
         tab,
         "sell-all",
     )
-
-    return state
 
 
 # ================================================================
@@ -855,7 +864,7 @@ def print_sell_button_state(
     """
 
     print(
-        f"Botão #sell-all:"
+        "Botão #sell-all:"
     )
 
     print(
@@ -904,23 +913,17 @@ def sell_button_in_cooldown(
 ) -> bool:
     """
     Verifica se #sell-all está em cooldown.
-
-    Consideramos cooldown somente quando existe
-    uma indicação real de botão desabilitado.
     """
 
     if not state.get("found"):
-
         return False
 
     if state.get("disabled") is True:
-
         return True
 
     if state.get(
         "has_disabled_attribute"
     ) is True:
-
         return True
 
     if (
@@ -932,7 +935,6 @@ def sell_button_in_cooldown(
         ).lower()
         == "true"
     ):
-
         return True
 
     return False
@@ -951,21 +953,17 @@ def sell_button_available(
     """
 
     if not state.get("found"):
-
         return False
 
     if not state.get("visible"):
-
         return False
 
     if state.get("disabled"):
-
         return False
 
     if state.get(
         "has_disabled_attribute"
     ):
-
         return False
 
     if (
@@ -977,7 +975,6 @@ def sell_button_available(
         ).lower()
         == "true"
     ):
-
         return False
 
     return True
@@ -995,11 +992,6 @@ async def wait_for_sell_cooldown(
 ) -> bool:
     """
     Aguarda o #sell-all entrar em cooldown.
-
-    Usado após uma venda que deve ter sido efetivamente
-    processada.
-
-    Não imprime o JSON inteiro em cada tentativa.
     """
 
     print()
@@ -1145,16 +1137,6 @@ async def wait_until_sell_available(
             check_interval
         )
 
-def format_gold(value: int) -> str:
-    """
-    Formata valores de gold usando ponto
-    como separador de milhares.
-
-    Exemplo:
-        195240 -> 195.240
-    """
-
-    return f"{value:,}".replace(",", ".")
 
 # ================================================================
 # VALIDAÇÃO DA SESSÃO
@@ -1163,59 +1145,18 @@ def format_gold(value: int) -> str:
 
 async def validate_sale(
     tab,
-    timeout: float = 180,
+    timeout: float = 0,
 ) -> bool:
     """
     Valida a sessão através de duas vendas.
 
-    Primeira venda:
-        - dispara a validação Cloudflare;
-        - é uma venda real;
-        - não usa cooldown como critério de validação.
+    A primeira venda dispara a validação.
 
-    Segunda venda:
-        - aguarda a página estabilizar;
-        - aguarda a venda ficar disponível;
-        - executa a segunda venda;
-        - verifica o cooldown após o processamento.
+    O cooldown da primeira venda NÃO é usado
+    como critério.
 
-    Fluxo:
-
-        disponibilidade
-            ↓
-        PRIMEIRA VENDA
-            ↓
-        #sell-all
-            ↓
-        #confirm-modal-body
-            ↓
-        captura valor
-            ↓
-        #confirm-yes
-            ↓
-        Cloudflare
-            ↓
-        processamento
-            ↓
-        aguardar estabilização
-            ↓
-        disponibilidade
-            ↓
-        SEGUNDA VENDA
-            ↓
-        #sell-all
-            ↓
-        #confirm-modal-body
-            ↓
-        #confirm-yes
-            ↓
-        Cloudflare
-            ↓
-        processamento
-            ↓
-        cooldown
-            ↓
-        validação confirmada
+    A segunda venda confirma que o processo
+    está funcionando corretamente.
     """
 
     print()
@@ -1229,15 +1170,18 @@ async def validate_sale(
 
     print()
     print(
-        "Verificando disponibilidade da primeira venda..."
+        "Verificando disponibilidade "
+        "da primeira venda..."
     )
 
     if not await wait_until_sell_available(
         tab,
         timeout=timeout,
     ):
+
         print(
-            "ERRO: primeira venda não está disponível."
+            "ERRO: primeira venda "
+            "não está disponível."
         )
 
         return False
@@ -1252,21 +1196,19 @@ async def validate_sale(
         "para validar a sessão."
     )
 
-    # ------------------------------------------------------------
-    # ABRIR MODAL
-    # ------------------------------------------------------------
-
     if not await open_sale_confirmation(
         tab
     ):
+
         print(
-            "ERRO: primeira venda não pôde ser iniciada."
+            "ERRO: primeira venda "
+            "não pôde ser iniciada."
         )
 
         return False
 
     # ------------------------------------------------------------
-    # CAPTURAR VALOR
+    # VALOR
     # ------------------------------------------------------------
 
     sale_value = await get_sale_value(
@@ -1284,7 +1226,7 @@ async def validate_sale(
 
         print(
             "AVISO: não foi possível "
-            "capturar o valor da primeira venda."
+            "capturar o valor da venda."
         )
 
     # ------------------------------------------------------------
@@ -1294,16 +1236,17 @@ async def validate_sale(
     if not await confirm_sale(
         tab
     ):
+
         print(
-            "ERRO: primeira venda não pôde "
-            "ser confirmada."
+            "ERRO: primeira venda "
+            "não pôde ser confirmada."
         )
 
         return False
 
-    # ============================================================
+    # ------------------------------------------------------------
     # CLOUDFLARE
-    # ============================================================
+    # ------------------------------------------------------------
 
     if not await wait_for_cloudflare(
         tab,
@@ -1317,9 +1260,9 @@ async def validate_sale(
 
         return False
 
-    # ============================================================
-    # PROCESSAMENTO DA PRIMEIRA VENDA
-    # ============================================================
+    # ------------------------------------------------------------
+    # PROCESSAMENTO
+    # ------------------------------------------------------------
 
     print()
     print(
@@ -1343,7 +1286,7 @@ async def validate_sale(
     )
 
     # ============================================================
-    # ESTABILIZAÇÃO DA PÁGINA
+    # ESTABILIZAÇÃO
     # ============================================================
 
     print()
@@ -1392,10 +1335,6 @@ async def validate_sale(
         "para confirmar a validação."
     )
 
-    # ------------------------------------------------------------
-    # ABRIR MODAL
-    # ------------------------------------------------------------
-
     if not await open_sale_confirmation(
         tab
     ):
@@ -1408,7 +1347,7 @@ async def validate_sale(
         return False
 
     # ------------------------------------------------------------
-    # CAPTURAR VALOR
+    # VALOR
     # ------------------------------------------------------------
 
     second_sale_value = await get_sale_value(
@@ -1420,13 +1359,6 @@ async def validate_sale(
         print(
             "Valor da segunda venda:",
             f"{format_gold(second_sale_value)} gold",
-        )
-
-    else:
-
-        print(
-            "AVISO: não foi possível "
-            "capturar o valor da segunda venda."
         )
 
     # ------------------------------------------------------------
@@ -1444,9 +1376,9 @@ async def validate_sale(
 
         return False
 
-    # ============================================================
-    # CLOUDFLARE DA SEGUNDA VENDA
-    # ============================================================
+    # ------------------------------------------------------------
+    # CLOUDFLARE
+    # ------------------------------------------------------------
 
     if not await wait_for_cloudflare(
         tab,
@@ -1460,9 +1392,9 @@ async def validate_sale(
 
         return False
 
-    # ============================================================
-    # PROCESSAMENTO DA SEGUNDA VENDA
-    # ============================================================
+    # ------------------------------------------------------------
+    # PROCESSAMENTO
+    # ------------------------------------------------------------
 
     print()
     print(
@@ -1474,9 +1406,9 @@ async def validate_sale(
         2
     )
 
-    # ============================================================
-    # COOLDOWN DA SEGUNDA VENDA
-    # ============================================================
+    # ------------------------------------------------------------
+    # COOLDOWN
+    # ------------------------------------------------------------
 
     print()
     print(
