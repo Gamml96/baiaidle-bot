@@ -26,63 +26,47 @@ def extract_execute_result(result):
 
 async def is_logged_in(tab) -> bool:
     """
-    Verifica se a página aparenta estar autenticada.
+    Verifica se o jogador está realmente dentro do jogo.
 
-    Não depende exclusivamente de um elemento específico.
-    Procuramos sinais de usuário autenticado e ausência do formulário
-    de autenticação.
+    O elemento #hud-nick é usado como sinal principal
+    de que a sessão está autenticada.
     """
 
     js = """
     (() => {
-        const authEmail = document.getElementById('auth-email');
-        const authPass = document.getElementById('auth-pass');
-        const authSubmit = document.getElementById('auth-submit');
+        const hudNick = document.getElementById('hud-nick');
 
-        function visible(el) {
-            if (!el) {
-                return false;
-            }
-
-            const rect = el.getBoundingClientRect();
-            const style = getComputedStyle(el);
-
-            return (
-                rect.width > 0 &&
-                rect.height > 0 &&
-                style.display !== 'none' &&
-                style.visibility !== 'hidden'
-            );
+        if (!hudNick) {
+            return JSON.stringify({
+                hud_nick_found: false,
+                hud_nick_visible: false,
+                hud_nick_text: '',
+                authenticated: false
+            });
         }
 
-        const loginVisible =
-            visible(authEmail) ||
-            visible(authPass) ||
-            visible(authSubmit);
+        const rect = hudNick.getBoundingClientRect();
+        const style = getComputedStyle(hudNick);
 
-        // Sinais comuns de sessão autenticada.
-        const bodyText = (
-            document.body?.innerText || ''
-        ).toLowerCase();
+        const visible =
+            rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== 'none' &&
+            style.visibility !== 'hidden';
 
-        const authenticatedSignals = [
-            'sair',
-            'logout',
-            'minha conta',
-            'personagem',
-            'characters'
-        ];
-
-        const hasAuthenticatedSignal =
-            authenticatedSignals.some(
-                signal => bodyText.includes(signal)
-            );
+        const text = (
+            hudNick.innerText ||
+            hudNick.textContent ||
+            ''
+        ).trim();
 
         return JSON.stringify({
-            login_form_visible: loginVisible,
-            authenticated_signal: hasAuthenticatedSignal,
+            hud_nick_found: true,
+            hud_nick_visible: visible,
+            hud_nick_text: text,
             authenticated:
-                !loginVisible && hasAuthenticatedSignal
+                visible &&
+                text.length > 0
         });
     })()
     """
@@ -259,12 +243,18 @@ async def login(tab, login: str, password: str) -> bool:
     preencher novamente as credenciais.
 
     Caso contrário:
+
         JOGAR/ENTRAR
-        -> modal
-        -> e-mail
-        -> senha
-        -> ENTRAR
-        -> confirmação
+            ↓
+        modal
+            ↓
+        e-mail
+            ↓
+        senha
+            ↓
+        ENTRAR
+            ↓
+        confirmação através de #hud-nick
     """
 
     print("Verificando sessão existente...")
