@@ -87,6 +87,81 @@ async def is_logged_in(tab) -> bool:
 
     return bool(state.get("authenticated"))
 
+async def collect_offline_reward(tab, timeout=5) -> bool:
+    """
+    Procura a recompensa offline e coleta a recompensa
+    clicando no botão #offline-modal-close.
+
+    A recompensa é opcional. Se não estiver disponível,
+    retorna False sem gerar erro.
+    """
+
+    js = """
+    (() => {
+        const button = document.getElementById(
+            'offline-modal-close'
+        );
+
+        if (!button) {
+            return JSON.stringify({
+                found: false,
+                visible: false,
+                clicked: false
+            });
+        }
+
+        const rect = button.getBoundingClientRect();
+        const style = getComputedStyle(button);
+
+        const visible =
+            rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== 'none' &&
+            style.visibility !== 'hidden';
+
+        if (!visible) {
+            return JSON.stringify({
+                found: true,
+                visible: false,
+                clicked: false
+            });
+        }
+
+        button.click();
+
+        return JSON.stringify({
+            found: true,
+            visible: true,
+            clicked: true
+        });
+    })()
+    """
+
+    attempts = int(timeout / 0.5)
+
+    for _ in range(attempts):
+        result = await tab.execute_script(js)
+
+        value = extract_execute_result(result)
+
+        if isinstance(value, str):
+            try:
+                state = json.loads(value)
+            except json.JSONDecodeError:
+                state = {}
+
+            if state.get("clicked"):
+                print("RECOMPENSA OFFLINE ENCONTRADA!")
+                print("Recompensa coletada.")
+
+                return True
+
+        await asyncio.sleep(0.5)
+
+    print("Nenhuma recompensa offline disponível.")
+
+    return False
+
 
 async def wait_for_auth_modal(tab, timeout=5) -> bool:
     """
@@ -268,6 +343,8 @@ async def login(tab, login: str, password: str) -> bool:
         print()
         print("SESSÃO JÁ AUTENTICADA.")
         print("Não será necessário fazer login novamente.")
+
+        await collect_offline_reward(tab)
 
         return True
 
@@ -521,6 +598,8 @@ async def login(tab, login: str, password: str) -> bool:
 
         print()
         print("LOGIN REALIZADO COM SUCESSO!")
+
+        await collect_offline_reward(tab)
 
         return True
 
