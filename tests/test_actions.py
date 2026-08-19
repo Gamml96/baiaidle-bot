@@ -37,7 +37,7 @@ async def main():
         print("Credenciais carregadas do .env.")
 
         # ========================================================
-        # 2. NAVEGADOR
+        # 2. CRIAR NAVEGADOR
         # ========================================================
 
         browser = create_browser()
@@ -49,7 +49,7 @@ async def main():
         print("Navegador iniciado.")
 
         # ========================================================
-        # 3. ABA
+        # 3. ABRIR ABA
         # ========================================================
 
         tab = await browser.new_tab()
@@ -79,21 +79,16 @@ async def main():
 
             print()
             print("LOGIN FALHOU.")
-
-            print()
-            print(
-                "Navegador permanecerá aberto por 60 segundos."
-            )
-
-            await asyncio.sleep(60)
-
             return
 
         # ========================================================
-        # 5. VALIDAR VENDA
+        # 5. VALIDAÇÃO DA SESSÃO
         # ========================================================
 
-        sale_success = await validate_sale(tab)
+        validation_success = await validate_sale(
+            tab,
+            timeout=30,
+        )
 
         # ========================================================
         # 6. RESULTADO
@@ -102,10 +97,14 @@ async def main():
         print()
         print("=== RESULTADO FINAL ===")
 
-        if sale_success:
+        if validation_success:
             print("VALIDAÇÃO DA VENDA OK!")
         else:
             print("VALIDAÇÃO DA VENDA FALHOU!")
+
+        # ========================================================
+        # 7. URL FINAL
+        # ========================================================
 
         try:
 
@@ -117,7 +116,7 @@ async def main():
             pass
 
         # ========================================================
-        # 7. MANTER NAVEGADOR ABERTO
+        # 8. MANTER NAVEGADOR ABERTO
         # ========================================================
 
         print()
@@ -126,10 +125,9 @@ async def main():
         print("Navegador permanecerá aberto.")
         print("Pressione CTRL+C no terminal para encerrar.")
         print("========================================")
-        print()
 
         while True:
-            await asyncio.sleep(60)
+            await asyncio.sleep(1)
 
     except KeyboardInterrupt:
 
@@ -145,24 +143,18 @@ async def main():
 
         traceback.print_exc()
 
-        print()
-        print("Navegador permanecerá aberto por 60 segundos.")
-
-        await asyncio.sleep(60)
-
     finally:
+
+        # ========================================================
+        # NÃO ENCERRAR AUTOMATICAMENTE
+        # ========================================================
 
         if browser:
 
             print()
-            print("Encerrando navegador...")
-
-            try:
-                await browser.stop()
-            except Exception:
-                pass
-
-            print("Navegador encerrado.")
+            print(
+                "Navegador não será encerrado automaticamente."
+            )
 
 
 if __name__ == "__main__":
