@@ -170,7 +170,7 @@ def create_browser() -> Chrome:
 
     # Linux normalmente será executado sem interface gráfica.
     if platform.system() == "Linux":
-        options.add_argument("--headless")
+        options.add_argument("--headless=new")
 
     # Necessário em muitos ambientes Linux/servidores.
     if platform.system() == "Linux":
