@@ -1,29 +1,18 @@
 import asyncio
 
-from .config import (
+from baiaidle.config import (
     BAIAKIDLE_LOGIN,
     BAIAKIDLE_PASSWORD,
     BAIAKIDLE_URL,
 )
 
-from .browser import create_browser
-from .login import login
+from baiaidle.browser import create_browser
+from baiaidle.login import login
+from baiaidle.actions import validate_sale
+from baiaidle.hunt import run_hunt
 
 
-async def run_bot():
-    """
-    Executa o bot principal do Baiak Idle.
-
-    Responsabilidades atuais:
-    - iniciar o navegador;
-    - abrir o jogo;
-    - autenticar a conta;
-    - coletar recompensa offline;
-    - manter o navegador aberto.
-
-    As próximas ações do personagem serão adicionadas
-    ao loop principal posteriormente.
-    """
+async def main():
 
     browser = None
     tab = None
@@ -50,7 +39,7 @@ async def run_bot():
         print("Credenciais carregadas do .env.")
 
         # ========================================================
-        # 2. CRIAR NAVEGADOR
+        # 2. NAVEGADOR
         # ========================================================
 
         browser = create_browser()
@@ -62,12 +51,15 @@ async def run_bot():
         print("Navegador iniciado.")
 
         # ========================================================
-        # 3. ABRIR ABA
+        # 3. ABA
         # ========================================================
 
         tab = await browser.new_tab()
 
-        url = BAIAKIDLE_URL.rstrip("/") + "/jogar"
+        url = (
+            BAIAKIDLE_URL.rstrip("/")
+            + "/jogar"
+        )
 
         print("Abrindo:", url)
 
@@ -76,11 +68,13 @@ async def run_bot():
         await asyncio.sleep(3)
 
         print("Página carregada.")
-        print()
 
         # ========================================================
         # 4. LOGIN
         # ========================================================
+
+        print()
+        print("Iniciando login...")
 
         success = await login(
             tab,
@@ -89,30 +83,51 @@ async def run_bot():
         )
 
         if not success:
-            raise RuntimeError(
-                "LOGIN FALHOU!"
-            )
+
+            print()
+            print("ERRO: login falhou.")
+
+            return
+
+        print()
+        print("Login realizado com sucesso.")
 
         # ========================================================
-        # 5. BOT PRONTO
+        # 5. VALIDAÇÃO DA SESSÃO
         # ========================================================
 
         print()
-        print("=== BOT PRONTO ===")
-        print("LOGIN OK!")
-        print("Personagem autenticado.")
-        print("Navegador permanecerá aberto.")
+        print("Iniciando validação da sessão...")
+
+        validated = await validate_sale(tab)
+
+        if not validated:
+
+            print()
+            print("ERRO: validação da sessão falhou.")
+
+            return
+
+        # ========================================================
+        # 6. BOT PRONTO
+        # ========================================================
+
         print()
+        print("========================================")
+        print("BOT PRONTO")
+        print("========================================")
+
+        print("Login OK.")
+        print("Sessão validada.")
+        print("Iniciando loop principal da hunt.")
+
+        print("========================================")
 
         # ========================================================
-        # 6. LOOP PRINCIPAL
+        # 7. HUNT
         # ========================================================
 
-        while True:
-
-            print("Bot aguardando próxima ação...")
-
-            await asyncio.sleep(10)
+        await run_hunt(tab)
 
     except KeyboardInterrupt:
 
@@ -122,7 +137,7 @@ async def run_bot():
     except Exception as e:
 
         print()
-        print("ERRO NO BOT:", e)
+        print("ERRO:", e)
 
         import traceback
 
@@ -131,18 +146,19 @@ async def run_bot():
     finally:
 
         # ========================================================
-        # 7. FECHAR ABA
+        # FECHAR ABA
         # ========================================================
 
         if tab:
 
             try:
                 await tab.close()
+
             except Exception:
                 pass
 
         # ========================================================
-        # 8. ENCERRAR NAVEGADOR
+        # FECHAR NAVEGADOR
         # ========================================================
 
         if browser:
@@ -152,18 +168,12 @@ async def run_bot():
 
             try:
                 await browser.stop()
-            except Exception as e:
-                print(
-                    "Erro ao encerrar navegador:",
-                    e,
-                )
+
+            except Exception:
+                pass
 
             print("Navegador encerrado.")
 
 
-def main():
-    asyncio.run(run_bot())
-
-
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
