@@ -1096,31 +1096,59 @@ async def wait_until_sell_available(
 
 async def validate_sale(
     tab,
-    timeout: float = 120,
+    timeout: float = 180,
 ) -> bool:
     """
-    Valida a sessão.
+    Valida a sessão através de duas vendas.
 
-    PRIMEIRA VENDA
-    --------------
-    Serve para disparar a validação Cloudflare.
+    Primeira venda:
+        - dispara a validação Cloudflare;
+        - é uma venda real;
+        - não usa cooldown como critério de validação.
 
-    Não exige cooldown.
+    Segunda venda:
+        - aguarda a página estabilizar;
+        - aguarda a venda ficar disponível;
+        - executa a segunda venda;
+        - verifica o cooldown após o processamento.
 
-    SEGUNDA VENDA
-    -------------
-    É a venda usada para confirmar que a sessão
-    está realmente validada.
+    Fluxo:
 
-    Após a segunda venda:
-
+        disponibilidade
+            ↓
+        PRIMEIRA VENDA
+            ↓
         #sell-all
             ↓
-        disabled
+        #confirm-modal-body
             ↓
-        cooldown confirmado
-
-    somente então a validação é considerada concluída.
+        captura valor
+            ↓
+        #confirm-yes
+            ↓
+        Cloudflare
+            ↓
+        processamento
+            ↓
+        aguardar estabilização
+            ↓
+        disponibilidade
+            ↓
+        SEGUNDA VENDA
+            ↓
+        #sell-all
+            ↓
+        #confirm-modal-body
+            ↓
+        #confirm-yes
+            ↓
+        Cloudflare
+            ↓
+        processamento
+            ↓
+        cooldown
+            ↓
+        validação confirmada
     """
 
     print()
@@ -1134,18 +1162,15 @@ async def validate_sale(
 
     print()
     print(
-        "Verificando disponibilidade "
-        "da primeira venda..."
+        "Verificando disponibilidade da primeira venda..."
     )
 
     if not await wait_until_sell_available(
         tab,
-        timeout=180,
+        timeout=timeout,
     ):
-
         print(
-            "ERRO: primeira venda "
-            "não está disponível."
+            "ERRO: primeira venda não está disponível."
         )
 
         return False
@@ -1160,13 +1185,15 @@ async def validate_sale(
         "para validar a sessão."
     )
 
+    # ------------------------------------------------------------
+    # ABRIR MODAL
+    # ------------------------------------------------------------
+
     if not await open_sale_confirmation(
         tab
     ):
-
         print(
-            "ERRO: primeira venda "
-            "não pôde ser iniciada."
+            "ERRO: primeira venda não pôde ser iniciada."
         )
 
         return False
@@ -1175,19 +1202,22 @@ async def validate_sale(
     # CAPTURAR VALOR
     # ------------------------------------------------------------
 
-    first_sale_value = await get_sale_value(
+    sale_value = await get_sale_value(
         tab
     )
 
-    if first_sale_value > 0:
+    if sale_value:
 
         print(
             "Valor da venda:",
-            f"{first_sale_value:,}".replace(
-                ",",
-                ".",
-            ),
-            "gold",
+            f"{format_gold(sale_value)} gold",
+        )
+
+    else:
+
+        print(
+            "AVISO: não foi possível "
+            "capturar o valor da primeira venda."
         )
 
     # ------------------------------------------------------------
@@ -1197,10 +1227,9 @@ async def validate_sale(
     if not await confirm_sale(
         tab
     ):
-
         print(
-            "ERRO: primeira venda "
-            "não pôde ser confirmada."
+            "ERRO: primeira venda não pôde "
+            "ser confirmada."
         )
 
         return False
@@ -1211,7 +1240,7 @@ async def validate_sale(
 
     if not await wait_for_cloudflare(
         tab,
-        timeout=timeout,
+        timeout=60,
     ):
 
         print(
@@ -1232,7 +1261,7 @@ async def validate_sale(
     )
 
     await asyncio.sleep(
-        3
+        2
     )
 
     print()
@@ -1247,7 +1276,25 @@ async def validate_sale(
     )
 
     # ============================================================
-    # AGUARDAR SEGUNDA VENDA DISPONÍVEL
+    # ESTABILIZAÇÃO DA PÁGINA
+    # ============================================================
+
+    print()
+    print(
+        "Aguardando estabilização da página "
+        "antes da segunda venda..."
+    )
+
+    await asyncio.sleep(
+        10
+    )
+
+    print(
+        "Página estabilizada."
+    )
+
+    # ============================================================
+    # SEGUNDA VENDA
     # ============================================================
 
     print()
@@ -1258,7 +1305,7 @@ async def validate_sale(
 
     if not await wait_until_sell_available(
         tab,
-        timeout=180,
+        timeout=timeout,
     ):
 
         print(
@@ -1267,10 +1314,6 @@ async def validate_sale(
         )
 
         return False
-
-    # ============================================================
-    # SEGUNDA VENDA
-    # ============================================================
 
     print()
     print(
@@ -1281,6 +1324,10 @@ async def validate_sale(
         "Executando a segunda venda "
         "para confirmar a validação."
     )
+
+    # ------------------------------------------------------------
+    # ABRIR MODAL
+    # ------------------------------------------------------------
 
     if not await open_sale_confirmation(
         tab
@@ -1294,22 +1341,25 @@ async def validate_sale(
         return False
 
     # ------------------------------------------------------------
-    # VALOR
+    # CAPTURAR VALOR
     # ------------------------------------------------------------
 
     second_sale_value = await get_sale_value(
         tab
     )
 
-    if second_sale_value > 0:
+    if second_sale_value:
 
         print(
-            "Valor da venda:",
-            f"{second_sale_value:,}".replace(
-                ",",
-                ".",
-            ),
-            "gold",
+            "Valor da segunda venda:",
+            f"{format_gold(second_sale_value)} gold",
+        )
+
+    else:
+
+        print(
+            "AVISO: não foi possível "
+            "capturar o valor da segunda venda."
         )
 
     # ------------------------------------------------------------
@@ -1328,23 +1378,23 @@ async def validate_sale(
         return False
 
     # ============================================================
-    # CLOUDFLARE
+    # CLOUDFLARE DA SEGUNDA VENDA
     # ============================================================
 
     if not await wait_for_cloudflare(
         tab,
-        timeout=timeout,
+        timeout=60,
     ):
 
         print(
             "ERRO: validação Cloudflare "
-            "da segunda venda falhou."
+            "da segunda venda não foi concluída."
         )
 
         return False
 
     # ============================================================
-    # PROCESSAMENTO
+    # PROCESSAMENTO DA SEGUNDA VENDA
     # ============================================================
 
     print()
@@ -1354,29 +1404,28 @@ async def validate_sale(
     )
 
     await asyncio.sleep(
-        3
+        2
     )
 
     # ============================================================
-    # COOLDOWN
+    # COOLDOWN DA SEGUNDA VENDA
     # ============================================================
+
+    print()
+    print(
+        "Verificando cooldown "
+        "da segunda venda..."
+    )
 
     if not await wait_for_sell_cooldown(
         tab,
-        timeout=30,
-        check_interval=1.0,
+        timeout=15,
     ):
 
         print()
         print(
-            "ERRO: a segunda venda foi "
-            "confirmada, mas o cooldown "
-            "não foi detectado."
-        )
-
-        print(
-            "A sessão NÃO será considerada "
-            "validada."
+            "ERRO: a segunda venda foi confirmada, "
+            "mas o cooldown não foi detectado."
         )
 
         return False
@@ -1395,7 +1444,7 @@ async def validate_sale(
     )
 
     print(
-        "Primeira venda: validação disparada."
+        "Primeira venda: realizada."
     )
 
     print(
@@ -1403,11 +1452,11 @@ async def validate_sale(
     )
 
     print(
-        "Segunda venda: venda efetiva."
+        "Segunda venda: realizada."
     )
 
     print(
-        "Cooldown do #sell-all confirmado."
+        "Cooldown da segunda venda confirmado."
     )
 
     print(
