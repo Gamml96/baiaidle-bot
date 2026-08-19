@@ -10,9 +10,19 @@ from .config import CHROMIUM_BINARY, CHROMIUM_USER_DATA_DIR
 
 
 def find_browser() -> str:
-    """Localiza automaticamente o Chrome/Chromium."""
+    """
+    Localiza automaticamente Chrome/Chromium.
 
-    # Caminho definido explicitamente no .env
+    Ordem:
+    1. CHROMIUM_BINARY do .env
+    2. caminhos conhecidos do sistema
+    3. PATH
+    """
+
+    # ============================================================
+    # 1. Caminho definido no .env
+    # ============================================================
+
     if CHROMIUM_BINARY:
         path = Path(CHROMIUM_BINARY).expanduser()
 
@@ -26,24 +36,30 @@ def find_browser() -> str:
 
     system = platform.system()
 
+    # ============================================================
     # Linux
+    # ============================================================
+
     if system == "Linux":
+
         candidates = [
-            "/snap/bin/chromium",
-            "/usr/bin/chromium",
-            "/usr/bin/chromium-browser",
-            "/usr/bin/google-chrome",
-            "/usr/bin/google-chrome-stable",
+            Path("/snap/bin/chromium"),
+            Path("/usr/bin/chromium"),
+            Path("/usr/bin/chromium-browser"),
+            Path("/usr/bin/google-chrome"),
+            Path("/usr/bin/google-chrome-stable"),
         ]
 
         for candidate in candidates:
-            path = Path(candidate)
+            if candidate.exists():
+                return str(candidate)
 
-            if path.exists():
-                return str(path)
-
+    # ============================================================
     # Windows
+    # ============================================================
+
     elif system == "Windows":
+
         candidates = [
             Path(
                 r"C:\Program Files\Google\Chrome\Application\chrome.exe"
@@ -68,8 +84,12 @@ def find_browser() -> str:
             if candidate.exists():
                 return str(candidate)
 
+    # ============================================================
     # macOS
+    # ============================================================
+
     elif system == "Darwin":
+
         candidates = [
             Path(
                 "/Applications/Google Chrome.app/"
@@ -85,7 +105,10 @@ def find_browser() -> str:
             if candidate.exists():
                 return str(candidate)
 
-    # Procurar no PATH
+    # ============================================================
+    # PATH
+    # ============================================================
+
     commands = [
         "chromium",
         "chromium-browser",
@@ -107,24 +130,57 @@ def find_browser() -> str:
 
 
 def create_browser() -> Chrome:
-    """Cria uma instância do navegador Pydoll."""
+    """
+    Cria uma instância do Chrome/Chromium usando Pydoll.
+
+    A configuração é compatível com Windows e Linux.
+    """
 
     binary = find_browser()
 
     print(f"Browser encontrado: {binary}")
     print(f"Perfil: {CHROMIUM_USER_DATA_DIR}")
 
+    # ============================================================
+    # Criar diretório do perfil
+    # ============================================================
+
     CHROMIUM_USER_DATA_DIR.mkdir(
         parents=True,
         exist_ok=True,
     )
 
+    # ============================================================
+    # Verificar permissões
+    # ============================================================
+
+    if not os.access(CHROMIUM_USER_DATA_DIR, os.W_OK):
+        raise RuntimeError(
+            "O diretório do perfil do Chromium não possui "
+            f"permissão de escrita: {CHROMIUM_USER_DATA_DIR}"
+        )
+
+    # ============================================================
+    # Opções do Chromium
+    # ============================================================
+
     options = ChromiumOptions()
 
     options.binary_location = binary
 
-    # options.add_argument("--headless")
-    options.add_argument("--no-sandbox")
+    # Linux normalmente será executado sem interface gráfica.
+    if platform.system() == "Linux":
+        options.add_argument("--headless")
+
+    # Necessário em muitos ambientes Linux/servidores.
+    if platform.system() == "Linux":
+        options.add_argument("--no-sandbox")
+
+    options.add_argument("--disable-gpu")
+
+    options.add_argument(
+        "--disable-dev-shm-usage"
+    )
 
     options.add_argument(
         f"--user-data-dir={CHROMIUM_USER_DATA_DIR}"
