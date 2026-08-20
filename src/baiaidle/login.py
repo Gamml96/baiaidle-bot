@@ -228,17 +228,20 @@ async def open_login_modal(tab) -> bool:
 async def handle_login_cloudflare(tab, timeout=30) -> bool:
     """
     Monitora ativamente a presença do Cloudflare após o envio do formulário.
-    Usa o clique físico (humanize=True) para passar pela verificação.
+    Usa o clique físico (humanize=True) na classe .mk-captcha.
     """
     print()
     print("Aguardando resposta do servidor e checando Cloudflare...")
     start = asyncio.get_running_loop().time()
 
-    xpaths = [
-        '//iframe[contains(@src, "challenges.cloudflare.com")]',
-        '//iframe[contains(@src, "cloudflare")]',
-        '//div[contains(@class, "mk-captcha")]//iframe'
-    ]
+    js_check = """
+    (() => {
+        const el = document.querySelector('.mk-captcha');
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        return (rect.width > 0 && rect.height > 0);
+    })()
+    """
 
     while True:
         # Se o nick apareceu, o login já foi concluído
@@ -250,16 +253,18 @@ async def handle_login_cloudflare(tab, timeout=30) -> bool:
             print("Timeout na verificação do login/Cloudflare.")
             return False
 
-        for xpath in xpaths:
-            try:
-                element = await tab.find(xpath=xpath, timeout=1)
+        try:
+            result = await tab.execute_script(js_check)
+            is_ready = extract_execute_result(result)
+            
+            if is_ready:
+                print("⚠️ Desafio Cloudflare interceptou o login! Executando clique real...")
+                element = await tab.find(xpath='//*[contains(@class, "mk-captcha")]', timeout=3)
                 if element:
-                    print("⚠️ Desafio Cloudflare interceptou o login! Executando clique real...")
                     await element.click(humanize=True)
-                    await asyncio.sleep(2)
-                    break
-            except Exception:
-                continue
+                    await asyncio.sleep(2.5)
+        except Exception:
+            pass
 
         await asyncio.sleep(1)
 

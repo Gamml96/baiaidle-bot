@@ -432,52 +432,48 @@ async def detect_cloudflare(
 
 
 # ================================================================
-# FORÇAR CLIQUE NO CLOUDFLARE
+# FORÇAR CLIQUE NO CLOUDFLARE (OTIMIZADO)
 # ================================================================
 
 async def click_cloudflare_challenge(
     tab,
 ) -> bool:
     """
-    Tenta clicar automaticamente no desafio Cloudflare injetado no modal.
+    Verifica com JS se o contêiner do Cloudflare está pronto antes de 
+    pedir ao Pydoll para clicar, evitando spam de 'Timeout'.
     """
-    js = """
+    js_check = """
     (() => {
-        const selectors = [
-            'input[type="checkbox"]',
-            'iframe[src*="challenges.cloudflare.com"]',
-            'iframe[src*="cloudflare"]',
-            '[class*="cf-turnstile"]',
-            '[id*="cf-turnstile"]'
-        ];
-        for (const selector of selectors) {
-            const elements = document.querySelectorAll(selector);
-            for (const element of elements) {
-                const rect = element.getBoundingClientRect();
-                const style = getComputedStyle(element);
-                const visible =
-                    rect.width > 0 &&
-                    rect.height > 0 &&
-                    style.display !== 'none' &&
-                    style.visibility !== 'hidden';
-                if (!visible) continue;
-                try {
-                    element.click();
-                    return true;
-                } catch (error) {
-                    console.log("Falha no clique Cloudflare:", error);
-                }
-            }
-        }
-        return false;
+        const el = document.querySelector('.mk-captcha');
+        if (!el) return false;
+        
+        const rect = el.getBoundingClientRect();
+        // Garante que o elemento já tem tamanho na tela antes de clicar
+        return (rect.width > 0 && rect.height > 0);
     })()
     """
+    
     try:
-        result = await tab.execute_script(js)
-        value = extract_execute_result(result)
-        return value is True
+        # 1. Verifica silenciosamente pelo JS se o elemento existe e está visível
+        result = await tab.execute_script(js_check)
+        is_ready = extract_execute_result(result)
+        
+        if is_ready:
+            print("🎯 Contêiner do Cloudflare pronto! Executando clique físico...")
+            
+            # 2. Pede ao Pydoll para clicar no contêiner principal
+            element = await tab.find(xpath='//*[contains(@class, "mk-captcha")]', timeout=3)
+            
+            if element:
+                await element.click(humanize=True)
+                await asyncio.sleep(2.5)  # Dá tempo para o Cloudflare processar a animação
+                return True
+                
     except Exception:
-        return False
+        # Ignora exceções silenciosamente para manter o terminal limpo
+        pass
+        
+    return False
 
 # ================================================================
 # AGUARDAR CLOUDFLARE
