@@ -13,7 +13,7 @@ from baiaidle.browser import (
 )
 from baiaidle.login import login
 from baiaidle.actions import validate_sale
-from baiaidle.hunt import run_hunt
+from baiaidle.sell import run_sell
 
 
 class GameBot:
@@ -33,6 +33,8 @@ class GameBot:
         self.running = False
 
         self.starting = False
+
+        self.on_message = None  # <--- NOVA LINHA: Callback do Telegram
 
     # ============================================================
     # START
@@ -183,10 +185,11 @@ class GameBot:
             # ====================================================
 
             self.hunt_task = asyncio.create_task(
-                run_hunt(
+                run_sell(
                     self.tab,
                     self.stop_event,
                     self.hunt_pause_event,
+                    self.on_message,  # <--- NOVA LINHA: Passando o callback para a hunt
                 )
             )
 
@@ -259,10 +262,8 @@ class GameBot:
         if self.tab:
 
             try:
-                # === NOVA LINHA ADICIONADA AQUI ===
                 print("Desativando bypass automático do Cloudflare...")
                 await self.tab.disable_auto_solve_cloudflare_captcha()
-                # ==================================
                 await self.tab.close()
 
             except Exception:

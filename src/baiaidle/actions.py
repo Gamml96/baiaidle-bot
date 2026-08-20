@@ -1335,3 +1335,45 @@ async def validate_sale(
     print("========================================")
 
     return True
+
+# ================================================================
+# CAPTURAR DADOS DO HUD (GOLD, XP, STAMINA)
+# ================================================================
+
+async def get_hud_data(tab) -> dict:
+    """
+    Extrai Gold, XP, Stamina e tempo de stamina do HUD do jogo.
+    """
+    js = """
+    (() => {
+        const getVal = (xpath) => {
+            const el = document.evaluate(
+                xpath, document, null,
+                XPathResult.FIRST_ORDERED_NODE_TYPE, null
+            ).singleNodeValue;
+            return el ? (el.innerText || el.textContent || '').trim() : '';
+        };
+
+        return JSON.stringify({
+            gold: getVal('//*[@id="hud-gold"]'),
+            xp: getVal('//*[@id="an-raw"]'),
+            stamina_pct: getVal('//*[@id="stamina-pct"]'),
+            stamina_time: getVal('//*[@id="stamina-time"]')
+        });
+    })()
+    """
+
+    try:
+        result = await tab.execute_script(js)
+        value = extract_execute_result(result)
+        if isinstance(value, str):
+            return json.loads(value)
+    except Exception:
+        pass
+
+    return {
+        "gold": "",
+        "xp": "",
+        "stamina_pct": "",
+        "stamina_time": ""
+    }

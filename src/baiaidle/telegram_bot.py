@@ -25,6 +25,13 @@ from baiaidle.config import (
     TELEGRAM_BOT_TOKEN,
 )
 
+# === IMPORTANDO NOSSO NOVO MÓDULO DE HUNTS ===
+from baiaidle.hunts import (
+    get_current_hunt,
+    get_hunts_list,
+    change_hunt,
+    debug_hunts_dom
+)
 
 # ================================================================
 # SUPERVISOR
@@ -104,6 +111,16 @@ class TelegramController:
             BotCommand(
                 "status",
                 "Mostrar status",
+            ),
+
+            BotCommand(
+                "hunts",
+                "Listar hunts disponíveis",
+            ),
+
+            BotCommand(
+                "hunt",
+                "Mudar de hunt",
             ),
 
             BotCommand(
@@ -206,6 +223,21 @@ class TelegramController:
             "⏳ Iniciando bot...\n"
             "Aguarde o login e a validação."
         )
+
+        # ============================================================
+        # INJETANDO O CALLBACK NO GAMEBOT
+        # ============================================================
+        chat_id = update.effective_chat.id
+
+        async def send_hunt_msg(text):
+            try:
+                await context.bot.send_message(chat_id=chat_id, text=text)
+            except Exception as e:
+                print(f"Erro ao enviar mensagem para o Telegram: {e}")
+
+        # Atrela o enviador de mensagens à instância do GameBot
+        self.bot.on_message = send_hunt_msg
+        # ============================================================
 
         try:
 
@@ -372,11 +404,121 @@ class TelegramController:
 
             return
 
+        # Busca o nome da hunt atual caso o bot esteja online caçando
+        try:
+            current_hunt = await get_current_hunt(self.bot.tab)
+        except:
+            current_hunt = "Desconhecida"
+
         await update.message.reply_text(
-            "🟢 BOT ONLINE\n\n"
-            "Atividade: 🏹 HUNT\n\n"
-            "AutoBoss: inativo."
+            f"🟢 BOT ONLINE\n\n"
+            f"Atividade: 🏹 HUNT\n"
+            f"Local atual: {current_hunt}\n\n"
+            f"AutoBoss: inativo."
         )
+
+    # ============================================================
+    # /HUNTS
+    # ============================================================
+    
+    async def hunts(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
+            return
+
+        await update.message.reply_text("⏳ Capturando lista atual de Hunts disponíveis...")
+        
+        # Pausamos a hunt para navegar no menu com segurança
+        self.bot.pause_hunt()
+        try:
+            current = await get_current_hunt(self.bot.tab)
+            hunts_data = await get_hunts_list(self.bot.tab)
+            
+            if not hunts_data:
+                await update.message.reply_text("❌ Nenhuma hunt encontrada ou ocorreu falha ao abrir o menu.")
+            else:
+                lines = [f"🗺️ HUNTS DISPONÍVEIS\n\n📍 Atual: {current}\n"]
+                for h in hunts_data:
+                    lines.append(f"{h['index']} - {h['name']}")
+                lines.append("\nPara mudar digite: /hunt <numero> ou /hunt <nome da hunt>")
+                
+                msg = "\n".join(lines)
+                if len(msg) > 4000:
+                    await update.message.reply_text(msg[:4000])
+                    await update.message.reply_text(msg[4000:])
+                else:
+                    await update.message.reply_text(msg)
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao listar hunts: {e}")
+        finally:
+            self.bot.resume_hunt()
+
+    # ============================================================
+    # /HUNT <numero ou nome>
+    # ============================================================
+
+    async def hunt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
+            return
+
+        if not context.args:
+            await update.message.reply_text("Uso: /hunt <numero> ou /hunt <nome da hunt>")
+            return
+            
+        hunt_identifier = " ".join(context.args)
+        await update.message.reply_text(f"⏳ Alterando destino de caça para: {hunt_identifier}...")
+        
+        # Pausamos a hunt de vendas para focar na mudança
+        self.bot.pause_hunt()
+        try:
+            success, msg = await change_hunt(self.bot.tab, hunt_identifier)
+            if success:
+                await update.message.reply_text(f"✅ {msg}")
+            else:
+                await update.message.reply_text(f"❌ {msg}")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao mudar de hunt: {e}")
+        finally:
+            self.bot.resume_hunt()
+
+    # ============================================================
+    # /DEBUGHUNT
+    # ============================================================
+
+    async def debughunt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Ferramenta caso a extração ou mudança de hunt falhe"""
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 Bot inativo.")
+            return
+            
+        await update.message.reply_text("⏳ Capturando código HTML do modal de Hunts para diagnóstico...")
+        self.bot.pause_hunt()
+        try:
+            dom = await debug_hunts_dom(self.bot.tab)
+            if dom:
+                with open("hunts_dom.txt", "w", encoding="utf-8") as f:
+                    f.write(dom)
+                await update.message.reply_text("DOM capturado! Salvo na máquina como 'hunts_dom.txt'. Primeiros 4000 caracteres:")
+                await update.message.reply_text(dom[:4000])
+            else:
+                await update.message.reply_text("❌ Falha ao capturar.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro: {e}")
+        finally:
+            self.bot.resume_hunt()
 
     # ============================================================
     # /BOSSES
@@ -696,13 +838,19 @@ Comandos:
 Inicia o bot.
 
 /stop
-Para o bot e fecha o Chromium.
+Para o bot.
 
 /status
-Mostra o estado atual.
+Mostra o estado atual e a Hunt.
+
+/hunts
+Lista todos os mapas de caça disponíveis.
+
+/hunt <id> ou <nome>
+Muda de hunt. Ex: /hunt 1 ou /hunt Livraria
 
 /bosses
-Mostra a lista atual de bosses.
+Mostra a lista de bosses.
 
 /autoboss 1,2,3
 Inicia AutoBoss usando os índices.
@@ -712,10 +860,6 @@ Para o AutoBoss e retoma a Hunt.
 
 /help
 Mostra esta mensagem.
-
-🏹 Quando o AutoBoss terminar
-todos os bosses da fila, a Hunt
-será retomada automaticamente.
 """
 
         await update.message.reply_text(
@@ -773,6 +917,30 @@ async def main():
         CommandHandler(
             "status",
             controller.status,
+        )
+    )
+
+    # NOVO COMANDO HUNTS
+    application.add_handler(
+        CommandHandler(
+            "hunts",
+            controller.hunts,
+        )
+    )
+
+    # NOVO COMANDO HUNT
+    application.add_handler(
+        CommandHandler(
+            "hunt",
+            controller.hunt,
+        )
+    )
+
+    # NOVO COMANDO DE DEBUG PARA HUNTS
+    application.add_handler(
+        CommandHandler(
+            "debughunt",
+            controller.debughunt,
         )
     )
 

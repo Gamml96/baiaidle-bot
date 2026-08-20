@@ -9,6 +9,7 @@ from baiaidle.actions import (
     confirm_sale,
     wait_for_cloudflare,
     wait_for_sell_cooldown,
+    get_hud_data,
 )
 
 
@@ -40,6 +41,8 @@ class HuntStats:
 
     sales: int = 0
 
+    total_xp: int = 0
+
     def add_sale(
         self,
         value: int,
@@ -48,6 +51,13 @@ class HuntStats:
         self.total_gold += value
 
         self.sales += 1
+
+    def add_xp(
+        self,
+        xp_value: int,
+    ):
+        if xp_value > 0:
+            self.total_xp += xp_value
 
     def elapsed(
         self,
@@ -74,12 +84,28 @@ class HuntStats:
             * 3600
         )
 
+    def xp_per_hour(
+        self,
+    ) -> float:
+
+        elapsed = self.elapsed()
+
+        if elapsed <= 0:
+
+            return 0
+
+        return (
+            self.total_xp
+            / elapsed
+            * 3600
+        )
+
 
 # ================================================================
 # UTILITÁRIOS
 # ================================================================
 
-def format_gold(
+def format_number(
     value: int,
 ) -> str:
 
@@ -140,6 +166,20 @@ def random_retry_delay() -> float:
         RETRY_INTERVAL
         + jitter
     )
+
+
+def parse_clean_int(text: str) -> int:
+    """
+    Remove pontos e caracteres não numéricos para converter em inteiro.
+    """
+    import re
+    cleaned = re.sub(r"[^0-9]", "", text)
+    if not cleaned:
+        return 0
+    try:
+        return int(cleaned)
+    except ValueError:
+        return 0
 
 
 # ================================================================
@@ -226,9 +266,6 @@ async def wait_until_sell_available(
             f"{delay:.1f} segundos."
         )
 
-        # Dorme em pequenos blocos para
-        # conseguir cancelar rapidamente.
-
         remaining = delay
 
         while remaining > 0:
@@ -260,6 +297,7 @@ async def execute_sale(
     tab,
     stats: HuntStats,
     stop_event=None,
+    on_message=None,  # <--- NOVA LINHA: Recebe o callback do Telegram
 ) -> bool:
 
     print()
@@ -300,7 +338,7 @@ async def execute_sale(
 
         print(
             "Valor da venda:",
-            f"{format_gold(sale_value)} gold",
+            f"{format_number(sale_value)} gold",
         )
 
     else:
@@ -353,44 +391,58 @@ async def execute_sale(
         "Venda processada com sucesso."
     )
 
+    # Coleta os dados atualizados do HUD após a venda processada
+    hud_data = await get_hud_data(tab)
+    
+    current_balance_str = hud_data.get("gold", "0")
+    current_xp_str = hud_data.get("xp", "0")
+    stamina_pct = hud_data.get("stamina_pct", "0%")
+    stamina_time = hud_data.get("stamina_time", "00:00")
+
+    current_xp = parse_clean_int(current_xp_str)
+    stats.add_xp(current_xp)
+
     if sale_value > 0:
 
         stats.add_sale(
             sale_value
         )
 
+        # Printa no terminal
         print()
-        print(
-            "========================================"
-        )
+        print("========================================")
+        print(f"VENDA #{stats.sales}")
+        print(f"Tempo: {format_duration(stats.elapsed())}")
+        print(f"Valor: {format_number(sale_value)} gold")
+        print(f"Acumulado da Hunt: {format_number(stats.total_gold)} gold")
+        print(f"Gold Total (HUD): {current_balance_str}")
+        print(f"XP Obtida: {format_number(current_xp)}")
+        print(f"XP/h: {format_number(int(stats.xp_per_hour()))}")
+        print(f"Stamina: {stamina_pct} ({stamina_time})")
+        print(f"Gold/h: {format_number(int(stats.gold_per_hour()))}")
+        print("========================================")
 
-        print(
-            f"VENDA #{stats.sales}"
-        )
-
-        print(
-            f"Valor: "
-            f"{format_gold(sale_value)} gold"
-        )
-
-        print(
-            f"Acumulado: "
-            f"{format_gold(stats.total_gold)} gold"
-        )
-
-        print(
-            f"Tempo: "
-            f"{format_duration(stats.elapsed())}"
-        )
-
-        print(
-            f"Gold/h: "
-            f"{format_gold(int(stats.gold_per_hour()))}"
-        )
-
-        print(
-            "========================================"
-        )
+        # ========================================================
+        # ENVIA MENSAGEM PARA O TELEGRAM
+        # ========================================================
+        if on_message:
+            msg_telegram = (
+                f"💰 *VENDA #{stats.sales}*\n\n"
+                f"⏱️ Duração: {format_duration(stats.elapsed())}\n"
+                f"⚡ Stamina: {stamina_pct} ({stamina_time})\n\n"
+                f"🪙 Valor: {format_number(sale_value)} gold\n"
+                f"📈 Acumulado da Hunt: {format_number(stats.total_gold)} gold\n"
+                f"⚖️ Gold/h: {format_number(int(stats.gold_per_hour()))}"
+                f"🏦 Gold Total: {current_balance_str}\n\n"
+                f"✨ XP Obtida: {format_number(current_xp)}\n"
+                f"📊 XP/h: {format_number(int(stats.xp_per_hour()))}\n"
+            )
+            
+            try:
+                # O telegram permite usar parse_mode="Markdown" para renderizar negritos
+                await on_message(msg_telegram)
+            except Exception as e:
+                print(f"Erro ao notificar Telegram: {e}")
 
     return True
 
@@ -399,10 +451,11 @@ async def execute_sale(
 # LOOP DA HUNT
 # ================================================================
 
-async def run_hunt(
+async def run_sell(
     tab,
     stop_event,
     pause_event,
+    on_message=None,  # <--- NOVA LINHA: Recebe o callback
 ):
 
     stats = HuntStats(
@@ -503,6 +556,7 @@ async def run_hunt(
                 tab,
                 stats,
                 stop_event=stop_event,
+                on_message=on_message,  # <--- NOVA LINHA: Passa para o execute_sale
             )
 
             if (
