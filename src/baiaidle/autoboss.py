@@ -374,6 +374,10 @@ async def wait_for_boss_menu(
 
         if elapsed >= timeout:
 
+            print(
+                "Timeout aguardando lista de bosses."
+            )
+
             return False
 
         await asyncio.sleep(
@@ -482,7 +486,8 @@ async def get_boss_list(
 
                 if (
                     status !== ""
-                    || disabled
+                    ||
+                    disabled
                 ) {
 
                     return;
@@ -1027,6 +1032,186 @@ async def click_boss_card(
 
 
 # ================================================================
+# CONFIRMAR BOSS PELA BOSSBAR
+# ================================================================
+
+async def wait_for_bossbar_name(
+    tab,
+    boss_name: str,
+    timeout: float = 5,
+) -> bool:
+
+    print(
+        f"Confirmando Bossbar: {boss_name}..."
+    )
+
+    safe_name = json.dumps(
+        boss_name,
+        ensure_ascii=False
+    )
+
+    start = (
+        asyncio.get_running_loop().time()
+    )
+
+    last_printed_name = None
+
+    while True:
+
+        js = f"""
+        (() => {{
+
+            const expected =
+                {safe_name}.trim().toLowerCase();
+
+            const banner =
+                document.getElementById(
+                    "banner-host"
+                );
+
+            if (!banner) {{
+
+                return JSON.stringify({{
+
+                    found: false,
+
+                    name: null,
+
+                    match: false
+
+                }});
+
+            }}
+
+            const bossbar =
+                banner.querySelector(
+                    ".bossbar"
+                );
+
+            if (!bossbar) {{
+
+                return JSON.stringify({{
+
+                    found: false,
+
+                    name: null,
+
+                    match: false
+
+                }});
+
+            }}
+
+            const nameElement =
+                bossbar.querySelector(
+                    ".bossbar-name"
+                );
+
+            if (!nameElement) {{
+
+                return JSON.stringify({{
+
+                    found: true,
+
+                    name: null,
+
+                    match: false
+
+                }});
+
+            }}
+
+            const actual =
+                (
+                    nameElement.innerText ||
+                    nameElement.textContent ||
+                    ""
+                ).trim();
+
+            const normalized =
+                actual.toLowerCase();
+
+            return JSON.stringify({{
+
+                found: true,
+
+                name: actual,
+
+                match:
+                    normalized === expected
+
+            }});
+
+        }})()
+        """
+
+        try:
+
+            result = await tab.execute_script(
+                js
+            )
+
+            data = parse_json_result(
+                result
+            )
+
+        except Exception as e:
+
+            print(
+                "Erro verificando Bossbar:",
+                repr(e)
+            )
+
+            data = None
+
+        if data:
+
+            actual_name = data.get(
+                "name"
+            )
+
+            if (
+                actual_name
+                and actual_name != last_printed_name
+            ):
+
+                print(
+                    f"Bossbar atual: {actual_name}"
+                )
+
+                last_printed_name = (
+                    actual_name
+                )
+
+            if data.get("match"):
+
+                print(
+                    "✅ Nome da Bossbar "
+                    "corresponde ao boss selecionado."
+                )
+
+                return True
+
+        elapsed = (
+            asyncio.get_running_loop().time()
+            - start
+        )
+
+        if elapsed >= timeout:
+
+            print(
+                "❌ Timeout aguardando "
+                "confirmação da Bossbar."
+            )
+
+            return False
+
+        await asyncio.sleep(
+            0.25
+        )
+
+
+# ================================================================
 # CLICAR ENFRENTAR
 # ================================================================
 
@@ -1048,6 +1233,10 @@ async def click_fight_button(
     start = (
         asyncio.get_running_loop().time()
     )
+
+    # ============================================================
+    # 1 - AGUARDAR BOTÃO FICAR DISPONÍVEL
+    # ============================================================
 
     while True:
 
@@ -1110,9 +1299,23 @@ async def click_fight_button(
 
             }}
 
+            const rect =
+                button.getBoundingClientRect();
+
+            const style =
+                getComputedStyle(button);
+
+            const visible =
+                rect.width > 0 &&
+                rect.height > 0 &&
+                style.display !== "none" &&
+                style.visibility !== "hidden";
+
             return JSON.stringify({{
 
                 found: true,
+
+                visible: visible,
 
                 disabled:
                     button.disabled,
@@ -1136,6 +1339,7 @@ async def click_fight_button(
         if (
             info
             and info.get("found")
+            and info.get("visible")
             and not info.get("disabled")
         ):
 
@@ -1165,8 +1369,19 @@ async def click_fight_button(
             0.25
         )
 
+    # ============================================================
+    # 2 - TENTATIVA 1: PYDOLL
+    # ============================================================
+
+    print()
     print(
-        "Localizando elemento Enfrentar pelo Pydoll..."
+        "========================================"
+    )
+    print(
+        "TENTATIVA 1: CLIQUE PYDOLL"
+    )
+    print(
+        "========================================"
     )
 
     xpath = (
@@ -1177,49 +1392,355 @@ async def click_fight_button(
         f'//*[contains(@class,"boss-fight")]'
     )
 
-    button = await tab.find(
-        xpath=xpath
-    )
-
-    if not button:
-
-        return {
-            "success": False,
-            "error":
-                "Pydoll não encontrou o botão Enfrentar."
-        }
-
-    print(
-        "Botão Enfrentar localizado pelo Pydoll."
-    )
+    button = None
 
     try:
 
-        await button.click(
-            humanize=True
+        button = await tab.find(
+            xpath=xpath
         )
 
     except Exception as e:
 
         print(
-            "Erro no clique Pydoll:",
-            e
+            "Exceção procurando botão pelo Pydoll:"
+        )
+
+        print(
+            repr(e)
+        )
+
+    if button:
+
+        print(
+            "Botão Enfrentar localizado pelo Pydoll."
+        )
+
+        try:
+
+            await button.click(
+                humanize=True
+            )
+
+            print(
+                "Clique Pydoll executado."
+            )
+
+            confirmed = await wait_for_bossbar_name(
+                tab,
+                boss_name,
+                timeout=5
+            )
+
+            if confirmed:
+
+                print()
+                print(
+                    "✅ CLIQUE PYDOLL CONFIRMADO!"
+                )
+
+                print(
+                    f"Bossbar confirmou: {boss_name}"
+                )
+
+                return {
+                    "success": True,
+                    "boss_name": boss_name,
+                    "method": "pydoll",
+                    "confirmed": True
+                }
+
+            print()
+            print(
+                "⚠️ Pydoll clicou, mas a Bossbar"
+            )
+
+            print(
+                "não confirmou o boss."
+            )
+
+            print(
+                "Iniciando fallback JavaScript..."
+            )
+
+        except Exception as e:
+
+            print()
+            print(
+                "❌ ERRO NO CLIQUE PYDOLL:"
+            )
+
+            print(
+                repr(e)
+            )
+
+            print()
+            print(
+                "Iniciando fallback JavaScript..."
+            )
+
+    else:
+
+        print(
+            "⚠️ Pydoll não encontrou o botão."
+        )
+
+        print(
+            "Iniciando fallback JavaScript..."
+        )
+
+    # ============================================================
+    # 3 - FALLBACK: JAVASCRIPT
+    # ============================================================
+
+    print()
+    print(
+        "========================================"
+    )
+    print(
+        "TENTATIVA 2: CLIQUE JAVASCRIPT"
+    )
+    print(
+        "========================================"
+    )
+
+    js_fallback = f"""
+    (() => {{
+
+        const bossName = {safe_name};
+
+        const cards =
+            Array.from(
+                document.querySelectorAll(
+                    "#boss-modal-body .boss-cell"
+                )
+            );
+
+        const card =
+            cards.find(
+                element => {{
+
+                    const name =
+                        element.querySelector(
+                            ".boss-cell-name"
+                        );
+
+                    return name &&
+                        name.innerText.trim()
+                            === bossName;
+
+                }}
+            );
+
+        if (!card) {{
+
+            return JSON.stringify({{
+
+                success: false,
+
+                error:
+                    "Card não encontrado no fallback JS."
+
+            }});
+
+        }}
+
+        const button =
+            card.querySelector(
+                ".boss-fight"
+            );
+
+        if (!button) {{
+
+            return JSON.stringify({{
+
+                success: false,
+
+                error:
+                    "Botão Enfrentar não encontrado no fallback JS."
+
+            }});
+
+        }}
+
+        const rect =
+            button.getBoundingClientRect();
+
+        const style =
+            getComputedStyle(button);
+
+        const visible =
+            rect.width > 0 &&
+            rect.height > 0 &&
+            style.display !== "none" &&
+            style.visibility !== "hidden";
+
+        if (!visible) {{
+
+            return JSON.stringify({{
+
+                success: false,
+
+                error:
+                    "Botão Enfrentar não está visível."
+
+            }});
+
+        }}
+
+        if (button.disabled) {{
+
+            return JSON.stringify({{
+
+                success: false,
+
+                error:
+                    "Botão Enfrentar está disabled."
+
+            }});
+
+        }}
+
+        try {{
+
+            button.focus();
+
+        }} catch (e) {{}}
+
+        try {{
+
+            button.click();
+
+        }} catch (e) {{
+
+            return JSON.stringify({{
+
+                success: false,
+
+                error:
+                    "button.click() lançou exceção: "
+                    + String(e)
+
+            }});
+
+        }}
+
+        return JSON.stringify({{
+
+            success: true,
+
+            boss_name:
+                bossName,
+
+            method:
+                "javascript"
+
+        }});
+
+    }})()
+    """
+
+    try:
+
+        result = await tab.execute_script(
+            js_fallback
+        )
+
+        data = parse_json_result(
+            result
+        )
+
+    except Exception as e:
+
+        print(
+            "❌ Exceção no fallback JavaScript:"
+        )
+
+        print(
+            repr(e)
         )
 
         return {
             "success": False,
             "error":
-                f"Erro ao clicar Enfrentar: {e}"
+                f"Erro no fallback JavaScript: {e}"
         }
 
     print(
-        f"Enfrentar clicado via Pydoll: "
-        f"{boss_name}"
+        "Resultado fallback JS:",
+        data
+    )
+
+    if (
+        not data
+        or not data.get("success")
+    ):
+
+        return {
+            "success": False,
+            "error": (
+                data.get(
+                    "error",
+                    "Fallback JavaScript falhou."
+                )
+                if data
+                else
+                "Fallback JavaScript falhou."
+            )
+        }
+
+    # ============================================================
+    # 4 - CONFIRMAÇÃO DO FALLBACK PELA BOSSBAR
+    # ============================================================
+
+    print()
+    print(
+        "Aguardando confirmação da Bossbar..."
+    )
+
+    confirmed = await wait_for_bossbar_name(
+        tab,
+        boss_name,
+        timeout=5
+    )
+
+    if confirmed:
+
+        print()
+        print(
+            "✅ FALLBACK JAVASCRIPT CONFIRMADO!"
+        )
+
+        print(
+            f"Bossbar confirmou: {boss_name}"
+        )
+
+        return {
+            "success": True,
+            "boss_name": boss_name,
+            "method": "javascript",
+            "confirmed": True
+        }
+
+    # ============================================================
+    # 5 - NÃO CONFIRMOU
+    # ============================================================
+
+    print()
+    print(
+        "❌ CLIQUE NÃO CONFIRMADO."
+    )
+
+    print(
+        f"Bossbar não confirmou o boss: {boss_name}"
     )
 
     return {
-        "success": True,
-        "boss_name": boss_name
+        "success": False,
+        "error":
+            "Clique executado, mas a Bossbar "
+            f"não confirmou o boss {boss_name}.",
+        "confirmed": False
     }
 
 
@@ -1566,10 +2087,8 @@ class AutoBoss:
 
         self.on_message = None
 
-        # --------------------------------------------------------
-        # CALLBACK CHAMADO QUANDO O AUTOBOSS TERMINA
-        # --------------------------------------------------------
-
+        # Callback chamado quando o AutoBoss
+        # termina normalmente.
         self.on_finished = None
 
     # ============================================================
@@ -1733,7 +2252,7 @@ class AutoBoss:
         )
 
     # ============================================================
-    # LOOP
+    # LOOP PRINCIPAL
     # ============================================================
 
     async def _run(
@@ -1796,24 +2315,11 @@ class AutoBoss:
                 )
 
                 # =================================================
-                # 1 - ABRIR TELEPORT
+                # 1 - ABRIR TELEPORTES + CHEFES
                 # =================================================
 
-                if not await open_teleport_menu(
-                    self.tab
-                ):
-
-                    await self.send_message(
-                        "❌ Não foi possível "
-                        "abrir Teleportes."
-                    )
-
-                    continue
-
-                # =================================================
-                # 2 - CHEFES
-                # =================================================
-
+                # open_boss_menu() já abre o menu
+                # de Teleportes internamente.
                 if not await open_boss_menu(
                     self.tab
                 ):
@@ -1824,6 +2330,10 @@ class AutoBoss:
                     )
 
                     continue
+
+                # =================================================
+                # 2 - AGUARDAR LISTA
+                # =================================================
 
                 if not await wait_for_boss_menu(
                     self.tab
@@ -1887,7 +2397,7 @@ class AutoBoss:
                 )
 
                 # =================================================
-                # VALIDAR DISPONIBILIDADE
+                # 4 - VALIDAR DISPONIBILIDADE
                 # =================================================
 
                 if (
@@ -1914,7 +2424,7 @@ class AutoBoss:
                     continue
 
                 # =================================================
-                # 4 - CLICAR CARD
+                # 5 - CLICAR CARD
                 # =================================================
 
                 print(
@@ -1944,7 +2454,7 @@ class AutoBoss:
                 )
 
                 # =================================================
-                # 5 - ENFRENTAR
+                # 6 - ENFRENTAR
                 # =================================================
 
                 fight = await click_fight_button(
@@ -1994,7 +2504,7 @@ class AutoBoss:
                 )
 
                 # =================================================
-                # 6 - BOSSBAR
+                # 7 - BOSSBAR
                 # =================================================
 
                 bossbar = await wait_for_bossbar(
@@ -2017,7 +2527,7 @@ class AutoBoss:
                 )
 
                 # =================================================
-                # 7 - MONITORAR
+                # 8 - MONITORAR
                 # =================================================
 
                 defeated = await monitor_boss(
@@ -2091,7 +2601,8 @@ class AutoBoss:
             self.state.task = None
 
             # =====================================================
-            # RETORNAR PARA HUNT SOMENTE QUANDO TERMINOU SOZINHO
+            # RETORNAR PARA HUNT SOMENTE QUANDO
+            # AUTOBOSS TERMINOU NORMALMENTE
             # =====================================================
 
             if completed_normally:
@@ -2172,4 +2683,21 @@ class AutoBoss:
         self,
     ):
 
-        return self.state
+        return {
+            "running":
+                self.state.running,
+
+            "current_index":
+                self.state.current_index,
+
+            "current_boss":
+                self.state.current_boss,
+
+            "queue":
+                list(
+                    self.state.queue
+                ),
+
+            "current_position":
+                self.state.current_position,
+        }
