@@ -2031,8 +2031,7 @@ async def click_fight_button(
 
     if debug_data:
 
-        button_html =
-            debug_data.get(
+        button_html = debug_data.get(
                 "button_html"
             )
 
@@ -2043,8 +2042,7 @@ async def click_fight_button(
                 prefix="🧩 HTML DO BOTÃO"
             )
 
-        parent_html =
-            debug_data.get(
+        parent_html = debug_data.get(
                 "parent_html"
             )
 
@@ -2061,8 +2059,7 @@ async def click_fight_button(
 
     if debug_data:
 
-        card_html =
-            debug_data.get(
+        card_html = debug_data.get(
                 "card_html"
             )
 
@@ -2232,8 +2229,7 @@ async def click_fight_button(
 
     while True:
 
-        info =
-            await get_button_info()
+        info = await get_button_info()
 
         if (
             info
@@ -2300,8 +2296,7 @@ async def click_fight_button(
             f"{boss_name}..."
         )
 
-        confirmed =
-            await wait_for_bossbar_name(
+        confirmed = await wait_for_bossbar_name(
                 tab,
                 boss_name,
                 timeout=5
@@ -2529,13 +2524,11 @@ async def click_fight_button(
 
     try:
 
-        result =
-            await tab.execute_script(
+        result = await tab.execute_script(
                 js_click
             )
 
-        data =
-            parse_json_result(
+        data = parse_json_result(
                 result
             )
 
@@ -2613,8 +2606,7 @@ async def click_fight_button(
             "Localizando elemento Enfrentar pelo Pydoll..."
         )
 
-        button =
-            await tab.find(
+        button = await tab.find(
                 xpath=xpath
             )
 
