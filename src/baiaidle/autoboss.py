@@ -1,7 +1,7 @@
 import asyncio
 import json
 from dataclasses import dataclass, field
-
+from baiaidle.actions import click_cloudflare_challenge
 
 # ================================================================
 # ESTADO
@@ -1743,6 +1743,15 @@ async def wait_for_click_target(
 
                     overlay_notified = True
 
+                # ====================================================
+                # TENTATIVA DE CLIQUE NO CLOUDFLARE (FORÇADA)
+                # ====================================================
+                try:
+                    await click_cloudflare_challenge(tab)
+                except Exception:
+                    pass
+                # ====================================================
+
             elif overlay_notified:
 
                 print()
@@ -1909,8 +1918,6 @@ async def wait_for_click_target(
         await asyncio.sleep(
             0.5
         )
-
-
 # ================================================================
 # CONFIRMAR BOSS PELA BOSSBAR
 # ================================================================
