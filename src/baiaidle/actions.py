@@ -1377,3 +1377,66 @@ async def get_hud_data(tab) -> dict:
         "stamina_pct": "",
         "stamina_time": ""
     }
+
+# ================================================================
+# CAPTURAR DADOS DA PARTY
+# ================================================================
+
+async def get_party_info(tab) -> list:
+    """
+    Lê o painel #party-list e extrai nome, classe, lvl, HP, Mana, 
+    Magic Shield e XP de todos os membros.
+    """
+    js = """
+    (() => {
+        const partyList = document.getElementById('party-list');
+        if (!partyList) return JSON.stringify([]);
+
+        const members = Array.from(partyList.querySelectorAll('.member'));
+        const result = members.map(m => {
+            const roleEl = m.querySelector('.role');
+            const nameEl = m.querySelector('.m-name');
+            const metaEl = m.querySelector('.m-meta');
+            const hpEl = m.querySelector('.bar.hp b');
+            const manaEl = m.querySelector('.bar.mana b');
+            const xpEl = m.querySelector('.bar.xp b');
+            const msBadge = m.querySelector('.ms-badge');
+            
+            // Pega as dicas flutuantes (tooltips) para informações ocultas
+            const manaTip = m.querySelector('.bar.mana') ? m.querySelector('.bar.mana').getAttribute('data-tip') : '';
+            const xpTip = m.querySelector('.bar.xp') ? m.querySelector('.bar.xp').getAttribute('data-tip') : '';
+
+            // Se tem Magic Shield, vamos extrair o valor (ex: 4.901 / 4.909)
+            let msValue = "";
+            if (msBadge && manaTip && manaTip.includes('Magic Shield')) {
+                const msMatch = manaTip.match(/Magic Shield ([0-9\.]+ \/ [0-9\.]+)/);
+                if (msMatch) {
+                    msValue = msMatch[1];
+                }
+            }
+
+            return {
+                role: roleEl ? roleEl.innerText.trim() : '',
+                name: nameEl ? nameEl.innerText.trim() : '',
+                meta: metaEl ? metaEl.innerText.trim() : '',
+                hp: hpEl ? hpEl.innerText.trim() : '',
+                mana: manaEl ? manaEl.innerText.trim() : '',
+                magic_shield: msValue,
+                xp_pct: xpEl ? xpEl.innerText.trim() : '',
+                xp_tip: xpTip ? xpTip.trim() : ''
+            };
+        });
+
+        return JSON.stringify(result);
+    })()
+    """
+
+    try:
+        result = await tab.execute_script(js)
+        value = extract_execute_result(result)
+        if isinstance(value, str):
+            return json.loads(value)
+    except Exception as e:
+        print("Erro ao extrair dados da Party:", e)
+
+    return []

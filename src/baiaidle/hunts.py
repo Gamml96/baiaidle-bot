@@ -73,7 +73,7 @@ async def get_hunts_list(tab):
         const hunts = [];
         
         cards.forEach((card, index) => {
-            const b = card.querySelector('b'); // Baseado no seu span[2]/div[1]/b
+            const b = card.querySelector('b'); // Baseado no span[2]/div[1]/b
             if (b) {
                 hunts.push({
                     index: index + 1,
@@ -98,7 +98,7 @@ async def change_hunt(tab, hunt_identifier):
     if not await open_hunts_menu(tab):
         return False, "Não foi possível abrir o menu de Hunts."
 
-    # 1. Procurar a Hunt na Grid e Clicar para expandir
+    # 1. Procurar a Hunt na Grid, clicar para expandir e guardar o ÍNDICE EXATO dela
     js_click_card = f"""
     (() => {{
         const identifier = {json.dumps(hunt_identifier)};
@@ -107,22 +107,27 @@ async def change_hunt(tab, hunt_identifier):
         
         const cards = Array.from(grid.children);
         let target = null;
+        let targetIndex = -1;
         
         // Verifica se o usuário digitou um número (índice)
         if (!isNaN(identifier) && Number(identifier) > 0 && Number(identifier) <= cards.length) {{
-            target = cards[Number(identifier) - 1];
+            targetIndex = Number(identifier) - 1;
+            target = cards[targetIndex];
         }} else {{
             // Busca pelo nome exato (ignorando maiúsculas e minúsculas)
-            target = cards.find(c => {{
+            targetIndex = cards.findIndex(c => {{
                 const b = c.querySelector('b');
                 return b && b.innerText.trim().toLowerCase() === String(identifier).toLowerCase();
             }});
+            if (targetIndex !== -1) {{
+                target = cards[targetIndex];
+            }}
         }}
         
         if (!target) return JSON.stringify({{success: false, error: "Hunt não encontrada na lista."}});
         
         target.click(); // Expande o card
-        return JSON.stringify({{success: true}});
+        return JSON.stringify({{success: true, index: targetIndex}});
     }})()
     """
     res1 = await tab.execute_script(js_click_card)
@@ -132,16 +137,22 @@ async def change_hunt(tab, hunt_identifier):
         await tab.execute_script("(() => { const btn = document.getElementById('picker-modal-close'); if(btn) btn.click(); })()")
         return False, data1.get("error", "Erro ao encontrar/clicar no card da hunt.")
 
+    card_index = data1.get("index")
     await asyncio.sleep(1) # Aguarda expansão do card
 
-    # 2. Clicar no botão 'Caçar' dentro do card expandido
-    js_click_go = """
-    (() => {
-        const btn = document.querySelector('#picker-modal-body .hunt-grid button.stage-go');
-        if (!btn) return JSON.stringify({success: false, error: "Botão 'Caçar' não encontrado."});
+    # 2. Clicar no botão 'Caçar' ESPECÍFICO do card que expandimos
+    js_click_go = f"""
+    (() => {{
+        const grid = document.querySelector('#picker-modal-body .hunt-grid');
+        const targetCard = grid.children[{card_index}];
+        if (!targetCard) return JSON.stringify({{success: false, error: "Card desapareceu da tela."}});
+        
+        const btn = targetCard.querySelector('button.stage-go');
+        if (!btn) return JSON.stringify({{success: false, error: "Botão 'Caçar' não encontrado neste card."}});
+        
         btn.click();
-        return JSON.stringify({success: true});
-    })()
+        return JSON.stringify({{success: true}});
+    }})()
     """
     res2 = await tab.execute_script(js_click_go)
     data2 = parse_json_result(res2)
@@ -157,7 +168,7 @@ async def change_hunt(tab, hunt_identifier):
     return True, f"Mudança solicitada com sucesso! Local atual: {current}"
 
 async def debug_hunts_dom(tab):
-    """Extrai todo o HTML do modal para debug (caso algo dê errado)."""
+    """Extrai todo o HTML do modal para debug."""
     await open_hunts_menu(tab)
     js = """
     (() => {

@@ -33,6 +33,8 @@ from baiaidle.hunts import (
     debug_hunts_dom
 )
 
+from baiaidle.actions import get_party_info
+
 # ================================================================
 # SUPERVISOR
 # ================================================================
@@ -112,7 +114,10 @@ class TelegramController:
                 "status",
                 "Mostrar status",
             ),
-
+            BotCommand(
+                "party",                   
+                "Ver status da equipe",    
+            ),
             BotCommand(
                 "hunts",
                 "Listar hunts disponíveis",
@@ -416,6 +421,57 @@ class TelegramController:
             f"Local atual: {current_hunt}\n\n"
             f"AutoBoss: inativo."
         )
+
+# ============================================================
+    # /PARTY
+    # ============================================================
+
+    async def party(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
+            return
+
+        await update.message.reply_text("⏳ Escaneando a equipe...")
+
+        try:
+            party_data = await get_party_info(self.bot.tab)
+
+            if not party_data:
+                await update.message.reply_text("❌ Nenhum membro da Party encontrado.")
+                return
+
+            msg = "👥 *SUA PARTY*\n\n"
+
+            for member in party_data:
+                # Escolhe um emoji dependendo da função (role)
+                role = member['role']
+                if role == "TANK":
+                    role_emoji = "🛡️"
+                elif role == "SUP":
+                    role_emoji = "🪄"
+                elif role == "DPS":
+                    role_emoji = "⚔️"
+                else:
+                    role_emoji = "👤"
+
+                msg += f"{role_emoji} *{role}* - {member['name']} ({member['meta']})\n"
+                msg += f"❤️ HP: {member['hp']} | 💧 Mana: {member['mana']}\n"
+                
+                # if member['magic_shield']:
+                #     msg += f"💠 M. Shield: {member['magic_shield']}\n"
+                
+                msg += f"🌟 XP: {member['xp_pct']}\n\n"
+
+            # O parse_mode="Markdown" permite que os nomes fiquem em negrito
+            await update.message.reply_text(msg.strip(), parse_mode="Markdown")
+
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao ler Party: {e}")
+
 
     # ============================================================
     # /HUNTS
@@ -843,6 +899,9 @@ Para o bot.
 /status
 Mostra o estado atual e a Hunt.
 
+/party
+Mostra o status da equipe.
+
 /hunts
 Lista todos os mapas de caça disponíveis.
 
@@ -920,7 +979,13 @@ async def main():
         )
     )
 
-    # NOVO COMANDO HUNTS
+    application.add_handler(
+        CommandHandler(
+            "party",
+            controller.party,
+        )
+    )
+
     application.add_handler(
         CommandHandler(
             "hunts",
@@ -936,7 +1001,6 @@ async def main():
         )
     )
 
-    # NOVO COMANDO DE DEBUG PARA HUNTS
     application.add_handler(
         CommandHandler(
             "debughunt",
