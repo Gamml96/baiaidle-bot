@@ -5,19 +5,7 @@ import json
 def extract_execute_result(result):
     """
     Extrai o valor retornado pelo execute_script() do Pydoll.
-
-    Exemplo:
-    {
-        "id": 4,
-        "result": {
-            "result": {
-                "type": "boolean",
-                "value": True
-            }
-        }
-    }
     """
-
     try:
         return result["result"]["result"].get("value")
     except (TypeError, KeyError, AttributeError):
@@ -27,11 +15,8 @@ def extract_execute_result(result):
 async def is_logged_in(tab) -> bool:
     """
     Verifica se o jogador está realmente dentro do jogo.
-
-    O elemento #hud-nick é usado como sinal principal
-    de que a sessão está autenticada.
+    O elemento #hud-nick é usado como sinal principal.
     """
-
     js = """
     (() => {
         const hudNick = document.getElementById('hud-nick');
@@ -72,7 +57,6 @@ async def is_logged_in(tab) -> bool:
     """
 
     result = await tab.execute_script(js)
-
     value = extract_execute_result(result)
 
     if not isinstance(value, str):
@@ -84,30 +68,19 @@ async def is_logged_in(tab) -> bool:
         return False
 
     print("Estado da sessão:", state)
-
     return bool(state.get("authenticated"))
+
 
 async def collect_offline_reward(tab, timeout=5) -> bool:
     """
-    Procura a recompensa offline e coleta a recompensa
-    clicando no botão #offline-modal-close.
-
-    A recompensa é opcional. Se não estiver disponível,
-    retorna False sem gerar erro.
+    Procura a recompensa offline e a coleta.
     """
-
     js = """
     (() => {
-        const button = document.getElementById(
-            'offline-modal-close'
-        );
+        const button = document.getElementById('offline-modal-close');
 
         if (!button) {
-            return JSON.stringify({
-                found: false,
-                visible: false,
-                clicked: false
-            });
+            return JSON.stringify({ found: false, visible: false, clicked: false });
         }
 
         const rect = button.getBoundingClientRect();
@@ -120,20 +93,12 @@ async def collect_offline_reward(tab, timeout=5) -> bool:
             style.visibility !== 'hidden';
 
         if (!visible) {
-            return JSON.stringify({
-                found: true,
-                visible: false,
-                clicked: false
-            });
+            return JSON.stringify({ found: true, visible: false, clicked: false });
         }
 
         button.click();
 
-        return JSON.stringify({
-            found: true,
-            visible: true,
-            clicked: true
-        });
+        return JSON.stringify({ found: true, visible: true, clicked: true });
     })()
     """
 
@@ -141,7 +106,6 @@ async def collect_offline_reward(tab, timeout=5) -> bool:
 
     for _ in range(attempts):
         result = await tab.execute_script(js)
-
         value = extract_execute_result(result)
 
         if isinstance(value, str):
@@ -153,13 +117,11 @@ async def collect_offline_reward(tab, timeout=5) -> bool:
             if state.get("clicked"):
                 print("RECOMPENSA OFFLINE ENCONTRADA!")
                 print("Recompensa coletada.")
-
                 return True
 
         await asyncio.sleep(0.5)
 
     print("Nenhuma recompensa offline disponível.")
-
     return False
 
 
@@ -167,22 +129,13 @@ async def wait_for_auth_modal(tab, timeout=5) -> bool:
     """
     Aguarda o modal de autenticação ficar visível.
     """
-
     js = """
     (() => {
-        const ids = [
-            'auth-email',
-            'auth-pass',
-            'auth-submit'
-        ];
+        const ids = ['auth-email', 'auth-pass', 'auth-submit'];
 
         for (const id of ids) {
-
             const el = document.getElementById(id);
-
-            if (!el) {
-                continue;
-            }
+            if (!el) continue;
 
             const rect = el.getBoundingClientRect();
             const style = getComputedStyle(el);
@@ -196,7 +149,6 @@ async def wait_for_auth_modal(tab, timeout=5) -> bool:
                 return true;
             }
         }
-
         return false;
     })()
     """
@@ -204,9 +156,7 @@ async def wait_for_auth_modal(tab, timeout=5) -> bool:
     attempts = int(timeout / 0.5)
 
     for _ in range(attempts):
-
         result = await tab.execute_script(js)
-
         value = extract_execute_result(result)
 
         if value is True:
@@ -219,88 +169,49 @@ async def wait_for_auth_modal(tab, timeout=5) -> bool:
 
 async def open_login_modal(tab) -> bool:
     """
-    Tenta abrir o modal usando JOGAR.
-    Se não funcionar, tenta ENTRAR.
+    Tenta abrir o modal usando JOGAR ou ENTRAR.
     """
-
-    # ============================================================
-    # TENTAR JOGAR
-    # ============================================================
-
     jogar_js = """
     (() => {
-        const buttons = Array.from(
-            document.querySelectorAll('button')
-        );
-
+        const buttons = Array.from(document.querySelectorAll('button'));
         const button = buttons.find(
-            b =>
-                b.innerText.trim() === 'JOGAR' &&
-                b.classList.contains('btn-play') &&
-                b.classList.contains('nav-play')
+            b => b.innerText.trim() === 'JOGAR' &&
+                 b.classList.contains('btn-play') &&
+                 b.classList.contains('nav-play')
         );
 
-        if (!button) {
-            return JSON.stringify({
-                found: false,
-                clicked: false
-            });
-        }
+        if (!button) return JSON.stringify({ found: false, clicked: false });
 
         button.click();
-
-        return JSON.stringify({
-            found: true,
-            clicked: true
-        });
+        return JSON.stringify({ found: true, clicked: true });
     })()
     """
 
     result = await tab.execute_script(jogar_js)
-
     print("JOGAR:", result)
 
     if await wait_for_auth_modal(tab):
         print("Modal aberto através de JOGAR.")
         return True
 
-    # ============================================================
-    # TENTAR ENTRAR
-    # ============================================================
-
-    print("JOGAR não abriu o login.")
-    print("Tentando botão ENTRAR...")
+    print("JOGAR não abriu o login. Tentando botão ENTRAR...")
 
     entrar_js = """
     (() => {
-        const buttons = Array.from(
-            document.querySelectorAll('button')
-        );
-
+        const buttons = Array.from(document.querySelectorAll('button'));
         const button = buttons.find(
-            b =>
-                b.innerText.trim() === 'Entrar' &&
-                b.getAttribute('data-action') === 'auth'
+            b => b.innerText.trim() === 'Entrar' &&
+                 b.getAttribute('data-action') === 'auth'
         );
 
-        if (!button) {
-            return JSON.stringify({
-                found: false,
-                clicked: false
-            });
-        }
+        if (!button) return JSON.stringify({ found: false, clicked: false });
 
         button.click();
-
-        return JSON.stringify({
-            found: true,
-            clicked: true
-        });
+        return JSON.stringify({ found: true, clicked: true });
     })()
     """
 
     result = await tab.execute_script(entrar_js)
-
     print("ENTRAR:", result)
 
     if await wait_for_auth_modal(tab):
@@ -310,328 +221,156 @@ async def open_login_modal(tab) -> bool:
     return False
 
 
+# ================================================================
+# TRATADOR DE CLOUDFLARE NO LOGIN
+# ================================================================
+
+async def handle_login_cloudflare(tab, timeout=30) -> bool:
+    """
+    Monitora ativamente a presença do Cloudflare após o envio do formulário.
+    Usa o clique físico (humanize=True) para passar pela verificação.
+    """
+    print()
+    print("Aguardando resposta do servidor e checando Cloudflare...")
+    start = asyncio.get_running_loop().time()
+
+    xpaths = [
+        '//iframe[contains(@src, "challenges.cloudflare.com")]',
+        '//iframe[contains(@src, "cloudflare")]',
+        '//div[contains(@class, "mk-captcha")]//iframe'
+    ]
+
+    while True:
+        # Se o nick apareceu, o login já foi concluído
+        if await is_logged_in(tab):
+            return True
+
+        elapsed = asyncio.get_running_loop().time() - start
+        if elapsed > timeout:
+            print("Timeout na verificação do login/Cloudflare.")
+            return False
+
+        for xpath in xpaths:
+            try:
+                element = await tab.find(xpath=xpath, timeout=1)
+                if element:
+                    print("⚠️ Desafio Cloudflare interceptou o login! Executando clique real...")
+                    await element.click(humanize=True)
+                    await asyncio.sleep(2)
+                    break
+            except Exception:
+                continue
+
+        await asyncio.sleep(1)
+
+
 async def login(tab, login: str, password: str) -> bool:
     """
-    Faz login no Baiak Idle.
-
-    Se a sessão já estiver autenticada, retorna True sem
-    preencher novamente as credenciais.
-
-    Caso contrário:
-
-        JOGAR/ENTRAR
-            ↓
-        modal
-            ↓
-        e-mail
-            ↓
-        senha
-            ↓
-        ENTRAR
-            ↓
-        confirmação através de #hud-nick
+    Faz login no Baiak Idle e resolve Cloudflare se necessário.
     """
-
     print("Verificando sessão existente...")
 
-    # ============================================================
-    # 1. VERIFICAR SE JÁ ESTÁ LOGADO
-    # ============================================================
-
     if await is_logged_in(tab):
-
         print()
         print("SESSÃO JÁ AUTENTICADA.")
         print("Não será necessário fazer login novamente.")
-
         await collect_offline_reward(tab)
-
         return True
 
-    print("Sessão não autenticada.")
-    print("Abrindo modal de login...")
-
-    # ============================================================
-    # 2. ABRIR MODAL
-    # ============================================================
+    print("Sessão não autenticada.\nAbrindo modal de login...")
 
     modal_open = await open_login_modal(tab)
 
     if not modal_open:
-
-        print()
-        print("ERRO: não foi possível abrir o modal de login.")
-
+        print("\nERRO: não foi possível abrir o modal de login.")
         return False
 
-    # ============================================================
-    # 3. VERIFICAR CAMPOS
-    # ============================================================
-
-    fields_js = """
-    (() => {
-        const ids = [
-            'auth-email',
-            'auth-pass',
-            'auth-submit'
-        ];
-
-        const result = {};
-
-        for (const id of ids) {
-
-            const el = document.getElementById(id);
-
-            if (!el) {
-
-                result[id] = {
-                    found: false
-                };
-
-                continue;
-            }
-
-            const rect = el.getBoundingClientRect();
-            const style = getComputedStyle(el);
-
-            result[id] = {
-                found: true,
-                visible:
-                    rect.width > 0 &&
-                    rect.height > 0 &&
-                    style.display !== 'none' &&
-                    style.visibility !== 'hidden',
-                width: rect.width,
-                height: rect.height
-            };
-        }
-
-        return JSON.stringify(result);
-    })()
-    """
-
-    result = await tab.execute_script(fields_js)
-
-    print()
-    print("Campos de login:")
-    print(result)
-
-    # ============================================================
-    # 4. PREENCHER E-MAIL
-    # ============================================================
-
+    # Preencher E-mail
     email_json = json.dumps(login)
-
     email_js = f"""
     (() => {{
         const el = document.getElementById('auth-email');
-
-        if (!el) {{
-            return false;
-        }}
-
+        if (!el) return false;
         el.focus();
-
         el.value = {email_json};
-
-        el.dispatchEvent(
-            new Event('input', {{
-                bubbles: true
-            }})
-        );
-
-        el.dispatchEvent(
-            new Event('change', {{
-                bubbles: true
-            }})
-        );
-
+        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
         return true;
     }})()
     """
-
     result = await tab.execute_script(email_js)
-
     email_ok = extract_execute_result(result)
-
     print("E-mail preenchido:", email_ok)
 
     if not email_ok:
-
         print("ERRO: não foi possível preencher o e-mail.")
-
         return False
 
-    # ============================================================
-    # 5. PREENCHER SENHA
-    # ============================================================
-
+    # Preencher Senha
     password_json = json.dumps(password)
-
     password_js = f"""
     (() => {{
         const el = document.getElementById('auth-pass');
-
-        if (!el) {{
-            return false;
-        }}
-
+        if (!el) return false;
         el.focus();
-
         el.value = {password_json};
-
-        el.dispatchEvent(
-            new Event('input', {{
-                bubbles: true
-            }})
-        );
-
-        el.dispatchEvent(
-            new Event('change', {{
-                bubbles: true
-            }})
-        );
-
+        el.dispatchEvent(new Event('input', {{ bubbles: true }}));
+        el.dispatchEvent(new Event('change', {{ bubbles: true }}));
         return true;
     }})()
     """
-
     result = await tab.execute_script(password_js)
-
     password_ok = extract_execute_result(result)
-
     print("Senha preenchida:", password_ok)
 
     if not password_ok:
-
         print("ERRO: não foi possível preencher a senha.")
-
         return False
 
     await asyncio.sleep(0.5)
 
-    # ============================================================
-    # 6. VERIFICAR CREDENCIAIS
-    # ============================================================
-
-    verify_js = """
-    (() => {
-        const email = document.getElementById('auth-email');
-        const password = document.getElementById('auth-pass');
-
-        return JSON.stringify({
-            email_found: !!email,
-            email_length: email ? email.value.length : 0,
-            password_found: !!password,
-            password_length: password ? password.value.length : 0
-        });
-    })()
-    """
-
-    result = await tab.execute_script(verify_js)
-
-    print()
-    print("Verificação dos campos:")
-    print(result)
-
-    # ============================================================
-    # 7. CLICAR ENTRAR
-    # ============================================================
-
+    # Clicar ENTRAR
     submit_js = """
     (() => {
         const button = document.getElementById('auth-submit');
-
-        if (!button) {
-            return JSON.stringify({
-                found: false,
-                clicked: false
-            });
-        }
+        if (!button) return JSON.stringify({ found: false, clicked: false });
 
         const rect = button.getBoundingClientRect();
-
-        const visible =
-            rect.width > 0 &&
-            rect.height > 0;
-
-        if (!visible) {
-            return JSON.stringify({
-                found: true,
-                visible: false,
-                clicked: false
-            });
+        if (rect.width === 0 || rect.height === 0) {
+            return JSON.stringify({ found: true, visible: false, clicked: false });
         }
 
         button.click();
-
-        return JSON.stringify({
-            found: true,
-            visible: true,
-            clicked: true
-        });
+        return JSON.stringify({ found: true, visible: true, clicked: true });
     })()
     """
-
     result = await tab.execute_script(submit_js)
-
-    print()
-    print("Submit:", result)
+    print("\nSubmit:", result)
 
     # ============================================================
-    # 8. AGUARDAR SERVIDOR
+    # AGUARDAR E RESOLVER CLOUDFLARE
     # ============================================================
+    login_successful = await handle_login_cloudflare(tab, timeout=30)
 
-    print()
-    print("Aguardando resposta do servidor...")
-
-    await asyncio.sleep(3)
-
-    # ============================================================
-    # 9. VERIFICAR SESSÃO NOVAMENTE
-    # ============================================================
-
-    print()
-    print("Verificando sessão após login...")
-
-    if await is_logged_in(tab):
-
-        print()
-        print("LOGIN REALIZADO COM SUCESSO!")
-
+    if login_successful:
+        print("\nLOGIN REALIZADO COM SUCESSO!")
         await collect_offline_reward(tab)
-
         return True
 
-    # ============================================================
-    # 10. VERIFICAR FORMULÁRIO
-    # ============================================================
-
+    # Se falhou, verifica o estado atual do formulário para debug
     state_js = """
     (() => {
-        const ids = [
-            'auth-email',
-            'auth-pass',
-            'auth-submit'
-        ];
-
+        const ids = ['auth-email', 'auth-pass', 'auth-submit'];
         const result = {};
-
         for (const id of ids) {
             const el = document.getElementById(id);
-
             result[id] = !!el;
         }
-
         return JSON.stringify(result);
     })()
     """
-
     result = await tab.execute_script(state_js)
-
-    print("Estado do formulário:", result)
-
-    print()
-    print("LOGIN NÃO CONFIRMADO.")
-
+    print("Estado do formulário pós-falha:", result)
+    print("\nLOGIN NÃO CONFIRMADO.")
+    
     return False
