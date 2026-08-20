@@ -115,6 +115,11 @@ class GameBot:
                 url
             )
 
+            # === NOVA LINHA ADICIONADA AQUI ===
+            print("Ativando bypass automático do Cloudflare em segundo plano...")
+            await self.tab.enable_auto_solve_cloudflare_captcha()
+            # ==================================
+
             await asyncio.sleep(3)
 
             # ====================================================
@@ -254,7 +259,10 @@ class GameBot:
         if self.tab:
 
             try:
-
+                # === NOVA LINHA ADICIONADA AQUI ===
+                print("Desativando bypass automático do Cloudflare...")
+                await self.tab.disable_auto_solve_cloudflare_captcha()
+                # ==================================
                 await self.tab.close()
 
             except Exception:
