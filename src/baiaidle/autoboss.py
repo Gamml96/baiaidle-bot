@@ -1621,37 +1621,48 @@ async def get_fight_click_state(
 
 
 # ================================================================
-# FORÇAR CLIQUE NO CLOUDFLARE (NATIVO)
+# FORÇAR CLIQUE NO CLOUDFLARE (NATIVO + OTIMIZADO)
 # ================================================================
 
 async def click_cloudflare_challenge(
     tab,
 ) -> bool:
     """
-    Tenta clicar no desafio Cloudflare usando o evento de mouse nativo
-    do Pydoll, gerando um evento confiável (isTrusted=true).
+    Verifica com JS se o contêiner do Cloudflare está pronto antes de 
+    pedir ao Pydoll para clicar, evitando spam de 'Timeout'.
     """
-    xpaths = [
-        '//iframe[contains(@src, "challenges.cloudflare.com")]',
-        '//iframe[contains(@src, "cloudflare")]',
-        '//div[contains(@class, "mk-captcha")]//iframe'
-    ]
+    js_check = """
+    (() => {
+        const el = document.querySelector('.mk-captcha');
+        if (!el) return false;
+        
+        const rect = el.getBoundingClientRect();
+        // Garante que o elemento já tem tamanho na tela antes de clicar
+        return (rect.width > 0 && rect.height > 0);
+    })()
+    """
     
-    for xpath in xpaths:
-        try:
-            element = await tab.find(xpath=xpath, timeout=1)
+    try:
+        # 1. Verifica silenciosamente pelo JS se o elemento existe e está visível
+        result = await tab.execute_script(js_check)
+        is_ready = extract_execute_result(result)
+        
+        if is_ready:
+            print("🎯 Contêiner do Cloudflare pronto! Executando clique físico...")
+            
+            # 2. Pede ao Pydoll para clicar no contêiner principal (onde fica o checkbox)
+            element = await tab.find(xpath='//*[contains(@class, "mk-captcha")]', timeout=3)
             
             if element:
-                print("Iframe do Cloudflare encontrado! Executando clique real...")
                 await element.click(humanize=True)
-                await asyncio.sleep(1.5)
+                await asyncio.sleep(2.5)  # Dá tempo para o Cloudflare processar a animação
                 return True
                 
-        except Exception:
-            continue
-            
+    except Exception:
+        # Ignora exceções silenciosamente para manter o terminal limpo
+        pass
+        
     return False
-
 
 # ================================================================
 # ESPERAR VERIFICAÇÃO HUMANA DESAPARECER
