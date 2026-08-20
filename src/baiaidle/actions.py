@@ -355,128 +355,7 @@ async def wait_for_element_hidden(
 
 
 # ================================================================
-# CLOUDFLARE - DETECÇÃO
-# ================================================================
-
-
-async def detect_cloudflare(
-    tab,
-) -> bool:
-    """
-    Detecta um desafio Cloudflare visível.
-    """
-
-    js = """
-    (() => {
-
-        const selectors = [
-
-            'iframe[src*="challenges.cloudflare.com"]',
-
-            'iframe[src*="cloudflare"]',
-
-            '[class*="cf-turnstile"]',
-
-            '[id*="cf-turnstile"]'
-
-        ];
-
-        for (const selector of selectors) {
-
-            const elements =
-                document.querySelectorAll(
-                    selector
-                );
-
-            for (const element of elements) {
-
-                const rect =
-                    element.getBoundingClientRect();
-
-                const style =
-                    getComputedStyle(element);
-
-                const visible =
-                    rect.width > 0 &&
-                    rect.height > 0 &&
-                    style.display !== 'none' &&
-                    style.visibility !== 'hidden';
-
-                if (visible) {
-
-                    return true;
-                }
-            }
-        }
-
-        return false;
-
-    })()
-    """
-
-    try:
-
-        result = await tab.execute_script(
-            js
-        )
-
-        value = extract_execute_result(
-            result
-        )
-
-        return value is True
-
-    except Exception:
-
-        return False
-
-
-# ================================================================
-# FORÇAR CLIQUE NO CLOUDFLARE (OTIMIZADO)
-# ================================================================
-
-async def click_cloudflare_challenge(
-    tab,
-) -> bool:
-    """
-    Verifica com JS se o contêiner do Cloudflare está pronto antes de 
-    pedir ao Pydoll para clicar, evitando spam de 'Timeout'.
-    """
-    js_check = """
-    (() => {
-        const el = document.querySelector('.mk-captcha');
-        if (!el) return false;
-        
-        const rect = el.getBoundingClientRect();
-        // Garante que o elemento já tem tamanho na tela antes de clicar
-        return (rect.width > 0 && rect.height > 0);
-    })()
-    """
-    
-    try:
-        # 1. Verifica silenciosamente pelo JS se o elemento existe e está visível
-        result = await tab.execute_script(js_check)
-        is_ready = extract_execute_result(result)
-        
-        if is_ready:
-            print("🎯 Contêiner do Cloudflare pronto! Executando clique físico...")
-            
-            # 2. Pede ao Pydoll para clicar no contêiner principal
-            element = await tab.find(xpath='//*[contains(@class, "mk-captcha")]', timeout=3)
-            
-            if element:
-                await element.click(humanize=True)
-                await asyncio.sleep(2.5)  # Dá tempo para o Cloudflare processar a animação
-                return True
-                
-    except Exception:
-        # Ignora exceções silenciosamente para manter o terminal limpo
-        pass
-        
-    return False
-
-# ================================================================
-# AGUARDAR CLOUDFLARE
+# AGUARDAR E RESOLVER CLOUDFLARE
 # ================================================================
 
 
@@ -485,111 +364,56 @@ async def wait_for_cloudflare(
     timeout: float = 60,
 ) -> bool:
     """
-    Aguarda a validação Cloudflare.
+    Aguarda e resolve ativamente a validação Cloudflare.
+    """
+    print()
+    print("Observando validação Cloudflare...")
+    start = asyncio.get_running_loop().time()
+
+    js_check = """
+    (() => {
+        const el = document.querySelector('.mk-captcha');
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        return (rect.width > 0 && rect.height > 0);
+    })()
     """
 
-    print()
-    print(
-        "Observando validação Cloudflare..."
-    )
-
-    start = (
-        asyncio.get_running_loop().time()
-    )
-
     challenge_seen = False
-    click_attempted = False
 
     while True:
-
-        challenge = await detect_cloudflare(
-            tab
-        )
-
-        if challenge:
-
-            if not challenge_seen:
-
-                challenge_seen = True
-
-                print(
-                    "Validador Cloudflare detectado."
-                )
-
-            if not click_attempted:
-
-                click_attempted = True
-
-                print(
-                    "Tentando clicar automaticamente "
-                    "no validador Cloudflare..."
-                )
-
-                clicked = (
-                    await click_cloudflare_challenge(
-                        tab
-                    )
-                )
-
-                if clicked:
-
-                    print(
-                        "Clique enviado ao "
-                        "validador Cloudflare."
-                    )
-
-                else:
-
-                    print(
-                        "Não foi possível clicar "
-                        "diretamente no validador."
-                    )
-
-        else:
-
-            if challenge_seen:
-
-                print(
-                    "Validação Cloudflare concluída."
-                )
-
-                return True
-
-            elapsed = (
-                asyncio.get_running_loop().time()
-                - start
-            )
-
-            if elapsed >= 3:
-
-                print(
-                    "Nenhum desafio Cloudflare "
-                    "permaneceu visível."
-                )
-
-                print(
-                    "Validação concluída automaticamente."
-                )
-
-                return True
-
-        elapsed = (
-            asyncio.get_running_loop().time()
-            - start
-        )
+        elapsed = asyncio.get_running_loop().time() - start
+        
+        try:
+            result = await tab.execute_script(js_check)
+            is_ready = extract_execute_result(result)
+            
+            if is_ready:
+                if not challenge_seen:
+                    print("⚠️ Desafio Cloudflare detectado na venda!")
+                    challenge_seen = True
+                
+                print("Executando clique físico no Cloudflare...")
+                element = await tab.find(xpath='//*[contains(@class, "mk-captcha")]', timeout=3)
+                if element:
+                    await element.click(humanize=True)
+                    await asyncio.sleep(3)  # Aguarda a animação e o processo
+            else:
+                if challenge_seen:
+                    print("✅ Validação Cloudflare concluída.")
+                    return True
+                # Tolerância de 5 segundos para o Cloudflare aparecer
+                elif elapsed >= 5:
+                    print("Nenhum desafio Cloudflare apareceu nesta etapa.")
+                    return True
+        except Exception:
+            pass
 
         if elapsed >= timeout:
-
-            print(
-                "Timeout aguardando "
-                "validação Cloudflare."
-            )
-
+            print("❌ Timeout aguardando validação Cloudflare.")
             return False
 
-        await asyncio.sleep(
-            0.5
-        )
+        await asyncio.sleep(0.5)
 
 
 # ================================================================
@@ -1469,7 +1293,7 @@ async def validate_sale(
         return False
 
     # ============================================================
-    # PROCESSAMENTO
+    # PROCESSAMENTO E PROVA REAL
     # ============================================================
 
     print()
@@ -1487,51 +1311,27 @@ async def validate_sale(
         timeout=10,
     )
 
+    # === NOVA VERIFICAÇÃO PARA EVITAR FALSO POSITIVO ===
+    print()
+    print("Aguardando cooldown para confirmar a validação definitiva...")
+    cooldown_ok = await wait_for_sell_cooldown(tab, timeout=15)
+    
+    if not cooldown_ok:
+        print("❌ ERRO: A segunda venda não ativou o cooldown.")
+        print("Falso positivo detectado! A verificação não foi completamente removida.")
+        return False
+    # ===================================================
+
     # ============================================================
     # RESULTADO
     # ============================================================
 
     print()
-    print(
-        "========================================"
-    )
-
-    print(
-        "VALIDAÇÃO DA SESSÃO REALIZADA!"
-    )
-
-    print(
-        "Primeira venda: realizada."
-    )
-
-    print(
-        "Cloudflare: validação concluída."
-    )
-
-    print(
-        "Segunda venda: realizada."
-    )
-
-    if processed:
-
-        print(
-            "Processamento da segunda venda: confirmado."
-        )
-
-    else:
-
-        print(
-            "Processamento: modal não confirmou "
-            "o desaparecimento."
-        )
-
-    print(
-        "Cooldown do botão não será usado "
-        "como critério de validação."
-    )
-
-    print(
-        "========================================"
-    )
+    print("========================================")
+    print("VALIDAÇÃO DA SESSÃO REALIZADA!")
+    print("Primeira venda: usada como isca do Cloudflare.")
+    print("Segunda venda: realizada e confirmada.")
+    print("Cooldown do botão: ativado (Sessão limpa).")
+    print("========================================")
 
     return True
