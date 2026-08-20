@@ -1,7 +1,6 @@
 import asyncio
 import json
 from dataclasses import dataclass, field
-from baiaidle.actions import click_cloudflare_challenge
 
 # ================================================================
 # ESTADO
@@ -1622,6 +1621,39 @@ async def get_fight_click_state(
 
 
 # ================================================================
+# FORÇAR CLIQUE NO CLOUDFLARE (NATIVO)
+# ================================================================
+
+async def click_cloudflare_challenge(
+    tab,
+) -> bool:
+    """
+    Tenta clicar no desafio Cloudflare usando o evento de mouse nativo
+    do Pydoll, gerando um evento confiável (isTrusted=true).
+    """
+    xpaths = [
+        '//iframe[contains(@src, "challenges.cloudflare.com")]',
+        '//iframe[contains(@src, "cloudflare")]',
+        '//div[contains(@class, "mk-captcha")]//iframe'
+    ]
+    
+    for xpath in xpaths:
+        try:
+            element = await tab.find(xpath=xpath, timeout=1)
+            
+            if element:
+                print("Iframe do Cloudflare encontrado! Executando clique real...")
+                await element.click(humanize=True)
+                await asyncio.sleep(1.5)
+                return True
+                
+        except Exception:
+            continue
+            
+    return False
+
+
+# ================================================================
 # ESPERAR VERIFICAÇÃO HUMANA DESAPARECER
 # ================================================================
 
@@ -1918,6 +1950,8 @@ async def wait_for_click_target(
         await asyncio.sleep(
             0.5
         )
+
+
 # ================================================================
 # CONFIRMAR BOSS PELA BOSSBAR
 # ================================================================
