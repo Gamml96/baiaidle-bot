@@ -33,24 +33,39 @@ RETRY_JITTER_MAX = 10
 
 @dataclass
 class HuntStats:
+
     started_at: float
+
     total_gold: int = 0
+
     sales: int = 0
 
-    def add_sale(self, value: int):
+    def add_sale(
+        self,
+        value: int,
+    ):
+
         self.total_gold += value
+
         self.sales += 1
 
-    def elapsed(self) -> float:
+    def elapsed(
+        self,
+    ) -> float:
+
         return (
             asyncio.get_running_loop().time()
             - self.started_at
         )
 
-    def gold_per_hour(self) -> float:
+    def gold_per_hour(
+        self,
+    ) -> float:
+
         elapsed = self.elapsed()
 
         if elapsed <= 0:
+
             return 0
 
         return (
@@ -64,20 +79,35 @@ class HuntStats:
 # UTILITÁRIOS
 # ================================================================
 
-def format_gold(value: int) -> str:
-    return f"{value:,}".replace(",", ".")
+def format_gold(
+    value: int,
+) -> str:
+
+    return f"{value:,}".replace(
+        ",",
+        ".",
+    )
 
 
-def format_duration(seconds: float) -> str:
-    total_seconds = int(seconds)
+def format_duration(
+    seconds: float,
+) -> str:
 
-    hours = total_seconds // 3600
+    total_seconds = int(
+        seconds
+    )
+
+    hours = (
+        total_seconds // 3600
+    )
 
     minutes = (
         total_seconds % 3600
     ) // 60
 
-    secs = total_seconds % 60
+    secs = (
+        total_seconds % 60
+    )
 
     return (
         f"{hours:02d}:"
@@ -87,87 +117,139 @@ def format_duration(seconds: float) -> str:
 
 
 def random_main_delay() -> float:
+
     jitter = random.uniform(
         MAIN_JITTER_MIN,
         MAIN_JITTER_MAX,
     )
 
-    return BASE_INTERVAL + jitter
+    return (
+        BASE_INTERVAL
+        + jitter
+    )
 
 
 def random_retry_delay() -> float:
+
     jitter = random.uniform(
         RETRY_JITTER_MIN,
         RETRY_JITTER_MAX,
     )
 
-    return RETRY_INTERVAL + jitter
+    return (
+        RETRY_INTERVAL
+        + jitter
+    )
 
 
 # ================================================================
-# VERIFICAR DISPONIBILIDADE DA VENDA
+# VENDA DISPONÍVEL
 # ================================================================
 
-async def sell_available(tab) -> bool:
-    state = await get_sell_button_state(tab)
+async def sell_available(
+    tab,
+) -> bool:
+
+    state = await get_sell_button_state(
+        tab
+    )
 
     if not state.get("found"):
-        print("Botão #sell-all não encontrado.")
+
         return False
 
     if not state.get("visible"):
-        print("Botão #sell-all não está visível.")
+
         return False
 
     if state.get("disabled"):
+
         return False
 
-    if state.get("has_disabled_attribute"):
+    if state.get(
+        "has_disabled_attribute"
+    ):
+
         return False
 
     if str(
-        state.get("aria_disabled", "")
+        state.get(
+            "aria_disabled",
+            "",
+        )
     ).lower() == "true":
+
         return False
 
     return True
 
 
 # ================================================================
-# AGUARDAR VENDA DISPONÍVEL
+# AGUARDAR VENDA
 # ================================================================
 
-async def wait_until_sell_available(tab) -> bool:
+async def wait_until_sell_available(
+    tab,
+    stop_event=None,
+) -> bool:
+
     while True:
 
-        if await sell_available(tab):
+        if (
+            stop_event
+            and stop_event.is_set()
+        ):
+
+            return False
+
+        if await sell_available(
+            tab
+        ):
 
             print()
-            print("Venda disponível.")
+            print(
+                "Venda disponível."
+            )
 
             return True
 
         delay = random_retry_delay()
 
-        jitter = delay - RETRY_INTERVAL
-
         print()
-        print("Venda ainda está em cooldown.")
+        print(
+            "Venda ainda está "
+            "em cooldown."
+        )
 
         print(
             f"Nova verificação em "
             f"{delay:.1f} segundos."
         )
 
-        print(
-            f"Intervalo: {RETRY_INTERVAL}s"
-        )
+        # Dorme em pequenos blocos para
+        # conseguir cancelar rapidamente.
 
-        print(
-            f"Jitter: +{jitter:.1f}s"
-        )
+        remaining = delay
 
-        await asyncio.sleep(delay)
+        while remaining > 0:
+
+            if (
+                stop_event
+                and stop_event.is_set()
+            ):
+
+                return False
+
+            sleep_time = min(
+                1,
+                remaining,
+            )
+
+            await asyncio.sleep(
+                sleep_time
+            )
+
+            remaining -= sleep_time
 
 
 # ================================================================
@@ -177,36 +259,42 @@ async def wait_until_sell_available(tab) -> bool:
 async def execute_sale(
     tab,
     stats: HuntStats,
+    stop_event=None,
 ) -> bool:
 
     print()
-    print("=== NOVA VENDA ===")
+    print(
+        "=== NOVA VENDA ==="
+    )
 
-    # ============================================================
-    # DISPONIBILIDADE
-    # ============================================================
+    if not await wait_until_sell_available(
+        tab,
+        stop_event=stop_event,
+    ):
 
-    if not await wait_until_sell_available(tab):
         return False
 
-    # ============================================================
-    # ABRIR MODAL
-    # ============================================================
+    if (
+        stop_event
+        and stop_event.is_set()
+    ):
 
-    if not await open_sale_confirmation(tab):
+        return False
+
+    if not await open_sale_confirmation(
+        tab
+    ):
 
         print(
             "ERRO: não foi possível "
-            "abrir a confirmação da venda."
+            "abrir a confirmação."
         )
 
         return False
 
-    # ============================================================
-    # CAPTURAR VALOR
-    # ============================================================
-
-    sale_value = await get_sale_value(tab)
+    sale_value = await get_sale_value(
+        tab
+    )
 
     if sale_value:
 
@@ -218,15 +306,12 @@ async def execute_sale(
     else:
 
         print(
-            "AVISO: não foi possível "
-            "capturar o valor da venda."
+            "AVISO: valor não capturado."
         )
 
-    # ============================================================
-    # CONFIRMAR
-    # ============================================================
-
-    if not await confirm_sale(tab):
+    if not await confirm_sale(
+        tab
+    ):
 
         print(
             "ERRO: não foi possível "
@@ -235,36 +320,22 @@ async def execute_sale(
 
         return False
 
-    # ============================================================
-    # CLOUDFLARE
-    # ============================================================
-
     if not await wait_for_cloudflare(
         tab,
         timeout=60,
     ):
 
         print(
-            "ERRO: validação Cloudflare "
-            "não concluída."
+            "ERRO: Cloudflare."
         )
 
         return False
 
-    # ============================================================
-    # PROCESSAMENTO
-    # ============================================================
-
     print(
-        "Aguardando processamento "
-        "da venda..."
+        "Aguardando processamento..."
     )
 
     await asyncio.sleep(2)
-
-    # ============================================================
-    # COOLDOWN
-    # ============================================================
 
     if not await wait_for_sell_cooldown(
         tab,
@@ -282,17 +353,11 @@ async def execute_sale(
         "Venda processada com sucesso."
     )
 
-    # ============================================================
-    # ESTATÍSTICAS
-    # ============================================================
-
     if sale_value > 0:
 
-        stats.add_sale(sale_value)
-
-        elapsed = stats.elapsed()
-
-        gold_hour = stats.gold_per_hour()
+        stats.add_sale(
+            sale_value
+        )
 
         print()
         print(
@@ -314,13 +379,13 @@ async def execute_sale(
         )
 
         print(
-            f"Tempo de hunt: "
-            f"{format_duration(elapsed)}"
+            f"Tempo: "
+            f"{format_duration(stats.elapsed())}"
         )
 
         print(
             f"Gold/h: "
-            f"{format_gold(int(gold_hour))}"
+            f"{format_gold(int(stats.gold_per_hour()))}"
         )
 
         print(
@@ -331,10 +396,14 @@ async def execute_sale(
 
 
 # ================================================================
-# LOOP PRINCIPAL
+# LOOP DA HUNT
 # ================================================================
 
-async def run_hunt(tab):
+async def run_hunt(
+    tab,
+    stop_event,
+    pause_event,
+):
 
     stats = HuntStats(
         started_at=(
@@ -347,106 +416,147 @@ async def run_hunt(tab):
         "========================================"
     )
 
-    print("HUNT INICIADA")
-
     print(
-        "========================================"
-    )
-
-    print(
-        f"Intervalo base: "
-        f"{BASE_INTERVAL} segundos"
-    )
-
-    print(
-        "Jitter principal: "
-        f"+{MAIN_JITTER_MIN}s / "
-        f"+{MAIN_JITTER_MAX}s"
-    )
-
-    print(
-        "Retry: "
-        f"{RETRY_INTERVAL}s + "
-        f"{RETRY_JITTER_MIN}s / "
-        f"{RETRY_JITTER_MAX}s"
+        "HUNT INICIADA"
     )
 
     print(
         "========================================"
     )
 
-    while True:
+    try:
 
-        # ========================================================
-        # INTERVALO PRINCIPAL
-        # ========================================================
+        while not stop_event.is_set():
 
-        delay = random_main_delay()
+            # ====================================================
+            # PAUSA
+            # ====================================================
 
-        jitter = delay - BASE_INTERVAL
+            if not pause_event.is_set():
 
-        print()
-        print(
-            "----------------------------------------"
-        )
+                print()
+                print(
+                    "Hunt pausada."
+                )
 
-        print(
-            f"Próxima venda em "
-            f"{delay:.1f} segundos."
-        )
+                await pause_event.wait()
 
-        print(
-            f"Intervalo base: "
-            f"{BASE_INTERVAL}s"
-        )
+                if stop_event.is_set():
 
-        print(
-            f"Jitter: +{jitter:.1f}s"
-        )
+                    break
 
-        print(
-            "----------------------------------------"
-        )
+                print()
+                print(
+                    "Hunt retomada."
+                )
 
-        await asyncio.sleep(delay)
+                continue
 
-        # ========================================================
-        # VENDA
-        # ========================================================
+            # ====================================================
+            # INTERVALO
+            # ====================================================
 
-        success = await execute_sale(
-            tab,
-            stats,
-        )
-
-        if not success:
+            delay = random_main_delay()
 
             print()
             print(
-                "A venda não foi concluída."
+                f"Próxima venda em "
+                f"{delay:.1f}s."
             )
 
-            print(
-                "O loop continuará."
+            remaining = delay
+
+            while remaining > 0:
+
+                if stop_event.is_set():
+
+                    break
+
+                if not pause_event.is_set():
+
+                    break
+
+                sleep_time = min(
+                    1,
+                    remaining,
+                )
+
+                await asyncio.sleep(
+                    sleep_time
+                )
+
+                remaining -= sleep_time
+
+            if stop_event.is_set():
+
+                break
+
+            if not pause_event.is_set():
+
+                continue
+
+            # ====================================================
+            # VENDA
+            # ====================================================
+
+            success = await execute_sale(
+                tab,
+                stats,
+                stop_event=stop_event,
             )
 
-            retry_delay = random_retry_delay()
+            if (
+                not success
+                and not stop_event.is_set()
+                and pause_event.is_set()
+            ):
 
-            retry_jitter = (
-                retry_delay
-                - RETRY_INTERVAL
-            )
+                print()
+                print(
+                    "A venda não foi concluída."
+                )
 
-            print(
-                f"Nova tentativa em "
-                f"{retry_delay:.1f} segundos."
-            )
+                retry_delay = (
+                    random_retry_delay()
+                )
 
-            print(
-                f"Jitter: "
-                f"+{retry_jitter:.1f}s"
-            )
+                print(
+                    f"Nova tentativa em "
+                    f"{retry_delay:.1f}s."
+                )
 
-            await asyncio.sleep(
-                retry_delay
-            )
+                remaining = retry_delay
+
+                while remaining > 0:
+
+                    if stop_event.is_set():
+
+                        break
+
+                    if not pause_event.is_set():
+
+                        break
+
+                    await asyncio.sleep(
+                        min(1, remaining)
+                    )
+
+                    remaining -= min(
+                        1,
+                        remaining,
+                    )
+
+    except asyncio.CancelledError:
+
+        print(
+            "Task da Hunt cancelada."
+        )
+
+        raise
+
+    finally:
+
+        print()
+        print(
+            "Hunt encerrada."
+        )

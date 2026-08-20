@@ -12,168 +12,294 @@ from baiaidle.actions import validate_sale
 from baiaidle.hunt import run_hunt
 
 
-async def main():
+class GameBot:
 
-    browser = None
-    tab = None
+    def __init__(self):
 
-    print("=== BAIAK IDLE BOT ===")
-    print()
+        self.browser = None
 
-    try:
+        self.tab = None
 
-        # ========================================================
-        # 1. CREDENCIAIS
-        # ========================================================
+        self.stop_event = asyncio.Event()
 
-        if not BAIAKIDLE_LOGIN:
-            raise RuntimeError(
-                "BAIAKIDLE_LOGIN não configurado no .env"
-            )
+        self.hunt_pause_event = asyncio.Event()
 
-        if not BAIAKIDLE_PASSWORD:
-            raise RuntimeError(
-                "BAIAKIDLE_PASSWORD não configurado no .env"
-            )
+        self.hunt_task = None
 
-        print("Credenciais carregadas do .env.")
+        self.running = False
 
-        # ========================================================
-        # 2. NAVEGADOR
-        # ========================================================
+        self.starting = False
 
-        browser = create_browser()
+    # ============================================================
+    # START
+    # ============================================================
 
-        print("Iniciando navegador...")
+    async def start(self):
 
-        await browser.start()
+        if self.running:
 
-        print("Navegador iniciado.")
+            return True, "Bot já está rodando."
 
-        # ========================================================
-        # 3. ABA
-        # ========================================================
+        if self.starting:
 
-        tab = await browser.new_tab()
+            return False, "Bot já está iniciando."
 
-        url = (
-            BAIAKIDLE_URL.rstrip("/")
-            + "/jogar"
-        )
+        self.starting = True
 
-        print("Abrindo:", url)
+        try:
 
-        await tab.go_to(url)
+            if not BAIAKIDLE_LOGIN:
 
-        await asyncio.sleep(3)
+                raise RuntimeError(
+                    "BAIAKIDLE_LOGIN não configurado."
+                )
 
-        print("Página carregada.")
+            if not BAIAKIDLE_PASSWORD:
 
-        # ========================================================
-        # 4. LOGIN
-        # ========================================================
-
-        print()
-        print("Iniciando login...")
-
-        success = await login(
-            tab,
-            BAIAKIDLE_LOGIN,
-            BAIAKIDLE_PASSWORD,
-        )
-
-        if not success:
+                raise RuntimeError(
+                    "BAIAKIDLE_PASSWORD não configurado."
+                )
 
             print()
-            print("ERRO: login falhou.")
+            print(
+                "========================================"
+            )
 
-            return
+            print(
+                "INICIANDO BOT"
+            )
+
+            print(
+                "========================================"
+            )
+
+            # ====================================================
+            # BROWSER
+            # ====================================================
+
+            self.browser = create_browser()
+
+            await self.browser.start()
+
+            print(
+                "Navegador iniciado."
+            )
+
+            # ====================================================
+            # TAB
+            # ====================================================
+
+            self.tab = await self.browser.new_tab()
+
+            url = (
+                BAIAKIDLE_URL.rstrip("/")
+                + "/jogar"
+            )
+
+            print(
+                "Abrindo:",
+                url,
+            )
+
+            await self.tab.go_to(
+                url
+            )
+
+            await asyncio.sleep(3)
+
+            # ====================================================
+            # LOGIN
+            # ====================================================
+
+            print(
+                "Iniciando login..."
+            )
+
+            success = await login(
+                self.tab,
+                BAIAKIDLE_LOGIN,
+                BAIAKIDLE_PASSWORD,
+            )
+
+            if not success:
+
+                raise RuntimeError(
+                    "Login falhou."
+                )
+
+            print(
+                "Login realizado."
+            )
+
+            # ====================================================
+            # VALIDAÇÃO
+            # ====================================================
+
+            print(
+                "Validando sessão..."
+            )
+
+            validated = await validate_sale(
+                self.tab
+            )
+
+            if not validated:
+
+                raise RuntimeError(
+                    "Validação da sessão falhou."
+                )
+
+            print(
+                "Sessão validada."
+            )
+
+            # ====================================================
+            # ESTADO
+            # ====================================================
+
+            self.stop_event.clear()
+
+            self.hunt_pause_event.set()
+
+            self.running = True
+
+            # ====================================================
+            # HUNT
+            # ====================================================
+
+            self.hunt_task = asyncio.create_task(
+                run_hunt(
+                    self.tab,
+                    self.stop_event,
+                    self.hunt_pause_event,
+                )
+            )
+
+            print(
+                "Hunt iniciada."
+            )
+
+            print(
+                "BOT ONLINE."
+            )
+
+            return True, "Bot iniciado com sucesso."
+
+        except Exception:
+
+            await self.stop()
+
+            raise
+
+        finally:
+
+            self.starting = False
+
+    # ============================================================
+    # STOP
+    # ============================================================
+
+    async def stop(self):
 
         print()
-        print("Login realizado com sucesso.")
+        print(
+            "Solicitando parada do bot..."
+        )
+
+        self.stop_event.set()
+
+        self.hunt_pause_event.set()
 
         # ========================================================
-        # 5. VALIDAÇÃO DA SESSÃO
+        # HUNT
         # ========================================================
 
-        print()
-        print("Iniciando validação da sessão...")
+        if self.hunt_task:
 
-        validated = await validate_sale(tab)
+            if not self.hunt_task.done():
 
-        if not validated:
+                self.hunt_task.cancel()
 
-            print()
-            print("ERRO: validação da sessão falhou.")
+                try:
 
-            return
+                    await self.hunt_task
 
-        # ========================================================
-        # 6. BOT PRONTO
-        # ========================================================
+                except asyncio.CancelledError:
 
-        print()
-        print("========================================")
-        print("BOT PRONTO")
-        print("========================================")
+                    pass
 
-        print("Login OK.")
-        print("Sessão validada.")
-        print("Iniciando loop principal da hunt.")
+                except Exception as e:
 
-        print("========================================")
+                    print(
+                        "Erro ao encerrar Hunt:",
+                        e,
+                    )
+
+            self.hunt_task = None
 
         # ========================================================
-        # 7. HUNT
+        # TAB
         # ========================================================
 
-        await run_hunt(tab)
-
-    except KeyboardInterrupt:
-
-        print()
-        print("Bot interrompido pelo usuário.")
-
-    except Exception as e:
-
-        print()
-        print("ERRO:", e)
-
-        import traceback
-
-        traceback.print_exc()
-
-    finally:
-
-        # ========================================================
-        # FECHAR ABA
-        # ========================================================
-
-        if tab:
+        if self.tab:
 
             try:
-                await tab.close()
+
+                await self.tab.close()
 
             except Exception:
                 pass
 
+            self.tab = None
+
         # ========================================================
-        # FECHAR NAVEGADOR
+        # BROWSER
         # ========================================================
 
-        if browser:
-
-            print()
-            print("Encerrando navegador...")
+        if self.browser:
 
             try:
-                await browser.stop()
+
+                await self.browser.stop()
 
             except Exception:
                 pass
 
-            print("Navegador encerrado.")
+            self.browser = None
 
+        self.running = False
 
-if __name__ == "__main__":
-    asyncio.run(main())
+        print(
+            "BOT OFFLINE."
+        )
+
+    # ============================================================
+    # PAUSAR HUNT
+    # ============================================================
+
+    def pause_hunt(self):
+
+        self.hunt_pause_event.clear()
+
+    # ============================================================
+    # RETOMAR HUNT
+    # ============================================================
+
+    def resume_hunt(self):
+
+        self.hunt_pause_event.set()
+
+    # ============================================================
+    # ESTADO
+    # ============================================================
+
+    def is_running(self) -> bool:
+
+        return self.running
+
+    def is_hunt_running(self) -> bool:
+
+        return (
+            self.running
+            and self.hunt_pause_event.is_set()
+        )
