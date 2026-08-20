@@ -9,6 +9,94 @@ from pydoll.browser.options import ChromiumOptions
 from .config import CHROMIUM_BINARY, CHROMIUM_USER_DATA_DIR
 
 
+# ============================================================
+# DISPLAY VIRTUAL (Xvfb)
+# ============================================================
+#
+# No Linux, rodar o Chromium em modo --headless costuma disparar
+# a verificação humana do Cloudflare Turnstile (o navegador
+# headless é facilmente identificado por fingerprinting).
+#
+# Para evitar isso, rodamos o Chromium em modo "headed" normal,
+# porém dentro de um display virtual (Xvfb), que não exige um
+# monitor físico. Do ponto de vista do site, é indistinguível
+# de um Chrome comum.
+#
+# Requer:
+#   pip install pyvirtualdisplay
+#   sudo apt install xvfb
+#
+# ============================================================
+
+_virtual_display = None
+
+
+def start_virtual_display():
+    """
+    Inicia um display virtual (Xvfb) no Linux, se necessário.
+
+    Não faz nada no Windows/macOS ou se já existir um display
+    real disponível (variável DISPLAY já definida).
+    """
+
+    global _virtual_display
+
+    if platform.system() != "Linux":
+        return
+
+    if os.getenv("DISPLAY"):
+        print(
+            "DISPLAY já definido "
+            f"({os.getenv('DISPLAY')}), "
+            "não iniciando Xvfb."
+        )
+        return
+
+    if _virtual_display is not None:
+        return
+
+    try:
+        from pyvirtualdisplay import Display
+    except ImportError:
+        raise RuntimeError(
+            "pyvirtualdisplay não está instalado. "
+            "Execute: pip install pyvirtualdisplay "
+            "e sudo apt install xvfb"
+        )
+
+    _virtual_display = Display(
+        visible=0,
+        size=(1280, 720),
+    )
+
+    _virtual_display.start()
+
+    print(
+        "Display virtual (Xvfb) iniciado: "
+        f"{os.environ.get('DISPLAY')}"
+    )
+
+
+def stop_virtual_display():
+    """
+    Para o display virtual (Xvfb), se estiver rodando.
+    """
+
+    global _virtual_display
+
+    if _virtual_display is None:
+        return
+
+    try:
+        _virtual_display.stop()
+    except Exception:
+        pass
+
+    _virtual_display = None
+
+    print("Display virtual (Xvfb) encerrado.")
+
+
 def find_browser() -> str:
     """
     Localiza automaticamente Chrome/Chromium.
@@ -168,12 +256,32 @@ def create_browser() -> Chrome:
 
     options.binary_location = binary
 
-    # Linux normalmente será executado sem interface gráfica.
+    # ============================================================
+    # Linux
+    # ============================================================
+    #
+    # IMPORTANTE: não usar --headless aqui. O Cloudflare Turnstile
+    # detecta navegadores headless e força a verificação humana,
+    # o que quebra o AutoBoss. Em vez disso, o Chromium roda em
+    # modo normal dentro de um display virtual (Xvfb), iniciado
+    # por start_virtual_display() antes de criar o browser.
+    #
     if platform.system() == "Linux":
-        options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--window-size=1280,720")
+        options.add_argument("--start-maximized")
 
+    # ============================================================
+    # Anti-fingerprinting
+    # ============================================================
+    #
+    # Reduz sinais óbvios de automação que sites como o Cloudflare
+    # usam para identificar bots (navigator.webdriver, banner de
+    # "Chrome sendo controlado por software automatizado", etc.)
+    #
+    options.add_argument(
+        "--disable-blink-features=AutomationControlled"
+    )
 
     options.add_argument(
         "--disable-dev-shm-usage"

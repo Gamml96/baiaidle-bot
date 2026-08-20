@@ -6,7 +6,11 @@ from baiaidle.config import (
     BAIAKIDLE_URL,
 )
 
-from baiaidle.browser import create_browser
+from baiaidle.browser import (
+    create_browser,
+    start_virtual_display,
+    stop_virtual_display,
+)
 from baiaidle.login import login
 from baiaidle.actions import validate_sale
 from baiaidle.hunt import run_hunt
@@ -72,6 +76,12 @@ class GameBot:
             print(
                 "========================================"
             )
+
+            # ====================================================
+            # DISPLAY VIRTUAL (Xvfb, apenas Linux)
+            # ====================================================
+
+            start_virtual_display()
 
             # ====================================================
             # BROWSER
@@ -266,6 +276,12 @@ class GameBot:
                 pass
 
             self.browser = None
+
+        # ========================================================
+        # DISPLAY VIRTUAL (Xvfb)
+        # ========================================================
+
+        stop_virtual_display()
 
         self.running = False
 
