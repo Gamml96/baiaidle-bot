@@ -1342,6 +1342,12 @@ async def wait_for_bossbar_name(
 # JS PRIMEIRO + FALLBACK PYDOLL
 # ================================================================
 
+# ================================================================
+# CLICAR ENFRENTAR
+# JAVASCRIPT PRIMEIRO + PYDOLL FALLBACK
+# CLIQUE REAL SIMULADO
+# ================================================================
+
 async def click_fight_button(
     tab,
     boss_name: str,
@@ -1361,10 +1367,10 @@ async def click_fight_button(
     )
 
     # ============================================================
-    # 1 - AGUARDAR BOTÃO FICAR DISPONÍVEL
+    # LOCALIZAR BOTÃO VISÍVEL
     # ============================================================
 
-    while True:
+    async def get_button_info():
 
         js = f"""
         (() => {{
@@ -1407,47 +1413,79 @@ async def click_fight_button(
 
             }}
 
-            const button =
-                card.querySelector(
-                    ".boss-fight"
+            const buttons =
+                Array.from(
+                    card.querySelectorAll(
+                        ".boss-fight"
+                    )
                 );
 
-            if (!button) {{
+            const visibleButtons =
+                buttons.filter(
+                    button => {{
+
+                        const rect =
+                            button.getBoundingClientRect();
+
+                        const style =
+                            getComputedStyle(button);
+
+                        return (
+                            rect.width > 0 &&
+                            rect.height > 0 &&
+                            style.display !== "none" &&
+                            style.visibility !== "hidden" &&
+                            style.opacity !== "0"
+                        );
+
+                    }}
+                );
+
+            if (!visibleButtons.length) {{
 
                 return JSON.stringify({{
 
                     found: false,
 
                     error:
-                        "Botão Enfrentar não encontrado"
+                        "Nenhum botão Enfrentar visível"
 
                 }});
 
             }}
 
+            const button =
+                visibleButtons[
+                    visibleButtons.length - 1
+                ];
+
             const rect =
                 button.getBoundingClientRect();
-
-            const style =
-                getComputedStyle(button);
-
-            const visible =
-                rect.width > 0 &&
-                rect.height > 0 &&
-                style.display !== "none" &&
-                style.visibility !== "hidden";
 
             return JSON.stringify({{
 
                 found: true,
 
-                visible: visible,
+                text:
+                    button.innerText.trim(),
 
                 disabled:
                     button.disabled,
 
-                text:
-                    button.innerText.trim()
+                x:
+                    rect.left + rect.width / 2,
+
+                y:
+                    rect.top + rect.height / 2,
+
+                width:
+                    rect.width,
+
+                height:
+                    rect.height,
+
+                html:
+                    button.outerHTML
 
             }});
 
@@ -1460,25 +1498,52 @@ async def click_fight_button(
                 js
             )
 
-            info = parse_json_result(
+            return parse_json_result(
                 result
             )
 
         except Exception as e:
 
             print(
-                "Erro verificando botão:",
+                "Erro localizando botão:",
                 repr(e)
             )
 
-            info = None
+            return None
+
+    # ============================================================
+    # AGUARDAR BOTÃO
+    # ============================================================
+
+    while True:
+
+        info = await get_button_info()
 
         if (
             info
             and info.get("found")
-            and info.get("visible")
             and not info.get("disabled")
         ):
+
+            print(
+                "Botão Enfrentar encontrado."
+            )
+
+            print(
+                f"Texto: {info.get('text')}"
+            )
+
+            print(
+                f"Posição: "
+                f"x={info.get('x')} "
+                f"y={info.get('y')}"
+            )
+
+            print(
+                f"Tamanho: "
+                f"{info.get('width')}x"
+                f"{info.get('height')}"
+            )
 
             break
 
@@ -1507,10 +1572,10 @@ async def click_fight_button(
         )
 
     # ============================================================
-    # FUNÇÃO AUXILIAR DE CONFIRMAÇÃO
+    # CONFIRMAÇÃO
     # ============================================================
 
-    async def confirm():
+    async def confirm_bossbar():
 
         print()
         print(
@@ -1527,29 +1592,44 @@ async def click_fight_button(
 
             print()
             print(
-                f"✅ Bossbar confirmou {boss_name}."
+                "========================================"
+            )
+
+            print(
+                "✅ COMBATE CONFIRMADO"
+            )
+
+            print(
+                f"Bossbar: {boss_name}"
+            )
+
+            print(
+                "========================================"
             )
 
             return True
 
         print()
         print(
-            f"❌ Bossbar NÃO confirmou {boss_name}."
+            "❌ Bossbar não confirmou."
         )
 
         return False
 
     # ============================================================
-    # 2 - TENTATIVA 1: JAVASCRIPT
+    # TENTATIVA 1
+    # JAVASCRIPT COM EVENTOS DE MOUSE
     # ============================================================
 
     print()
     print(
         "========================================"
     )
+
     print(
-        "TENTATIVA 1: CLIQUE JAVASCRIPT"
+        "TENTATIVA 1: JAVASCRIPT"
     )
+
     print(
         "========================================"
     )
@@ -1595,48 +1675,51 @@ async def click_fight_button(
 
         }}
 
-        const button =
-            card.querySelector(
-                ".boss-fight"
+        const buttons =
+            Array.from(
+                card.querySelectorAll(
+                    ".boss-fight"
+                )
             );
 
-        if (!button) {{
+        const visibleButtons =
+            buttons.filter(
+                button => {{
+
+                    const rect =
+                        button.getBoundingClientRect();
+
+                    const style =
+                        getComputedStyle(button);
+
+                    return (
+                        rect.width > 0 &&
+                        rect.height > 0 &&
+                        style.display !== "none" &&
+                        style.visibility !== "hidden" &&
+                        style.opacity !== "0"
+                    );
+
+                }}
+            );
+
+        if (!visibleButtons.length) {{
 
             return JSON.stringify({{
 
                 success: false,
 
                 error:
-                    "Botão Enfrentar não encontrado."
+                    "Nenhum botão visível."
 
             }});
 
         }}
 
-        const rect =
-            button.getBoundingClientRect();
-
-        const style =
-            getComputedStyle(button);
-
-        const visible =
-            rect.width > 0 &&
-            rect.height > 0 &&
-            style.display !== "none" &&
-            style.visibility !== "hidden";
-
-        if (!visible) {{
-
-            return JSON.stringify({{
-
-                success: false,
-
-                error:
-                    "Botão Enfrentar não está visível."
-
-            }});
-
-        }}
+        const button =
+            visibleButtons[
+                visibleButtons.length - 1
+            ];
 
         if (button.disabled) {{
 
@@ -1645,23 +1728,129 @@ async def click_fight_button(
                 success: false,
 
                 error:
-                    "Botão Enfrentar está disabled."
+                    "Botão disabled."
 
             }});
 
         }}
 
+        const rect =
+            button.getBoundingClientRect();
+
+        const x =
+            rect.left + rect.width / 2;
+
+        const y =
+            rect.top + rect.height / 2;
+
         // ========================================================
-        // CLIQUE JAVASCRIPT
+        // GARANTIR QUE O BOTÃO ESTEJA NO CENTRO DA ÁREA VISÍVEL
         // ========================================================
 
         try {{
-            button.focus();
+
+            button.scrollIntoView({{
+                block: "center",
+                inline: "center"
+            }});
+
+        }} catch (e) {{}}
+
+        // ========================================================
+        // EVENTOS DE MOUSE
+        // ========================================================
+
+        const eventOptions = {{
+
+            bubbles: true,
+
+            cancelable: true,
+
+            view: window,
+
+            clientX: x,
+
+            clientY: y,
+
+            button: 0,
+
+            buttons: 1
+
+        }};
+
+        try {{
+
+            button.dispatchEvent(
+                new PointerEvent(
+                    "pointerdown",
+                    {{
+                        ...eventOptions,
+                        pointerId: 1,
+                        pointerType: "mouse",
+                        isPrimary: true
+                    }}
+                )
+            );
+
         }} catch (e) {{}}
 
         try {{
 
-            button.click();
+            button.dispatchEvent(
+                new MouseEvent(
+                    "mousedown",
+                    eventOptions
+                )
+            );
+
+        }} catch (e) {{}}
+
+        try {{
+
+            button.dispatchEvent(
+                new PointerEvent(
+                    "pointerup",
+                    {{
+                        ...eventOptions,
+                        pointerId: 1,
+                        pointerType: "mouse",
+                        isPrimary: true,
+                        buttons: 0
+                    }}
+                )
+            );
+
+        }} catch (e) {{}}
+
+        try {{
+
+            button.dispatchEvent(
+                new MouseEvent(
+                    "mouseup",
+                    {{
+                        ...eventOptions,
+                        buttons: 0
+                    }}
+                )
+            );
+
+        }} catch (e) {{}}
+
+        // ========================================================
+        // CLICK FINAL
+        // ========================================================
+
+        try {{
+
+            button.dispatchEvent(
+                new MouseEvent(
+                    "click",
+                    {{
+                        ...eventOptions,
+                        buttons: 0
+                    }}
+                )
+            );
 
         }} catch (e) {{
 
@@ -1670,7 +1859,7 @@ async def click_fight_button(
                 success: false,
 
                 error:
-                    "button.click() lançou exceção: "
+                    "Erro dispatch click: "
                     + String(e)
 
             }});
@@ -1685,7 +1874,13 @@ async def click_fight_button(
                 bossName,
 
             method:
-                "javascript"
+                "javascript-events",
+
+            x:
+                x,
+
+            y:
+                y
 
         }});
 
@@ -1705,7 +1900,7 @@ async def click_fight_button(
     except Exception as e:
 
         print(
-            "❌ Erro no clique JavaScript:"
+            "❌ Erro no JavaScript:"
         )
 
         print(
@@ -1729,11 +1924,15 @@ async def click_fight_button(
             "Clique JavaScript executado."
         )
 
-        # --------------------------------------------------------
-        # CONFIRMAR
-        # --------------------------------------------------------
+        # ========================================================
+        # ESPERAR UM POUCO ANTES DE CONFIRMAR
+        # ========================================================
 
-        if await confirm():
+        await asyncio.sleep(
+            0.5
+        )
+
+        if await confirm_bossbar():
 
             return {
                 "success": True,
@@ -1742,36 +1941,27 @@ async def click_fight_button(
                 "confirmed": True
             }
 
-        print()
-        print(
-            "⚠️ JavaScript executou o clique,"
-        )
-
-        print(
-            "mas a Bossbar não confirmou."
-        )
-
-    else:
-
-        print()
-        print(
-            "⚠️ Clique JavaScript falhou."
-        )
-
     # ============================================================
-    # 3 - FALLBACK: PYDOLL
+    # TENTATIVA 2
+    # PYDOLL
     # ============================================================
 
     print()
     print(
         "========================================"
     )
+
     print(
-        "TENTATIVA 2: CLIQUE PYDOLL"
+        "TENTATIVA 2: PYDOLL"
     )
+
     print(
         "========================================"
     )
+
+    # ------------------------------------------------------------
+    # LOCALIZAR NOVAMENTE
+    # ------------------------------------------------------------
 
     xpath = (
         f'//*[@id="boss-modal-body"]'
@@ -1796,18 +1986,11 @@ async def click_fight_button(
     except Exception as e:
 
         print(
-            "❌ Exceção procurando botão pelo Pydoll:"
-        )
-
-        print(
+            "Erro localizando pelo Pydoll:",
             repr(e)
         )
 
     if not button:
-
-        print(
-            "❌ Pydoll não encontrou o botão."
-        )
 
         return {
             "success": False,
@@ -1821,10 +2004,14 @@ async def click_fight_button(
         "Botão Enfrentar localizado pelo Pydoll."
     )
 
+    # ============================================================
+    # PYDOLL CLICK
+    # ============================================================
+
     try:
 
         await button.click(
-            humanize=True
+            humanize=False
         )
 
         print(
@@ -1851,15 +2038,14 @@ async def click_fight_button(
         }
 
     # ============================================================
-    # 4 - CONFIRMAR PYDOLL PELA BOSSBAR
+    # CONFIRMAR
     # ============================================================
 
-    if await confirm():
+    await asyncio.sleep(
+        0.5
+    )
 
-        print()
-        print(
-            "✅ CLIQUE PYDOLL CONFIRMADO!"
-        )
+    if await confirm_bossbar():
 
         return {
             "success": True,
@@ -1869,88 +2055,30 @@ async def click_fight_button(
         }
 
     # ============================================================
-    # 5 - FALHOU TUDO
+    # FALHOU
     # ============================================================
 
     print()
     print(
         "========================================"
     )
+
     print(
-        "❌ CLIQUE NÃO CONFIRMADO"
+        "❌ COMBATE NÃO CONFIRMADO"
     )
+
     print(
         "========================================"
     )
 
-    print(
-        f"Bossbar não confirmou o boss: "
-        f"{boss_name}"
-    )
-
     return {
         "success": False,
         "error":
-            "JavaScript e Pydoll executaram "
-            "tentativas de clique, mas a Bossbar "
-            f"não confirmou {boss_name}.",
+            "JavaScript e Pydoll tentaram clicar, "
+            "mas a Bossbar não confirmou "
+            f"{boss_name}.",
         "confirmed": False
     }
-
-    # ============================================================
-    # 4 - CONFIRMAÇÃO DO FALLBACK PELA BOSSBAR
-    # ============================================================
-
-    print()
-    print(
-        "Aguardando confirmação da Bossbar..."
-    )
-
-    confirmed = await wait_for_bossbar_name(
-        tab,
-        boss_name,
-        timeout=5
-    )
-
-    if confirmed:
-
-        print()
-        print(
-            "✅ FALLBACK JAVASCRIPT CONFIRMADO!"
-        )
-
-        print(
-            f"Bossbar confirmou: {boss_name}"
-        )
-
-        return {
-            "success": True,
-            "boss_name": boss_name,
-            "method": "javascript",
-            "confirmed": True
-        }
-
-    # ============================================================
-    # 5 - NÃO CONFIRMOU
-    # ============================================================
-
-    print()
-    print(
-        "❌ CLIQUE NÃO CONFIRMADO."
-    )
-
-    print(
-        f"Bossbar não confirmou o boss: {boss_name}"
-    )
-
-    return {
-        "success": False,
-        "error":
-            "Clique executado, mas a Bossbar "
-            f"não confirmou o boss {boss_name}.",
-        "confirmed": False
-    }
-
 
 # ================================================================
 # BOSSBAR
