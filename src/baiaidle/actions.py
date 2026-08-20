@@ -431,98 +431,53 @@ async def detect_cloudflare(
         return False
 
 
-# # ================================================================
-# # CLOUDFLARE - CLIQUE
-# # ================================================================
+# ================================================================
+# FORÇAR CLIQUE NO CLOUDFLARE
+# ================================================================
 
-
-# async def click_cloudflare_challenge(
-#     tab,
-# ) -> bool:
-#     """
-#     Tenta clicar automaticamente no desafio Cloudflare.
-#     """
-
-#     js = """
-#     (() => {
-
-#         const selectors = [
-
-#             'input[type="checkbox"]',
-
-#             'iframe[src*="challenges.cloudflare.com"]',
-
-#             'iframe[src*="cloudflare"]',
-
-#             '[class*="cf-turnstile"]',
-
-#             '[id*="cf-turnstile"]'
-
-#         ];
-
-#         for (const selector of selectors) {
-
-#             const elements =
-#                 document.querySelectorAll(
-#                     selector
-#                 );
-
-#             for (const element of elements) {
-
-#                 const rect =
-#                     element.getBoundingClientRect();
-
-#                 const style =
-#                     getComputedStyle(element);
-
-#                 const visible =
-#                     rect.width > 0 &&
-#                     rect.height > 0 &&
-#                     style.display !== 'none' &&
-#                     style.visibility !== 'hidden';
-
-#                 if (!visible) {
-
-#                     continue;
-#                 }
-
-#                 try {
-
-#                     element.click();
-
-#                     return true;
-
-#                 } catch (error) {
-
-#                     console.log(
-#                         "Falha no clique Cloudflare:",
-#                         error
-#                     );
-#                 }
-#             }
-#         }
-
-#         return false;
-
-#     })()
-#     """
-
-#     try:
-
-#         result = await tab.execute_script(
-#             js
-#         )
-
-#         value = extract_execute_result(
-#             result
-#         )
-
-#         return value is True
-
-#     except Exception:
-
-#         return False
-
+async def click_cloudflare_challenge(
+    tab,
+) -> bool:
+    """
+    Tenta clicar automaticamente no desafio Cloudflare injetado no modal.
+    """
+    js = """
+    (() => {
+        const selectors = [
+            'input[type="checkbox"]',
+            'iframe[src*="challenges.cloudflare.com"]',
+            'iframe[src*="cloudflare"]',
+            '[class*="cf-turnstile"]',
+            '[id*="cf-turnstile"]'
+        ];
+        for (const selector of selectors) {
+            const elements = document.querySelectorAll(selector);
+            for (const element of elements) {
+                const rect = element.getBoundingClientRect();
+                const style = getComputedStyle(element);
+                const visible =
+                    rect.width > 0 &&
+                    rect.height > 0 &&
+                    style.display !== 'none' &&
+                    style.visibility !== 'hidden';
+                if (!visible) continue;
+                try {
+                    element.click();
+                    return true;
+                } catch (error) {
+                    console.log("Falha no clique Cloudflare:", error);
+                }
+            }
+        }
+        return false;
+    })()
+    """
+    try:
+        result = await tab.execute_script(js)
+        value = extract_execute_result(result)
+        return value is True
+    except Exception:
+        return False
 
 # ================================================================
 # AGUARDAR CLOUDFLARE
