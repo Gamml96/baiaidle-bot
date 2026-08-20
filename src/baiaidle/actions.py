@@ -431,97 +431,97 @@ async def detect_cloudflare(
         return False
 
 
-# ================================================================
-# CLOUDFLARE - CLIQUE
-# ================================================================
+# # ================================================================
+# # CLOUDFLARE - CLIQUE
+# # ================================================================
 
 
-async def click_cloudflare_challenge(
-    tab,
-) -> bool:
-    """
-    Tenta clicar automaticamente no desafio Cloudflare.
-    """
+# async def click_cloudflare_challenge(
+#     tab,
+# ) -> bool:
+#     """
+#     Tenta clicar automaticamente no desafio Cloudflare.
+#     """
 
-    js = """
-    (() => {
+#     js = """
+#     (() => {
 
-        const selectors = [
+#         const selectors = [
 
-            'input[type="checkbox"]',
+#             'input[type="checkbox"]',
 
-            'iframe[src*="challenges.cloudflare.com"]',
+#             'iframe[src*="challenges.cloudflare.com"]',
 
-            'iframe[src*="cloudflare"]',
+#             'iframe[src*="cloudflare"]',
 
-            '[class*="cf-turnstile"]',
+#             '[class*="cf-turnstile"]',
 
-            '[id*="cf-turnstile"]'
+#             '[id*="cf-turnstile"]'
 
-        ];
+#         ];
 
-        for (const selector of selectors) {
+#         for (const selector of selectors) {
 
-            const elements =
-                document.querySelectorAll(
-                    selector
-                );
+#             const elements =
+#                 document.querySelectorAll(
+#                     selector
+#                 );
 
-            for (const element of elements) {
+#             for (const element of elements) {
 
-                const rect =
-                    element.getBoundingClientRect();
+#                 const rect =
+#                     element.getBoundingClientRect();
 
-                const style =
-                    getComputedStyle(element);
+#                 const style =
+#                     getComputedStyle(element);
 
-                const visible =
-                    rect.width > 0 &&
-                    rect.height > 0 &&
-                    style.display !== 'none' &&
-                    style.visibility !== 'hidden';
+#                 const visible =
+#                     rect.width > 0 &&
+#                     rect.height > 0 &&
+#                     style.display !== 'none' &&
+#                     style.visibility !== 'hidden';
 
-                if (!visible) {
+#                 if (!visible) {
 
-                    continue;
-                }
+#                     continue;
+#                 }
 
-                try {
+#                 try {
 
-                    element.click();
+#                     element.click();
 
-                    return true;
+#                     return true;
 
-                } catch (error) {
+#                 } catch (error) {
 
-                    console.log(
-                        "Falha no clique Cloudflare:",
-                        error
-                    );
-                }
-            }
-        }
+#                     console.log(
+#                         "Falha no clique Cloudflare:",
+#                         error
+#                     );
+#                 }
+#             }
+#         }
 
-        return false;
+#         return false;
 
-    })()
-    """
+#     })()
+#     """
 
-    try:
+#     try:
 
-        result = await tab.execute_script(
-            js
-        )
+#         result = await tab.execute_script(
+#             js
+#         )
 
-        value = extract_execute_result(
-            result
-        )
+#         value = extract_execute_result(
+#             result
+#         )
 
-        return value is True
+#         return value is True
 
-    except Exception:
+#     except Exception:
 
-        return False
+#         return False
 
 
 # ================================================================
