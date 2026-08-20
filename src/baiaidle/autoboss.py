@@ -1348,26 +1348,733 @@ async def wait_for_bossbar_name(
 # CLIQUE REAL SIMULADO
 # ================================================================
 
+# ================================================================
+# CLICAR ENFRENTAR
+# DEBUG COMPLETO
+# JS PRIMEIRO + PYDOLL FALLBACK
+# ================================================================
+
 async def click_fight_button(
     tab,
     boss_name: str,
     timeout: float = 10,
 ):
+    print()
     print(
-        f"Procurando botão Enfrentar de {boss_name}..."
+        "================================================"
     )
+    print(
+        f"DEBUG ENFRENTAR: {boss_name}"
+    )
+    print(
+        "================================================"
+    )
+
+    # ============================================================
+    # FUNÇÃO PARA ENVIAR DEBUG AO TELEGRAM
+    # ============================================================
+
+    async def telegram_debug(
+        text: str,
+        prefix: str = "🔎 DEBUG"
+    ):
+        message = (
+            f"{prefix}\n\n"
+            f"{text}"
+        )
+
+        # Telegram possui limite de mensagem.
+        # Quebramos em blocos menores.
+        max_length = 3500
+
+        if len(message) <= max_length:
+
+            await self.send_message(
+                message
+            )
+
+            return
+
+        for i in range(
+            0,
+            len(message),
+            max_length
+        ):
+
+            chunk = message[
+                i:i + max_length
+            ]
+
+            await self.send_message(
+                chunk
+            )
+
+    # ============================================================
+    # NOTA:
+    # click_fight_button() é uma função externa.
+    # Precisamos localizar o callback Telegram.
+    #
+    # O código abaixo usa uma variável global opcional:
+    # AUTO_BOSS_DEBUG_CALLBACK
+    #
+    # Se ela existir, envia para Telegram.
+    # ============================================================
+
+    async def send_debug(
+        text: str,
+        prefix: str = "🔎 DEBUG"
+    ):
+
+        print()
+        print(
+            "========== DEBUG =========="
+        )
+        print(
+            text
+        )
+        print(
+            "==========================="
+        )
+
+        callback = globals().get(
+            "AUTO_BOSS_DEBUG_CALLBACK"
+        )
+
+        if callback:
+
+            try:
+
+                message = (
+                    f"{prefix}\n\n"
+                    f"{text}"
+                )
+
+                max_length = 3500
+
+                if len(message) <= max_length:
+
+                    result = callback(
+                        message
+                    )
+
+                    if asyncio.iscoroutine(
+                        result
+                    ):
+                        await result
+
+                else:
+
+                    total = (
+                        len(message)
+                        + max_length
+                        - 1
+                    ) // max_length
+
+                    for i in range(
+                        0,
+                        len(message),
+                        max_length
+                    ):
+
+                        chunk = message[
+                            i:i + max_length
+                        ]
+
+                        result = callback(
+                            f"{prefix} "
+                            f"({i // max_length + 1}/{total})\n\n"
+                            f"{chunk}"
+                        )
+
+                        if asyncio.iscoroutine(
+                            result
+                        ):
+                            await result
+
+            except Exception as e:
+
+                print(
+                    "Erro enviando debug Telegram:",
+                    repr(e)
+                )
 
     safe_name = json.dumps(
         boss_name,
         ensure_ascii=False
     )
 
-    start = (
-        asyncio.get_running_loop().time()
+    # ============================================================
+    # DEBUG COMPLETO DO DOM
+    # ============================================================
+
+    print()
+    print(
+        "Coletando HTML/DOM do botão..."
+    )
+
+    debug_js = f"""
+    (() => {{
+
+        const bossName = {safe_name};
+
+        const result = {{
+
+            boss_name:
+                bossName,
+
+            url:
+                location.href,
+
+            title:
+                document.title,
+
+            card_found:
+                false,
+
+            button_found:
+                false,
+
+            card_html:
+                null,
+
+            button_html:
+                null,
+
+            parent_html:
+                null,
+
+            button_attributes:
+                {{}},
+
+            button_properties:
+                {{}},
+
+            computed_style:
+                {{}},
+
+            rect:
+                null,
+
+            element_at_point:
+                null,
+
+            element_at_point_html:
+                null,
+
+            closest_boss_fight:
+                null,
+
+            closest_boss_cell:
+                null
+
+        }};
+
+        // ========================================================
+        // LOCALIZAR CARD
+        // ========================================================
+
+        const cards =
+            Array.from(
+                document.querySelectorAll(
+                    "#boss-modal-body .boss-cell"
+                )
+            );
+
+        const card =
+            cards.find(
+                element => {{
+
+                    const name =
+                        element.querySelector(
+                            ".boss-cell-name"
+                        );
+
+                    return name &&
+                        name.innerText.trim()
+                            === bossName;
+
+                }}
+            );
+
+        if (!card) {{
+
+            result.error =
+                "CARD NÃO ENCONTRADO";
+
+            return JSON.stringify(
+                result
+            );
+
+        }}
+
+        result.card_found = true;
+
+        result.card_html =
+            card.outerHTML;
+
+        result.closest_boss_cell =
+            card.outerHTML;
+
+        // ========================================================
+        // LOCALIZAR TODOS OS BOTÕES
+        // ========================================================
+
+        const allButtons =
+            Array.from(
+                card.querySelectorAll(
+                    ".boss-fight"
+                )
+            );
+
+        result.total_boss_fight_buttons =
+            allButtons.length;
+
+        // ========================================================
+        // ESCOLHER BOTÃO
+        // ========================================================
+
+        let button = null;
+
+        for (
+            const candidate
+            of allButtons
+        ) {{
+
+            const rect =
+                candidate.getBoundingClientRect();
+
+            const style =
+                getComputedStyle(
+                    candidate
+                );
+
+            const visible =
+                rect.width > 0 &&
+                rect.height > 0 &&
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                style.opacity !== "0";
+
+            if (visible) {{
+
+                button = candidate;
+                break;
+
+            }}
+
+        }}
+
+        // Se nenhum visível,
+        // pegar o último existente
+        // para podermos analisar.
+
+        if (!button && allButtons.length) {{
+
+            button =
+                allButtons[
+                    allButtons.length - 1
+                ];
+
+        }}
+
+        if (!button) {{
+
+            result.error =
+                "BOTÃO .boss-fight NÃO ENCONTRADO";
+
+            return JSON.stringify(
+                result
+            );
+
+        }}
+
+        result.button_found = true;
+
+        // ========================================================
+        // HTML DO BOTÃO
+        // ========================================================
+
+        result.button_html =
+            button.outerHTML;
+
+        // ========================================================
+        // HTML DO PAI
+        // ========================================================
+
+        if (button.parentElement) {{
+
+            result.parent_html =
+                button.parentElement.outerHTML;
+
+        }}
+
+        // ========================================================
+        // ATRIBUTOS
+        // ========================================================
+
+        for (
+            const attribute
+            of button.attributes
+        ) {{
+
+            result.button_attributes[
+                attribute.name
+            ] =
+                attribute.value;
+
+        }}
+
+        // ========================================================
+        // PROPRIEDADES
+        // ========================================================
+
+        result.button_properties = {{
+
+            tagName:
+                button.tagName,
+
+            id:
+                button.id,
+
+            className:
+                button.className,
+
+            text:
+                button.innerText,
+
+            textContent:
+                button.textContent,
+
+            disabled:
+                button.disabled,
+
+            hidden:
+                button.hidden,
+
+            tabIndex:
+                button.tabIndex,
+
+            type:
+                button.type,
+
+            value:
+                button.value,
+
+            name:
+                button.name,
+
+            formAction:
+                button.formAction || null,
+
+            formMethod:
+                button.formMethod || null,
+
+            onclick:
+                button.onclick
+                    ? String(button.onclick)
+                    : null
+
+        }};
+
+        // ========================================================
+        // COMPUTED STYLE
+        // ========================================================
+
+        const style =
+            getComputedStyle(
+                button
+            );
+
+        result.computed_style = {{
+
+            display:
+                style.display,
+
+            visibility:
+                style.visibility,
+
+            opacity:
+                style.opacity,
+
+            position:
+                style.position,
+
+            pointerEvents:
+                style.pointerEvents,
+
+            zIndex:
+                style.zIndex,
+
+            cursor:
+                style.cursor,
+
+            overflow:
+                style.overflow
+
+        }};
+
+        // ========================================================
+        // RECT
+        // ========================================================
+
+        const rect =
+            button.getBoundingClientRect();
+
+        result.rect = {{
+
+            left:
+                rect.left,
+
+            top:
+                rect.top,
+
+            right:
+                rect.right,
+
+            bottom:
+                rect.bottom,
+
+            width:
+                rect.width,
+
+            height:
+                rect.height,
+
+            centerX:
+                rect.left +
+                rect.width / 2,
+
+            centerY:
+                rect.top +
+                rect.height / 2
+
+        }};
+
+        // ========================================================
+        // ELEMENTO NO PONTO CENTRAL
+        // ========================================================
+
+        const x =
+            rect.left +
+            rect.width / 2;
+
+        const y =
+            rect.top +
+            rect.height / 2;
+
+        const elementAtPoint =
+            document.elementFromPoint(
+                x,
+                y
+            );
+
+        if (elementAtPoint) {{
+
+            result.element_at_point =
+                {{
+
+                    tagName:
+                        elementAtPoint.tagName,
+
+                    id:
+                        elementAtPoint.id,
+
+                    className:
+                        elementAtPoint.className,
+
+                    text:
+                        (
+                            elementAtPoint.innerText
+                            || ""
+                        ).trim()
+
+                }};
+
+            result.element_at_point_html =
+                elementAtPoint.outerHTML;
+
+            const closestFight =
+                elementAtPoint.closest(
+                    ".boss-fight"
+                );
+
+            if (closestFight) {{
+
+                result.closest_boss_fight =
+                    closestFight.outerHTML;
+
+            }}
+
+        }}
+
+        return JSON.stringify(
+            result
+        );
+
+    }})()
+    """
+
+    try:
+
+        result = await tab.execute_script(
+            debug_js
+        )
+
+        debug_data = parse_json_result(
+            result
+        )
+
+    except Exception as e:
+
+        debug_data = {
+            "error":
+                f"Erro coletando DOM: {e}"
+        }
+
+    # ============================================================
+    # IMPRIMIR DEBUG
+    # ============================================================
+
+    print()
+    print(
+        "========== DEBUG DOM =========="
+    )
+
+    print(
+        json.dumps(
+            debug_data,
+            ensure_ascii=False,
+            indent=2
+        )
+    )
+
+    print(
+        "==============================="
     )
 
     # ============================================================
-    # LOCALIZAR BOTÃO VISÍVEL
+    # ENVIAR RESUMO PARA TELEGRAM
+    # ============================================================
+
+    summary = {
+        "boss": boss_name,
+        "url":
+            debug_data.get(
+                "url"
+            )
+            if debug_data
+            else None,
+
+        "card_found":
+            debug_data.get(
+                "card_found"
+            )
+            if debug_data
+            else None,
+
+        "button_found":
+            debug_data.get(
+                "button_found"
+            )
+            if debug_data
+            else None,
+
+        "total_buttons":
+            debug_data.get(
+                "total_boss_fight_buttons"
+            )
+            if debug_data
+            else None,
+
+        "button_properties":
+            debug_data.get(
+                "button_properties"
+            )
+            if debug_data
+            else None,
+
+        "computed_style":
+            debug_data.get(
+                "computed_style"
+            )
+            if debug_data
+            else None,
+
+        "rect":
+            debug_data.get(
+                "rect"
+            )
+            if debug_data
+            else None,
+
+        "element_at_point":
+            debug_data.get(
+                "element_at_point"
+            )
+            if debug_data
+            else None
+
+    }
+
+    await send_debug(
+        json.dumps(
+            summary,
+            ensure_ascii=False,
+            indent=2
+        ),
+        prefix="🔎 DEBUG BOTÃO ENFRENTAR"
+    )
+
+    # ============================================================
+    # ENVIAR HTML DO BOTÃO
+    # ============================================================
+
+    if debug_data:
+
+        button_html =
+            debug_data.get(
+                "button_html"
+            )
+
+        if button_html:
+
+            await send_debug(
+                button_html,
+                prefix="🧩 HTML DO BOTÃO"
+            )
+
+        parent_html =
+            debug_data.get(
+                "parent_html"
+            )
+
+        if parent_html:
+
+            await send_debug(
+                parent_html,
+                prefix="🧩 HTML DO PAI DO BOTÃO"
+            )
+
+    # ============================================================
+    # ENVIAR HTML DO CARD
+    # ============================================================
+
+    if debug_data:
+
+        card_html =
+            debug_data.get(
+                "card_html"
+            )
+
+        if card_html:
+
+            await send_debug(
+                card_html,
+                prefix="🧩 HTML COMPLETO DO CARD"
+            )
+
+    # ============================================================
+    # LOCALIZAÇÃO DO BOTÃO
     # ============================================================
 
     async def get_button_info():
@@ -1428,7 +2135,9 @@ async def click_fight_button(
                             button.getBoundingClientRect();
 
                         const style =
-                            getComputedStyle(button);
+                            getComputedStyle(
+                                button
+                            );
 
                         return (
                             rect.width > 0 &&
@@ -1448,7 +2157,7 @@ async def click_fight_button(
                     found: false,
 
                     error:
-                        "Nenhum botão Enfrentar visível"
+                        "Nenhum botão visível"
 
                 }});
 
@@ -1473,10 +2182,12 @@ async def click_fight_button(
                     button.disabled,
 
                 x:
-                    rect.left + rect.width / 2,
+                    rect.left +
+                    rect.width / 2,
 
                 y:
-                    rect.top + rect.height / 2,
+                    rect.top +
+                    rect.height / 2,
 
                 width:
                     rect.width,
@@ -1484,7 +2195,7 @@ async def click_fight_button(
                 height:
                     rect.height,
 
-                html:
+                outerHTML:
                     button.outerHTML
 
             }});
@@ -1515,9 +2226,14 @@ async def click_fight_button(
     # AGUARDAR BOTÃO
     # ============================================================
 
+    start = (
+        asyncio.get_running_loop().time()
+    )
+
     while True:
 
-        info = await get_button_info()
+        info =
+            await get_button_info()
 
         if (
             info
@@ -1556,15 +2272,16 @@ async def click_fight_button(
 
             return {
                 "success": False,
-                "error": (
-                    info.get(
-                        "error",
-                        "Botão Enfrentar não encontrado."
+                "error":
+                    (
+                        info.get(
+                            "error",
+                            "Botão não encontrado."
+                        )
+                        if info
+                        else
+                        "Botão não encontrado."
                     )
-                    if info
-                    else
-                    "Botão Enfrentar não encontrado."
-                )
             }
 
         await asyncio.sleep(
@@ -1572,64 +2289,59 @@ async def click_fight_button(
         )
 
     # ============================================================
-    # CONFIRMAÇÃO
+    # CONFIRMAÇÃO BOSSBAR
     # ============================================================
 
     async def confirm_bossbar():
 
         print()
         print(
-            f"Confirmando Bossbar: {boss_name}..."
+            f"Confirmando Bossbar: "
+            f"{boss_name}..."
         )
 
-        confirmed = await wait_for_bossbar_name(
-            tab,
-            boss_name,
-            timeout=5
-        )
+        confirmed =
+            await wait_for_bossbar_name(
+                tab,
+                boss_name,
+                timeout=5
+            )
 
         if confirmed:
 
-            print()
             print(
-                "========================================"
+                "✅ Bossbar confirmou!"
             )
 
-            print(
-                "✅ COMBATE CONFIRMADO"
-            )
-
-            print(
-                f"Bossbar: {boss_name}"
-            )
-
-            print(
-                "========================================"
+            await send_debug(
+                f"Bossbar confirmou: {boss_name}",
+                prefix="✅ COMBATE CONFIRMADO"
             )
 
             return True
 
-        print()
         print(
             "❌ Bossbar não confirmou."
+        )
+
+        await send_debug(
+            f"Bossbar NÃO confirmou: {boss_name}",
+            prefix="❌ COMBATE NÃO CONFIRMADO"
         )
 
         return False
 
     # ============================================================
-    # TENTATIVA 1
-    # JAVASCRIPT COM EVENTOS DE MOUSE
+    # TENTATIVA 1 - JAVASCRIPT
     # ============================================================
 
     print()
     print(
         "========================================"
     )
-
     print(
         "TENTATIVA 1: JAVASCRIPT"
     )
-
     print(
         "========================================"
     )
@@ -1690,7 +2402,9 @@ async def click_fight_button(
                         button.getBoundingClientRect();
 
                     const style =
-                        getComputedStyle(button);
+                        getComputedStyle(
+                            button
+                        );
 
                     return (
                         rect.width > 0 &&
@@ -1721,30 +2435,29 @@ async def click_fight_button(
                 visibleButtons.length - 1
             ];
 
-        if (button.disabled) {{
-
-            return JSON.stringify({{
-
-                success: false,
-
-                error:
-                    "Botão disabled."
-
-            }});
-
-        }}
-
         const rect =
             button.getBoundingClientRect();
 
         const x =
-            rect.left + rect.width / 2;
+            rect.left +
+            rect.width / 2;
 
         const y =
-            rect.top + rect.height / 2;
+            rect.top +
+            rect.height / 2;
 
         // ========================================================
-        // GARANTIR QUE O BOTÃO ESTEJA NO CENTRO DA ÁREA VISÍVEL
+        // ELEMENTO REAL NO PONTO
+        // ========================================================
+
+        const elementAtPoint =
+            document.elementFromPoint(
+                x,
+                y
+            );
+
+        // ========================================================
+        // SCROLL
         // ========================================================
 
         try {{
@@ -1757,100 +2470,22 @@ async def click_fight_button(
         }} catch (e) {{}}
 
         // ========================================================
-        // EVENTOS DE MOUSE
-        // ========================================================
-
-        const eventOptions = {{
-
-            bubbles: true,
-
-            cancelable: true,
-
-            view: window,
-
-            clientX: x,
-
-            clientY: y,
-
-            button: 0,
-
-            buttons: 1
-
-        }};
-
-        try {{
-
-            button.dispatchEvent(
-                new PointerEvent(
-                    "pointerdown",
-                    {{
-                        ...eventOptions,
-                        pointerId: 1,
-                        pointerType: "mouse",
-                        isPrimary: true
-                    }}
-                )
-            );
-
-        }} catch (e) {{}}
-
-        try {{
-
-            button.dispatchEvent(
-                new MouseEvent(
-                    "mousedown",
-                    eventOptions
-                )
-            );
-
-        }} catch (e) {{}}
-
-        try {{
-
-            button.dispatchEvent(
-                new PointerEvent(
-                    "pointerup",
-                    {{
-                        ...eventOptions,
-                        pointerId: 1,
-                        pointerType: "mouse",
-                        isPrimary: true,
-                        buttons: 0
-                    }}
-                )
-            );
-
-        }} catch (e) {{}}
-
-        try {{
-
-            button.dispatchEvent(
-                new MouseEvent(
-                    "mouseup",
-                    {{
-                        ...eventOptions,
-                        buttons: 0
-                    }}
-                )
-            );
-
-        }} catch (e) {{}}
-
-        // ========================================================
-        // CLICK FINAL
+        // FOCO
         // ========================================================
 
         try {{
 
-            button.dispatchEvent(
-                new MouseEvent(
-                    "click",
-                    {{
-                        ...eventOptions,
-                        buttons: 0
-                    }}
-                )
-            );
+            button.focus();
+
+        }} catch (e) {{}}
+
+        // ========================================================
+        // CLIQUE DIRETO
+        // ========================================================
+
+        try {{
+
+            button.click();
 
         }} catch (e) {{
 
@@ -1859,7 +2494,7 @@ async def click_fight_button(
                 success: false,
 
                 error:
-                    "Erro dispatch click: "
+                    "button.click(): "
                     + String(e)
 
             }});
@@ -1874,13 +2509,18 @@ async def click_fight_button(
                 bossName,
 
             method:
-                "javascript-events",
+                "javascript",
 
             x:
                 x,
 
             y:
-                y
+                y,
+
+            element_at_point:
+                elementAtPoint
+                    ? elementAtPoint.outerHTML
+                    : null
 
         }});
 
@@ -1889,21 +2529,20 @@ async def click_fight_button(
 
     try:
 
-        result = await tab.execute_script(
-            js_click
-        )
+        result =
+            await tab.execute_script(
+                js_click
+            )
 
-        data = parse_json_result(
-            result
-        )
+        data =
+            parse_json_result(
+                result
+            )
 
     except Exception as e:
 
         print(
-            "❌ Erro no JavaScript:"
-        )
-
-        print(
+            "Erro JS:",
             repr(e)
         )
 
@@ -1914,19 +2553,21 @@ async def click_fight_button(
         data
     )
 
+    await send_debug(
+        json.dumps(
+            data,
+            ensure_ascii=False,
+            indent=2
+        )
+        if data
+        else "Nenhum resultado retornado.",
+        prefix="🖱️ RESULTADO CLIQUE JAVASCRIPT"
+    )
+
     if (
         data
         and data.get("success")
     ):
-
-        print()
-        print(
-            "Clique JavaScript executado."
-        )
-
-        # ========================================================
-        # ESPERAR UM POUCO ANTES DE CONFIRMAR
-        # ========================================================
 
         await asyncio.sleep(
             0.5
@@ -1942,26 +2583,19 @@ async def click_fight_button(
             }
 
     # ============================================================
-    # TENTATIVA 2
-    # PYDOLL
+    # TENTATIVA 2 - PYDOLL
     # ============================================================
 
     print()
     print(
         "========================================"
     )
-
     print(
         "TENTATIVA 2: PYDOLL"
     )
-
     print(
         "========================================"
     )
-
-    # ------------------------------------------------------------
-    # LOCALIZAR NOVAMENTE
-    # ------------------------------------------------------------
 
     xpath = (
         f'//*[@id="boss-modal-body"]'
@@ -1979,15 +2613,21 @@ async def click_fight_button(
             "Localizando elemento Enfrentar pelo Pydoll..."
         )
 
-        button = await tab.find(
-            xpath=xpath
-        )
+        button =
+            await tab.find(
+                xpath=xpath
+            )
 
     except Exception as e:
 
         print(
-            "Erro localizando pelo Pydoll:",
+            "Erro Pydoll procurando:",
             repr(e)
+        )
+
+        await send_debug(
+            repr(e),
+            prefix="❌ ERRO LOCALIZANDO PYDOLL"
         )
 
     if not button:
@@ -1995,8 +2635,7 @@ async def click_fight_button(
         return {
             "success": False,
             "error":
-                "JavaScript falhou e Pydoll "
-                "não encontrou o botão.",
+                "Pydoll não encontrou botão.",
             "confirmed": False
         }
 
@@ -2004,9 +2643,10 @@ async def click_fight_button(
         "Botão Enfrentar localizado pelo Pydoll."
     )
 
-    # ============================================================
-    # PYDOLL CLICK
-    # ============================================================
+    await send_debug(
+        "Pydoll encontrou o elemento.",
+        prefix="🔎 PYDOLL"
+    )
 
     try:
 
@@ -2019,6 +2659,11 @@ async def click_fight_button(
             f"{boss_name}"
         )
 
+        await send_debug(
+            f"Clique Pydoll executado: {boss_name}",
+            prefix="🖱️ PYDOLL CLIQUE"
+        )
+
     except Exception as e:
 
         print()
@@ -2028,6 +2673,11 @@ async def click_fight_button(
 
         print(
             repr(e)
+        )
+
+        await send_debug(
+            repr(e),
+            prefix="❌ ERRO CLIQUE PYDOLL"
         )
 
         return {
@@ -2058,25 +2708,16 @@ async def click_fight_button(
     # FALHOU
     # ============================================================
 
-    print()
-    print(
-        "========================================"
-    )
-
-    print(
-        "❌ COMBATE NÃO CONFIRMADO"
-    )
-
-    print(
-        "========================================"
+    await send_debug(
+        f"JavaScript e Pydoll não iniciaram {boss_name}.",
+        prefix="❌ AUTOBOSS"
     )
 
     return {
         "success": False,
         "error":
-            "JavaScript e Pydoll tentaram clicar, "
-            "mas a Bossbar não confirmou "
-            f"{boss_name}.",
+            "Nenhuma tentativa de clique "
+            f"confirmou {boss_name}.",
         "confirmed": False
     }
 
