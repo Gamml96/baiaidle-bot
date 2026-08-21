@@ -10,6 +10,7 @@ from baiaidle.actions import (
     wait_for_cloudflare,
     wait_for_sell_cooldown,
     get_hud_data,
+    stash_valuable_items
 )
 
 # === IMPORTANDO FUNÇÕES DE HUNT E TREINO ===
@@ -45,6 +46,7 @@ class HuntStats:
     sales: int = 0
     initial_xp: int | None = None
     current_xp: int = 0
+    min_tier_to_stash: int = 4
 
     def reset(self):
         """Zera todos os dados da sessão."""
@@ -304,6 +306,22 @@ async def execute_sale(
     ):
 
         return False
+    
+    # === NOVO BLOCO: SALVAR ITENS VALIOSOS ===
+    print("Verificando itens raros no inventário (Tier 4+)...")
+    stash_result = await stash_valuable_items(tab, min_tier=stats.min_tier_to_stash)
+    
+    if stash_result and stash_result.get("stashed", 0) > 0:
+        stashed_items = stash_result.get("items", [])
+        stashed_msg = ", ".join(stashed_items)
+        print(f"💎 {stash_result['stashed']} item(ns) guardado(s): {stashed_msg}")
+        
+        if on_message:
+            await on_message(f"💎 *Item Raro Protegido!*\nEnviado para o Backpack: {stashed_msg}")
+            
+        # Aguarda 1 segundo para a animação do jogo retirar os itens da grid
+        await asyncio.sleep(1)
+    # ==========================================
 
     if not await open_sale_confirmation(
         tab

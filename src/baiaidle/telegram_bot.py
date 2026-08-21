@@ -149,7 +149,10 @@ class TelegramController:
                 "reset",
                 "Zerar estatísticas e Analyzer",
             ),
-
+            BotCommand(
+                "settier",                          
+                "Define a raridade para proteger",  
+            ),
             BotCommand(
                 "help",
                 "Mostrar ajuda",
@@ -875,6 +878,42 @@ class TelegramController:
             await update.message.reply_text("🔄 *Estatísticas do bot e Hunt Analyzer zerados com sucesso!*", parse_mode="Markdown")
         except Exception as e:
             await update.message.reply_text(f"❌ Erro ao resetar: {e}")
+
+    # ============================================================
+    # /SETTIER <numero>
+    # ============================================================
+
+    async def settier(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not context.args:
+            current_tier = self.bot.hunt_stats.min_tier_to_stash
+            await update.message.reply_text(
+                f"ℹ️ O Tier mínimo atual para proteção é: *{current_tier}*\n\n"
+                "Para alterar, use: `/settier <numero>`\n"
+                "Exemplo: `/settier 3` (protege Raros ou superior)",
+                parse_mode="Markdown"
+            )
+            return
+            
+        try:
+            new_tier = int(context.args[0])
+            if new_tier < 0 or new_tier > 7:
+                await update.message.reply_text("❌ Por favor, informe um Tier válido (ex: de 1 a 6).")
+                return
+                
+            self.bot.hunt_stats.min_tier_to_stash = new_tier
+            
+            await update.message.reply_text(
+                f"✅ *Proteção de Inventário Atualizada!*\n"
+                f"O bot agora guardará itens de *Tier {new_tier} ou superior*.", 
+                parse_mode="Markdown"
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Por favor, digite apenas números. Ex: /settier 4")
+
     # ============================================================
     # /HELP
     # ============================================================
@@ -1041,11 +1080,18 @@ async def main():
         )
     )
 
-    # ADICIONADO O HANDLER DO COMANDO RESET
+
     application.add_handler(
         CommandHandler(
             "reset",
             controller.reset,
+        )
+    )
+
+    application.add_handler(
+        CommandHandler(
+            "settier",
+            controller.settier,
         )
     )
 

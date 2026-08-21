@@ -1440,3 +1440,72 @@ async def get_party_info(tab) -> list:
         print("Erro ao extrair dados da Party:", e)
 
     return []
+
+# ================================================================
+# GUARDAR ITENS VALIOSOS (SHIFT + CLIQUE)
+# ================================================================
+
+async def stash_valuable_items(tab, min_tier: int = 4) -> dict:
+    """
+    Varre o inventário em busca de itens com tier igual ou superior ao min_tier.
+    A varredura é feita de trás para frente para evitar que a mudança 
+    de slots na interface quebre a ordem dos cliques.
+    """
+    js = f"""
+    (() => {{
+        const grid = document.getElementById('inv-grid');
+        if (!grid) return JSON.stringify({{stashed: 0, items: []}});
+        
+        const cells = Array.from(grid.querySelectorAll('.cell[data-tier]'));
+        let count = 0;
+        let names = [];
+        
+        // === LOOP REVERSO ===
+        // Lê do último item para o primeiro para não quebrar os índices
+        for (let i = cells.length - 1; i >= 0; i--) {{
+            const cell = cells[i];
+            const tier = parseInt(cell.getAttribute('data-tier') || "0", 10);
+            
+            if (tier >= {min_tier}) {{
+                // Tenta extrair o nome do item para o log do Telegram
+                let itemName = "Item Desconhecido";
+                const cmpData = cell.getAttribute('data-cmpitem');
+                if (cmpData) {{
+                    try {{
+                        itemName = JSON.parse(cmpData).name || itemName;
+                    }} catch(e) {{}}
+                }}
+                
+                // Simula o clique do mouse com a tecla Shift pressionada
+                const dispatchShiftEvent = (type) => {{
+                    cell.dispatchEvent(new MouseEvent(type, {{
+                        bubbles: true,
+                        cancelable: true,
+                        shiftKey: true,
+                        view: window
+                    }}));
+                }};
+                
+                // Dispara a sequência completa para o jogo registrar o clique perfeitamente
+                dispatchShiftEvent('mousedown');
+                dispatchShiftEvent('mouseup');
+                dispatchShiftEvent('click');
+                
+                count++;
+                names.push(itemName + " (Tier " + tier + ")");
+            }}
+        }}
+        
+        return JSON.stringify({{stashed: count, items: names.reverse()}});
+    }})()
+    """
+
+    try:
+        result = await tab.execute_script(js)
+        value = extract_execute_result(result)
+        if isinstance(value, str):
+            return json.loads(value)
+    except Exception as e:
+        print(f"Erro ao tentar guardar itens valiosos: {e}")
+        
+    return {"stashed": 0, "items": []}
