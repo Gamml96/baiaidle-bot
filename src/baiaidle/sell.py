@@ -721,7 +721,7 @@ async def run_sell(
                             await on_message("❌ Casa indisponível. Redirecionando para o Treino Online padrão...")
                         
                         await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
-                        
+
             # ====================================================
             # VERIFICAR PROGRESSO DA TASK DA GUILDA
             # ====================================================
