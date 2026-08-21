@@ -73,7 +73,7 @@ async def get_hunts_list(tab):
         const hunts = [];
         
         cards.forEach((card, index) => {
-            const b = card.querySelector('b'); // Baseado no span[2]/div[1]/b
+            const b = card.querySelector('b'); 
             if (b) {
                 hunts.push({
                     index: index + 1,
@@ -109,12 +109,10 @@ async def change_hunt(tab, hunt_identifier):
         let target = null;
         let targetIndex = -1;
         
-        // Verifica se o usuário digitou um número (índice)
         if (!isNaN(identifier) && Number(identifier) > 0 && Number(identifier) <= cards.length) {{
             targetIndex = Number(identifier) - 1;
             target = cards[targetIndex];
         }} else {{
-            // Busca pelo nome exato (ignorando maiúsculas e minúsculas)
             targetIndex = cards.findIndex(c => {{
                 const b = c.querySelector('b');
                 return b && b.innerText.trim().toLowerCase() === String(identifier).toLowerCase();
@@ -126,7 +124,7 @@ async def change_hunt(tab, hunt_identifier):
         
         if (!target) return JSON.stringify({{success: false, error: "Hunt não encontrada na lista."}});
         
-        target.click(); // Expande o card
+        target.click(); 
         return JSON.stringify({{success: true, index: targetIndex}});
     }})()
     """
@@ -138,7 +136,7 @@ async def change_hunt(tab, hunt_identifier):
         return False, data1.get("error", "Erro ao encontrar/clicar no card da hunt.")
 
     card_index = data1.get("index")
-    await asyncio.sleep(1) # Aguarda expansão do card
+    await asyncio.sleep(1) 
 
     # 2. Clicar no botão 'Caçar' ESPECÍFICO do card que expandimos
     js_click_go = f"""
@@ -161,7 +159,6 @@ async def change_hunt(tab, hunt_identifier):
         await tab.execute_script("(() => { const btn = document.getElementById('picker-modal-close'); if(btn) btn.click(); })()")
         return False, data2.get("error", "Erro ao clicar no botão Caçar.")
 
-    # 3. Aguarda o fechamento do modal e lê o título da wave atualizada
     await asyncio.sleep(2)
     current = await get_current_hunt(tab)
     
@@ -179,3 +176,37 @@ async def debug_hunts_dom(tab):
     res = await tab.execute_script(js)
     await tab.execute_script("(() => { const btn = document.getElementById('picker-modal-close'); if(btn) btn.click(); })()")
     return extract_execute_result(res)
+
+# ================================================================
+# TREINO ONLINE
+# ================================================================
+
+async def go_to_training(tab):
+    """Abre o menu de teleportes e clica em Treino online."""
+    print("Abrindo menu de teleportes para Treino...")
+    js_title = """
+    (() => {
+        const el = document.getElementById('wave-title');
+        if(el) { el.click(); return true; }
+        return false;
+    })()
+    """
+    await tab.execute_script(js_title)
+    await asyncio.sleep(1)
+
+    js_train = """
+    (() => {
+        const btn = document.querySelector('#teleport-menu button[data-tp="exercise"]');
+        if(btn) { btn.click(); return true; }
+        return false;
+    })()
+    """
+    res = await tab.execute_script(js_train)
+    val = extract_execute_result(res)
+    if val:
+        print("Treino online iniciado.")
+        await asyncio.sleep(1.5)
+        return True
+        
+    print("Falha ao abrir Treino online.")
+    return False

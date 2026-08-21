@@ -12,6 +12,9 @@ from baiaidle.actions import (
     get_hud_data,
 )
 
+# === IMPORTANDO FUNÇÕES DE HUNT E TREINO ===
+from baiaidle.hunts import get_current_hunt, change_hunt, go_to_training
+
 
 # ================================================================
 # CONFIGURAÇÃO
@@ -27,6 +30,8 @@ RETRY_INTERVAL = 15
 RETRY_JITTER_MIN = 5
 RETRY_JITTER_MAX = 10
 
+IR_PARA_TREINO_ONLINE = 20
+VOLTAR_PARA_HUNT = 95
 
 # ================================================================
 # ESTATÍSTICAS
@@ -36,69 +41,45 @@ RETRY_JITTER_MAX = 10
 class HuntStats:
 
     started_at: float
-
     total_gold: int = 0
-
     sales: int = 0
+    
+    # Variáveis para rastreio de XP baseada na diferença
+    initial_xp: int | None = None
+    current_xp: int = 0
 
-    total_xp: int = 0
-
-    def add_sale(
-        self,
-        value: int,
-    ):
-
+    def add_sale(self, value: int):
         self.total_gold += value
-
         self.sales += 1
 
-    def add_xp(
-        self,
-        xp_value: int,
-    ):
-        if xp_value > 0:
-            self.total_xp += xp_value
+    def update_xp(self, current_hud_xp: int):
+        """Atualiza a XP atual e define a base se for a primeira leitura."""
+        if current_hud_xp > 0:
+            if self.initial_xp is None:
+                self.initial_xp = current_hud_xp
+            self.current_xp = current_hud_xp
 
-    def elapsed(
-        self,
-    ) -> float:
-
-        return (
-            asyncio.get_running_loop().time()
-            - self.started_at
-        )
-
-    def gold_per_hour(
-        self,
-    ) -> float:
-
-        elapsed = self.elapsed()
-
-        if elapsed <= 0:
-
+    def get_session_xp(self) -> int:
+        """Calcula a XP ganha apenas durante esta sessão."""
+        if self.initial_xp is None or self.current_xp <= self.initial_xp:
             return 0
+        return self.current_xp - self.initial_xp
 
-        return (
-            self.total_gold
-            / elapsed
-            * 3600
-        )
+    def elapsed(self) -> float:
+        return asyncio.get_running_loop().time() - self.started_at
 
-    def xp_per_hour(
-        self,
-    ) -> float:
-
+    def gold_per_hour(self) -> float:
         elapsed = self.elapsed()
-
         if elapsed <= 0:
-
             return 0
+        return self.total_gold / elapsed * 3600
 
-        return (
-            self.total_xp
-            / elapsed
-            * 3600
-        )
+    def xp_per_hour(self) -> float:
+        elapsed = self.elapsed()
+        if elapsed <= 0:
+            return 0
+        session_xp = self.get_session_xp()
+        return session_xp / elapsed * 3600
 
 
 # ================================================================
@@ -297,7 +278,7 @@ async def execute_sale(
     tab,
     stats: HuntStats,
     stop_event=None,
-    on_message=None,  # <--- NOVA LINHA: Recebe o callback do Telegram
+    on_message=None, 
 ) -> bool:
 
     print()
@@ -399,51 +380,110 @@ async def execute_sale(
     stamina_pct = hud_data.get("stamina_pct", "0%")
     stamina_time = hud_data.get("stamina_time", "00:00")
 
-    current_xp = parse_clean_int(current_xp_str)
-    stats.add_xp(current_xp)
+    # Extrai o XP atual bruto do jogo e atualiza as estatísticas
+    current_raw_xp = parse_clean_int(current_xp_str)
+    stats.update_xp(current_raw_xp)
 
     if sale_value > 0:
 
         stats.add_sale(
             sale_value
         )
+        
+        session_gained_xp = stats.get_session_xp()
 
-        # Printa no terminal
         print()
         print("========================================")
         print(f"VENDA #{stats.sales}")
-        print(f"Tempo: {format_duration(stats.elapsed())}")
         print(f"Valor: {format_number(sale_value)} gold")
         print(f"Acumulado da Hunt: {format_number(stats.total_gold)} gold")
-        print(f"Gold Total (HUD): {current_balance_str}")
-        print(f"XP Obtida: {format_number(current_xp)}")
+        print(f"Saldo Total (HUD): {current_balance_str}")
+        print(f"XP Obtida na Sessão: {format_number(session_gained_xp)}")
         print(f"XP/h: {format_number(int(stats.xp_per_hour()))}")
-        print(f"Stamina: {stamina_pct} ({stamina_time})")
+        print(f"Stamina: {stamina_pct} (Regenera em: {stamina_time})")
+        print(f"Tempo: {format_duration(stats.elapsed())}")
         print(f"Gold/h: {format_number(int(stats.gold_per_hour()))}")
         print("========================================")
 
-        # ========================================================
-        # ENVIA MENSAGEM PARA O TELEGRAM
-        # ========================================================
         if on_message:
             msg_telegram = (
-                f"💰 *VENDA #{stats.sales}*\n\n"
+                f"💰 VENDA #{stats.sales}\n\n"
                 f"⏱️ Duração: {format_duration(stats.elapsed())}\n"
-                f"⚡ Stamina: {stamina_pct} ({stamina_time})\n\n"
+                f"⚡ Stamina: {stamina_pct} (Tempo: {stamina_time})\n\n"
                 f"🪙 Valor: {format_number(sale_value)} gold\n"
                 f"📈 Acumulado da Hunt: {format_number(stats.total_gold)} gold\n"
-                f"⚖️ Gold/h: {format_number(int(stats.gold_per_hour()))}"
-                f"🏦 Gold Total: {current_balance_str}\n\n"
-                f"✨ XP Obtida: {format_number(current_xp)}\n"
+                f"⚖️ Gold/h: {format_number(int(stats.gold_per_hour()))}\n"
+                f"🏦 Saldo Total: {current_balance_str}\n\n"
+                f"✨ XP Obtida na Sessão: {format_number(session_gained_xp)}\n"
                 f"📊 XP/h: {format_number(int(stats.xp_per_hour()))}\n"
             )
             
             try:
-                # O telegram permite usar parse_mode="Markdown" para renderizar negritos
                 await on_message(msg_telegram)
             except Exception as e:
                 print(f"Erro ao notificar Telegram: {e}")
 
+    return True
+
+# ================================================================
+# GERENCIADOR DE TREINO
+# ================================================================
+
+async def manage_training(tab, stop_event, pause_event, on_message, current_hunt):
+    """
+    Controla o ciclo do bot enquanto a stamina regenera.
+    Acorda a cada 60s, mas avisa o Telegram apenas a cada 10 minutos.
+    """
+    success = await go_to_training(tab)
+    if not success:
+        if on_message:
+            await on_message("❌ Falha ao tentar ir para o Treino Online. O bot tentará continuar as vendas.")
+        return False
+        
+    training = True
+    # Registra o tempo atual para o intervalo de mensagens de 10 min (600s)
+    last_report_time = asyncio.get_running_loop().time()
+    
+    while training and not stop_event.is_set():
+        # Respeita o comando global de /stop ou pausas no bot
+        if not pause_event.is_set():
+            await pause_event.wait()
+            continue
+            
+        # Dorme por 60 segundos, mas picotado para ser interrompível
+        for _ in range(60):
+            if stop_event.is_set() or not pause_event.is_set():
+                break
+            await asyncio.sleep(1)
+            
+        if stop_event.is_set() or not pause_event.is_set():
+            continue
+            
+        hud_data = await get_hud_data(tab)
+        current_stam_str = hud_data.get("stamina_pct", "0%")
+        current_stam_val = parse_clean_int(current_stam_str)
+        stam_time = hud_data.get("stamina_time", "00:00")
+        
+        now = asyncio.get_running_loop().time()
+        
+        # Objetivo Alcançado: Voltar para a Hunt
+        if current_stam_val >= VOLTAR_PARA_HUNT:
+            msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Retornando para a hunt: {current_hunt}."
+            print(msg_done)
+            if on_message:
+                await on_message(f"✅ {msg_done}")
+            
+            await change_hunt(tab, current_hunt)
+            return True
+            
+        # A cada 10 minutos mandamos um status atualizado
+        if now - last_report_time >= 600:
+            last_report_time = now
+            report_msg = f"🧘‍♂️ *Treinando...*\n⚡ Stamina atual: {current_stam_str}\n⏳ Tempo para 100%: {stam_time}"
+            print(report_msg)
+            if on_message:
+                await on_message(report_msg)
+                
     return True
 
 
@@ -455,7 +495,7 @@ async def run_sell(
     tab,
     stop_event,
     pause_event,
-    on_message=None,  # <--- NOVA LINHA: Recebe o callback
+    on_message=None, 
 ):
 
     stats = HuntStats(
@@ -481,10 +521,6 @@ async def run_sell(
 
         while not stop_event.is_set():
 
-            # ====================================================
-            # PAUSA
-            # ====================================================
-
             if not pause_event.is_set():
 
                 print()
@@ -504,10 +540,6 @@ async def run_sell(
                 )
 
                 continue
-
-            # ====================================================
-            # INTERVALO
-            # ====================================================
 
             delay = random_main_delay()
 
@@ -548,15 +580,11 @@ async def run_sell(
 
                 continue
 
-            # ====================================================
-            # VENDA
-            # ====================================================
-
             success = await execute_sale(
                 tab,
                 stats,
                 stop_event=stop_event,
-                on_message=on_message,  # <--- NOVA LINHA: Passa para o execute_sale
+                on_message=on_message,
             )
 
             if (
@@ -599,6 +627,30 @@ async def run_sell(
                         1,
                         remaining,
                     )
+
+                continue # Se a venda falhou, ele reinicia o loop sem checar a stamina
+
+            # ====================================================
+            # VERIFICAR STAMINA APÓS A VENDA
+            # ====================================================
+            if not stop_event.is_set() and pause_event.is_set():
+                hud_data = await get_hud_data(tab)
+                stamina_str = hud_data.get("stamina_pct", "0%")
+                stamina_val = parse_clean_int(stamina_str)
+                
+                # Se for maior que 0 (para evitar falsos positivos de leitura) e menor ou igual a 40
+                if 0 < stamina_val <= IR_PARA_TREINO_ONLINE:
+                    current_hunt = await get_current_hunt(tab)
+                    if not current_hunt:
+                        current_hunt = "Hunt Desconhecida"
+                        
+                    msg = f"🔋 *Stamina Crítica* ({stamina_val}%).\n\n⏸️ Pausando a hunt atual ({current_hunt}) e indo para o Treino Online."
+                    print(msg.replace('*', ''))
+                    if on_message:
+                        await on_message(f"⚠️ {msg}")
+                        
+                    # Aqui o bot "prende" a execução no gerenciador de treino até bater 95%
+                    await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
 
     except asyncio.CancelledError:
 
