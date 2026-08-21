@@ -1,4 +1,6 @@
 import asyncio
+from email.mime import application
+from baiaidle.guild import process_guild_tasks
 
 from telegram import (
     Update,
@@ -143,6 +145,11 @@ class TelegramController:
             BotCommand(
                 "stopautoboss",
                 "Parar AutoBoss",
+            ),
+
+            BotCommand(
+                "guildtask",
+                "Iniciar/Entregar Task da Guild",
             ),
 
             BotCommand(
@@ -845,7 +852,44 @@ class TelegramController:
                 "❌ Erro ao parar AutoBoss:\n"
                 f"{e}"
             )
+    # ============================================================
+    # /GUILDTASK
+    # ============================================================
 
+    async def guildtask(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
+            return
+
+        await update.message.reply_text("⏳ Processando tasks da Guilda...")
+        self.bot.pause_hunt()
+        
+        try:
+            # 1. Salva a hunt atual no início do comando
+            hunt_de_inicio = await get_current_hunt(self.bot.tab)
+            
+            # 2. Roda a automação
+            success, msg = await process_guild_tasks(self.bot.tab, self.bot.on_message)
+            
+            # 3. Se não pegou uma task nova, viaja de volta para a hunt salva
+            if msg in ["limite_atingido", "nenhuma_nova"]:
+                await change_hunt(self.bot.tab, hunt_de_inicio)
+                msg_final = f"✅ Tasks finalizadas!\nRetornando para a hunt: {hunt_de_inicio}"
+                await update.message.reply_text(msg_final)
+            elif success:
+                await update.message.reply_text(f"✅ {msg}")
+            else:
+                await update.message.reply_text(f"⚠️ Erro inesperado: {msg}")
+                
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao processar task da guild: {e}")
+        finally:
+            self.bot.resume_hunt()
+            
     # ============================================================
     # /RESET
     # ============================================================
@@ -1083,6 +1127,12 @@ async def main():
         )
     )
 
+    application.add_handler(
+        CommandHandler(
+            "guildtask",
+            controller.guildtask,
+        )
+    )
 
     application.add_handler(
         CommandHandler(

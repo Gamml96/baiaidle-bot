@@ -2,6 +2,7 @@ import asyncio
 import random
 from dataclasses import dataclass
 
+
 from baiaidle.actions import (
     get_sale_value,
     get_sell_button_state,
@@ -15,6 +16,7 @@ from baiaidle.actions import (
 
 # === IMPORTANDO FUNÇÕES DE HUNT E TREINO ===
 from baiaidle.hunts import get_current_hunt, change_hunt, go_to_training
+from baiaidle.guild import get_tracked_task_progress, process_guild_tasks
 
 
 # ================================================================
@@ -660,7 +662,23 @@ async def run_sell(
                         await on_message(f"⚠️ {msg}")
                         
                     await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
-
+            # ====================================================
+            # VERIFICAR PROGRESSO DA TASK DA GUILDA
+            # ====================================================
+            if not stop_event.is_set() and pause_event.is_set():
+                task_data = await get_tracked_task_progress(tab)
+                
+                # Se a task estiver terminada, entregamos e pegamos uma nova!
+                if task_data and task_data.get("finished"):
+                    msg = f"✅ *Task Finalizada!* ({task_data['name']})\nIndo até a Guilda entregar e buscar uma nova..."
+                    print(msg.replace('*', ''))
+                    
+                    if on_message:
+                        await on_message(msg)
+                        
+                    # Executa a rotina inteira de trocar tasks
+                    await process_guild_tasks(tab, on_message)
+                    
     except asyncio.CancelledError:
 
         print(
