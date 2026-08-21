@@ -566,7 +566,7 @@ class TelegramController:
         finally:
             self.bot.resume_hunt()
 
-    # ============================================================
+# ============================================================
     # /BOSSES
     # ============================================================
 
@@ -597,27 +597,29 @@ class TelegramController:
 
         await update.message.reply_text(
             "⏳ Capturando lista atual "
-            "de bosses..."
+            "de bosses e cargas..."
         )
 
         try:
 
-            bosses = await get_boss_list(
+            charges, bosses = await get_boss_list(
                 self.bot.tab
             )
 
             text = format_boss_list(
+                charges,
                 bosses
             )
 
             text += (
                 "\n\n"
                 "Use:\n"
-                "/autoboss 1,2,3"
+                "`/autoboss 1,2,3`"
             )
 
             await update.message.reply_text(
-                text
+                text,
+                parse_mode="Markdown"
             )
 
         except Exception as e:
@@ -709,7 +711,8 @@ class TelegramController:
             try:
 
                 await update.message.reply_text(
-                    text
+                    text,
+                    parse_mode="Markdown"
                 )
 
             except Exception as e:

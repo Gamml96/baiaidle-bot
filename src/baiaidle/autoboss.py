@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 # ESTADO
 # ================================================================
 
+
+BOSS_UPDATE = 60  # segundos entre atualizações de boss no Telegram
+
 @dataclass
 class BossInfo:
 
@@ -29,6 +32,10 @@ class AutoBossState:
 
     queue: list[int] = field(
         default_factory=list
+    )
+
+    results: dict[int, str] = field(
+        default_factory=dict
     )
 
     current_position: int = 0
@@ -386,7 +393,7 @@ async def wait_for_boss_menu(
 
 async def get_boss_list(
     tab,
-) -> list[BossInfo]:
+) -> tuple[str, list[BossInfo]]:
 
     if not await open_boss_menu(
         tab
@@ -416,6 +423,14 @@ async def get_boss_list(
                 XPathResult.FIRST_ORDERED_NODE_TYPE,
                 null
             ).singleNodeValue;
+            
+        const chargesElement = 
+            document.querySelector(".boss-global b");
+            
+        const charges = 
+            chargesElement 
+                ? chargesElement.innerText.trim() 
+                : "?/40";
 
         if (!container) {
 
@@ -522,6 +537,9 @@ async def get_boss_list(
 
             total:
                 cards.length,
+                
+            charges: 
+                charges,
 
             bosses:
                 bosses
@@ -555,6 +573,7 @@ async def get_boss_list(
             )
         )
 
+    charges = data.get("charges", "?/40")
     bosses = []
 
     for item in data.get(
@@ -600,7 +619,7 @@ async def get_boss_list(
 
     print()
     print(
-        f"{len(bosses)} bosses disponíveis."
+        f"Cargas: {charges} | {len(bosses)} bosses disponíveis."
     )
 
     for boss in bosses:
@@ -613,7 +632,7 @@ async def get_boss_list(
         tab
     )
 
-    return bosses
+    return charges, bosses
 
 
 # ================================================================
@@ -755,18 +774,21 @@ async def close_boss_menu(
 # ================================================================
 
 def format_boss_list(
+    charges: str,
     bosses: list[BossInfo],
 ) -> str:
 
     if not bosses:
 
         return (
-            "👹 BOSSES DISPONÍVEIS\n\n"
+            "👹 *BOSSES DISPONÍVEIS*\n"
+            f"⚡ Cargas: {charges}\n\n"
             "Nenhum boss disponível no momento."
         )
 
     lines = [
-        "👹 BOSSES DISPONÍVEIS",
+        "👹 *BOSSES DISPONÍVEIS*",
+        f"⚡ Cargas: {charges}",
         ""
     ]
 
@@ -1637,29 +1659,24 @@ async def click_cloudflare_challenge(
         if (!el) return false;
         
         const rect = el.getBoundingClientRect();
-        // Garante que o elemento já tem tamanho na tela antes de clicar
         return (rect.width > 0 && rect.height > 0);
     })()
     """
     
     try:
-        # 1. Verifica silenciosamente pelo JS se o elemento existe e está visível
         result = await tab.execute_script(js_check)
         is_ready = extract_execute_result(result)
         
         if is_ready:
             print("🎯 Contêiner do Cloudflare pronto! Executando clique físico...")
-            
-            # 2. Pede ao Pydoll para clicar no contêiner principal (onde fica o checkbox)
             element = await tab.find(xpath='//*[contains(@class, "mk-captcha")]', timeout=3)
             
             if element:
                 await element.click(humanize=True)
-                await asyncio.sleep(2.5)  # Dá tempo para o Cloudflare processar a animação
+                await asyncio.sleep(2.5)  
                 return True
                 
     except Exception:
-        # Ignora exceções silenciosamente para manter o terminal limpo
         pass
         
     return False
@@ -1786,14 +1803,10 @@ async def wait_for_click_target(
 
                     overlay_notified = True
 
-                # ====================================================
-                # TENTATIVA DE CLIQUE NO CLOUDFLARE (FORÇADA)
-                # ====================================================
                 try:
                     await click_cloudflare_challenge(tab)
                 except Exception:
                     pass
-                # ====================================================
 
             elif overlay_notified:
 
@@ -1807,9 +1820,7 @@ async def wait_for_click_target(
                     try:
 
                         result = on_message(
-                            "✅ Verificação humana "
-                            "não está mais cobrindo "
-                            "o botão Enfrentar."
+                            "✅ Verificação humana resolvida!"
                         )
 
                         if asyncio.iscoroutine(
@@ -1888,32 +1899,7 @@ async def wait_for_click_target(
                     "ESTÁ FISICAMENTE ACESSÍVEL."
                 )
 
-                if on_message:
-
-                    try:
-
-                        result = on_message(
-                            f"✅ Botão Enfrentar "
-                            f"de {boss_name} "
-                            f"está acessível.\n\n"
-                            f"Posição: "
-                            f"{state.get('x'):.1f}, "
-                            f"{state.get('y'):.1f}\n"
-                            f"Overlay: NÃO"
-                        )
-
-                        if asyncio.iscoroutine(
-                            result
-                        ):
-
-                            await result
-
-                    except Exception as e:
-
-                        print(
-                            "Erro Telegram:",
-                            repr(e)
-                        )
+                # Não envia a posição para o Telegram, deixando-o mais limpo
 
                 return state
 
@@ -1937,10 +1923,7 @@ async def wait_for_click_target(
                     result = on_message(
                         f"❌ Timeout aguardando "
                         f"o botão Enfrentar de "
-                        f"{boss_name}.\n\n"
-                        "Verifique se a "
-                        "verificação humana "
-                        "continua na tela."
+                        f"{boss_name}."
                     )
 
                     if asyncio.iscoroutine(
@@ -2198,15 +2181,6 @@ async def wait_for_bossbar_name(
 
 # ================================================================
 # CLICAR ENFRENTAR
-#
-# ORDEM:
-#
-# 1. DEBUG
-# 2. AGUARDAR OVERLAY SUMIR
-# 3. JAVASCRIPT
-# 4. CONFIRMAR BOSSBAR
-# 5. PYDOLL
-# 6. CONFIRMAR BOSSBAR
 # ================================================================
 
 async def click_fight_button(
@@ -2221,10 +2195,6 @@ async def click_fight_button(
         f"Procurando botão Enfrentar de "
         f"{boss_name}..."
     )
-
-    # ============================================================
-    # DEBUG COMPLETO
-    # ============================================================
 
     debug = await debug_fight_button(
         tab,
@@ -2260,17 +2230,8 @@ async def click_fight_button(
         )
 
         print(
-            f"Button HTML: "
-            f"{button_html}"
-        )
-
-        print(
             "==========================="
         )
-
-    # ============================================================
-    # AGUARDAR BOTÃO REALMENTE CLICÁVEL
-    # ============================================================
 
     state = await wait_for_click_target(
         tab,
@@ -2402,17 +2363,7 @@ async def click_fight_button(
 
                 error:
                     "Outro elemento está "
-                    "sobre o botão.",
-
-                element_at_point:
-                    target
-                        ? target.outerHTML
-                            .slice(
-                                0,
-                                3000
-                            )
-                        : null
-
+                    "sobre o botão."
             }});
 
         }}
@@ -2496,31 +2447,6 @@ async def click_fight_button(
             "Clique JavaScript executado."
         )
 
-        if on_message:
-
-            try:
-
-                result = on_message(
-                    f"🖱️ Clique JavaScript "
-                    f"executado em "
-                    f"{boss_name}.\n"
-                    "Aguardando confirmação "
-                    "pela Bossbar..."
-                )
-
-                if asyncio.iscoroutine(
-                    result
-                ):
-
-                    await result
-
-            except Exception as e:
-
-                print(
-                    "Erro Telegram:",
-                    repr(e)
-                )
-
         confirmed = await wait_for_bossbar_name(
             tab,
             boss_name,
@@ -2546,45 +2472,12 @@ async def click_fight_button(
             "mas Bossbar não confirmou."
         )
 
-        if on_message:
-
-            try:
-
-                result = on_message(
-                    f"⚠️ Clique JavaScript "
-                    f"em {boss_name} foi "
-                    "executado, mas a Bossbar "
-                    "não confirmou."
-                )
-
-                if asyncio.iscoroutine(
-                    result
-                ):
-
-                    await result
-
-            except Exception as e:
-
-                print(
-                    "Erro Telegram:",
-                    repr(e)
-                )
-
     else:
 
         print(
             "⚠️ JavaScript não conseguiu "
             "clicar no botão."
         )
-
-        if data:
-
-            print(
-                "Erro:",
-                data.get(
-                    "error"
-                )
-            )
 
     # ============================================================
     # TENTATIVA 2 — PYDOLL
@@ -2612,11 +2505,6 @@ async def click_fight_button(
     button = None
 
     try:
-
-        print(
-            "Localizando elemento "
-            "Enfrentar pelo Pydoll..."
-        )
 
         button = await tab.find(
             xpath=xpath
@@ -2667,33 +2555,6 @@ async def click_fight_button(
         print(
             "❌ ERRO NO CLIQUE PYDOLL:"
         )
-
-        print(
-            repr(e)
-        )
-
-        if on_message:
-
-            try:
-
-                result = on_message(
-                    f"❌ Pydoll não conseguiu "
-                    f"clicar em {boss_name}.\n\n"
-                    f"Erro: {type(e).__name__}"
-                )
-
-                if asyncio.iscoroutine(
-                    result
-                ):
-
-                    await result
-
-            except Exception as telegram_error:
-
-                print(
-                    "Erro Telegram:",
-                    repr(telegram_error)
-                )
 
         return {
             "success": False,
@@ -2926,13 +2787,6 @@ async def wait_for_bossbar(
 
             return data
 
-        if attempt % 5 == 0:
-
-            print(
-                f"  aguardando combate... "
-                f"{attempt}/{int(timeout)}"
-            )
-
         elapsed = (
             asyncio.get_running_loop().time()
             - start
@@ -2959,9 +2813,11 @@ async def monitor_boss(
     tab,
     stop_event,
     boss_name: str,
+    on_message=None,
 ):
 
     last_state = None
+    last_telegram_time = asyncio.get_running_loop().time()
 
     while True:
 
@@ -2973,6 +2829,7 @@ async def monitor_boss(
             tab
         )
 
+        # Se a barra sumiu, avalia se vencemos ou perdemos
         if not data or not data.get(
             "found"
         ):
@@ -3001,6 +2858,7 @@ async def monitor_boss(
                 boss_name.lower()
             )
 
+            # Verifica se o texto de vitória padrão apareceu
             if (
                 normalized_boss
                 in normalized_banner
@@ -3016,15 +2874,16 @@ async def monitor_boss(
                 print(
                     f"{boss_name} derrotado!"
                 )
+                
+                return True
 
             else:
 
                 print(
-                    f"Bossbar de "
-                    f"{boss_name} desapareceu."
+                    f"Bossbar de {boss_name} desapareceu sem mensagem de vitória. Luta perdida."
                 )
 
-            return True
+                return False
 
         state = (
             data.get("hp"),
@@ -3034,6 +2893,7 @@ async def monitor_boss(
 
         if state != last_state:
 
+            # Terminal é atualizado em tempo real
             print()
             print(
                 "---------------- BOSS UPDATE ----------------"
@@ -3052,12 +2912,21 @@ async def monitor_boss(
             )
 
             print(
-                f"Width: {data.get('width')}"
-            )
-
-            print(
                 "---------------------------------------------"
             )
+
+            # Telegram é atualizado a cada x segundos
+            now = asyncio.get_running_loop().time()
+            if on_message and (now - last_telegram_time >= BOSS_UPDATE):
+                last_telegram_time = now
+                msg = f"⚔️ *{data.get('name')}*\n❤️ HP: {data.get('hp')} ({data.get('pct')})"
+                
+                try:
+                    result = on_message(msg)
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception as e:
+                    pass
 
             last_state = state
 
@@ -3167,7 +3036,7 @@ class AutoBoss:
                 "AutoBoss já está rodando."
             )
 
-        bosses = await get_boss_list(
+        charges, bosses = await get_boss_list(
             self.tab
         )
 
@@ -3207,6 +3076,8 @@ class AutoBoss:
             indices
         )
 
+        self.state.results.clear()
+
         self.state.current_position = 0
 
         self.state.current_index = None
@@ -3231,8 +3102,9 @@ class AutoBoss:
         ]
 
         message = (
-            "⚔️ AutoBoss iniciado!\n\n"
-            "Fila:\n"
+            "⚔️ *AutoBoss iniciado!*\n"
+            f"⚡ Cargas disponíveis: {charges}\n\n"
+            "*Fila:*\n"
         )
 
         for position, name in enumerate(
@@ -3270,6 +3142,9 @@ class AutoBoss:
 
                     break
 
+                # Inicializa o status atual como pendente
+                self.state.results[index] = "⏳"
+
                 self.state.current_position = (
                     position
                 )
@@ -3306,10 +3181,10 @@ class AutoBoss:
                 )
 
                 await self.send_message(
-                    f"⚔️ Iniciando boss "
+                    f"🔎 Procurando boss "
                     f"{position + 1}/"
                     f"{len(self.state.queue)}\n\n"
-                    f"#{index} - {boss.name}"
+                    f"*{boss.name}*"
                 )
 
                 # =================================================
@@ -3320,6 +3195,7 @@ class AutoBoss:
                     self.tab
                 ):
 
+                    self.state.results[index] = "❌"
                     await self.send_message(
                         "❌ Não foi possível "
                         "abrir Teleportes."
@@ -3335,6 +3211,7 @@ class AutoBoss:
                     self.tab
                 ):
 
+                    self.state.results[index] = "❌"
                     await self.send_message(
                         "❌ Não foi possível "
                         "abrir Chefes."
@@ -3346,6 +3223,7 @@ class AutoBoss:
                     self.tab
                 ):
 
+                    self.state.results[index] = "❌"
                     await self.send_message(
                         "❌ Lista de bosses "
                         "não carregou."
@@ -3372,6 +3250,7 @@ class AutoBoss:
                     or not info.get("found")
                 ):
 
+                    self.state.results[index] = "❌"
                     await close_boss_menu(
                         self.tab
                     )
@@ -3419,13 +3298,14 @@ class AutoBoss:
                     ).strip() != ""
                 ):
 
+                    self.state.results[index] = "❌"
                     await close_boss_menu(
                         self.tab
                     )
 
                     await self.send_message(
                         f"❌ Boss indisponível: "
-                        f"{boss.name}"
+                        f"*{boss.name}*"
                     )
 
                     continue
@@ -3444,6 +3324,7 @@ class AutoBoss:
                     boss.name
                 ):
 
+                    self.state.results[index] = "❌"
                     await close_boss_menu(
                         self.tab
                     )
@@ -3487,7 +3368,8 @@ class AutoBoss:
                         else
                         "erro desconhecido"
                     )
-
+                    
+                    self.state.results[index] = "❌"
                     await self.send_message(
                         f"❌ Não foi possível "
                         f"iniciar {boss.name}.\n\n"
@@ -3505,12 +3387,10 @@ class AutoBoss:
                     f"{boss.name}"
                 )
 
+                # Notificação de início de combate enxuta
                 await self.send_message(
-                    f"⚔️ {boss.name}\n"
-                    f"Combate iniciado!\n"
-                    f"Modo: "
-                    f"{fight.get('method')}\n"
-                    f"Bossbar confirmada."
+                    f"⚔️ *{boss.name}*\n"
+                    f"Combate iniciado!"
                 )
 
                 # =================================================
@@ -3527,13 +3407,13 @@ class AutoBoss:
                     not bossbar
                     or self.state.stop_event.is_set()
                 ):
-
+                    
+                    self.state.results[index] = "❌"
                     break
 
                 await self.send_message(
-                    f"⚔️ {boss.name}\n"
-                    f"HP: {bossbar.get('hp')}\n"
-                    f"%: {bossbar.get('pct')}"
+                    f"⚔️ *{boss.name}*\n"
+                    f"❤️ HP: {bossbar.get('hp')} ({bossbar.get('pct')})"
                 )
 
                 # =================================================
@@ -3543,7 +3423,8 @@ class AutoBoss:
                 defeated = await monitor_boss(
                     self.tab,
                     self.state.stop_event,
-                    boss.name
+                    boss.name,
+                    on_message=self.send_message
                 )
 
                 if self.state.stop_event.is_set():
@@ -3551,16 +3432,17 @@ class AutoBoss:
                     break
 
                 if defeated:
-
+                    
+                    self.state.results[index] = "✅"
                     await self.send_message(
-                        f"✅ {boss.name} derrotado!"
+                        f"✅ *{boss.name} derrotado!*"
                     )
 
                 else:
 
+                    self.state.results[index] = "❌"
                     await self.send_message(
-                        f"⚠️ Combate de "
-                        f"{boss.name} interrompido."
+                        f"❌ *Você perdeu a luta contra {boss.name}!*"
                     )
 
                 await asyncio.sleep(
@@ -3575,11 +3457,14 @@ class AutoBoss:
 
                 completed_normally = True
 
-                await self.send_message(
-                    "🏁 AutoBoss concluído!\n\n"
-                    "Todos os bosses da fila "
-                    "foram processados."
-                )
+                summary = "🏁 *AutoBoss Concluído!*\n\n*Resumo da Fila:*\n"
+                
+                for idx in self.state.queue:
+                    b_name = boss_by_index[idx].name
+                    res_emoji = self.state.results.get(idx, "➖")
+                    summary += f"{res_emoji} {b_name}\n"
+
+                await self.send_message(summary)
 
         except asyncio.CancelledError:
 
@@ -3707,6 +3592,11 @@ class AutoBoss:
             "queue":
                 list(
                     self.state.queue
+                ),
+            
+            "results":
+                dict(
+                    self.state.results
                 ),
 
             "current_position":

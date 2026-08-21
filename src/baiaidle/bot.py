@@ -12,7 +12,9 @@ from baiaidle.browser import (
     stop_virtual_display,
 )
 from baiaidle.login import login
-from baiaidle.actions import validate_sale
+
+# === IMPORTAÇÃO ATUALIZADA ===
+from baiaidle.actions import validate_sale, get_party_info
 from baiaidle.sell import run_sell, HuntStats
 
 
@@ -29,6 +31,9 @@ class GameBot:
         self.hunt_pause_event = asyncio.Event()
 
         self.hunt_task = None
+        
+        # Tarefa em segundo plano para vigiar o HP
+        self.party_monitor_task = None
 
         self.running = False
 
@@ -38,6 +43,70 @@ class GameBot:
         
         # Instanciamos o objeto de estatísticas para ser acessado por qualquer comando
         self.hunt_stats = HuntStats()
+
+    # ============================================================
+    # VIGIA DE HP DA PARTY (BACKGROUND)
+    # ============================================================
+    
+    async def monitor_party_health(self):
+        
+        print("Monitor de Party iniciado.")
+        last_alerted = set()
+        
+        while not self.stop_event.is_set():
+            
+            # Executa a checagem independente do bot estar pausado (útil para Autoboss)
+            if self.tab:
+                try:
+                    party_data = await get_party_info(self.tab)
+                    
+                    if party_data:
+                        for member in party_data:
+                            hp_str = member.get("hp", "")
+                            
+                            # Formato esperado: "10.347/10.391" ou "0/10.391"
+                            if hp_str and "/" in hp_str:
+                                current_hp_str = hp_str.split('/')[0].replace('.', '').strip()
+                                
+                                try:
+                                    current_hp = int(current_hp_str)
+                                    name = member.get("name", "Desconhecido")
+                                    role = member.get("role", "Membro")
+                                    
+                                    if current_hp == 0:
+                                        
+                                        # Evita mandar spam caso ele permaneça morto
+                                        if name not in last_alerted:
+                                            msg = f"💀 *ALERTA DE MORTE!*\nO personagem *{name}* ({role}) morreu!"
+                                            print(f"ALERTA: {name} morreu!")
+                                            
+                                            if self.on_message:
+                                                try:
+                                                    result = self.on_message(msg)
+                                                    if asyncio.iscoroutine(result):
+                                                        await result
+                                                except Exception as e:
+                                                    print(f"Erro ao enviar alerta: {e}")
+                                                    
+                                            last_alerted.add(name)
+                                            
+                                    else:
+                                        
+                                        # Se a vida subiu de 0 (ressuscitou), libera para futuros alertas
+                                        if name in last_alerted:
+                                            last_alerted.remove(name)
+                                            
+                                except ValueError:
+                                    pass
+                                    
+                except Exception as e:
+                    pass
+            
+            # Dorme por 10 segundos (picotados de 1 em 1 para parar rápido no /stop)
+            for _ in range(10):
+                if self.stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
 
     # ============================================================
     # START
@@ -185,7 +254,7 @@ class GameBot:
             self.hunt_stats.reset()
 
             # ====================================================
-            # HUNT
+            # TASKS DE BACKGROUND (HUNT & MONITOR DE VIDA)
             # ====================================================
 
             self.hunt_task = asyncio.create_task(
@@ -196,6 +265,11 @@ class GameBot:
                     self.hunt_stats, # Passa as estatísticas
                     self.on_message,
                 )
+            )
+            
+            # Inicia o vigia de HP paralelamente
+            self.party_monitor_task = asyncio.create_task(
+                self.monitor_party_health()
             )
 
             print(
@@ -234,7 +308,7 @@ class GameBot:
         self.hunt_pause_event.set()
 
         # ========================================================
-        # HUNT
+        # ENCERRAR HUNT
         # ========================================================
 
         if self.hunt_task:
@@ -259,6 +333,23 @@ class GameBot:
                     )
 
             self.hunt_task = None
+            
+        # ========================================================
+        # ENCERRAR VIGIA DE HP
+        # ========================================================
+
+        if self.party_monitor_task:
+            
+            if not self.party_monitor_task.done():
+                
+                self.party_monitor_task.cancel()
+                
+                try:
+                    await self.party_monitor_task
+                except asyncio.CancelledError:
+                    pass
+                    
+            self.party_monitor_task = None
 
         # ========================================================
         # TAB
