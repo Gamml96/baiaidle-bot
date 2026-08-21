@@ -210,3 +210,70 @@ async def go_to_training(tab):
         
     print("Falha ao abrir Treino online.")
     return False
+
+def extract_execute_result(result):
+    try:
+        return result["result"]["result"].get("value")
+    except (TypeError, KeyError, AttributeError):
+        return result
+
+async def go_to_house(tab):
+    """
+    Navega pelo menu de Teleporte até a Casa, entra no dummy disponível e fecha o modal.
+    Retorna True se conseguiu entrar, ou False se não havia casa disponível.
+    """
+    print("Iniciando viagem para Casa (Dummies)...")
+    
+    # 1. Abre o menu e vai para Casa
+    js_open = """
+    (() => {
+        const waveTitle = document.getElementById("wave-title");
+        if (waveTitle) waveTitle.click();
+        
+        setTimeout(() => {
+            const btnHouse = document.querySelector('button.tp-opt[data-tp="house"]');
+            if (btnHouse) btnHouse.click();
+        }, 500);
+    })()
+    """
+    await tab.execute_script(js_open)
+    await asyncio.sleep(1.5)
+    
+    # 2. Clica na aba Convites
+    js_tab = """
+    (() => {
+        const houseTabs = Array.from(document.querySelectorAll('.house-tab'));
+        const convitesTab = houseTabs.find(tab => {
+            const label = tab.querySelector('.house-tab-label');
+            return label && label.innerText.trim() === 'Convites';
+        });
+        if (convitesTab) convitesTab.click();
+    })()
+    """
+    await tab.execute_script(js_tab)
+    await asyncio.sleep(1.0)
+    
+    # 3. Tenta clicar em Entrar e extrai o resultado
+    js_enter = """
+    (() => {
+        const activePane = document.getElementById('house-friends-body');
+        if (!activePane) return false;
+        
+        const btnEntrar = activePane.querySelector('button');
+        if (btnEntrar && btnEntrar.innerText.trim() === 'Entrar') {
+            btnEntrar.click();
+            return true;
+        }
+        return false;
+    })()
+    """
+    result = await tab.execute_script(js_enter)
+    success = extract_execute_result(result)
+    
+    await asyncio.sleep(1.0)
+    
+    # 4. Fecha o modal de qualquer forma (dando certo ou errado)
+    await tab.execute_script("(() => { const btnClose = document.getElementById('house-modal-close'); if (btnClose) btnClose.click(); })()")
+    await asyncio.sleep(0.5)
+    
+    return success is True

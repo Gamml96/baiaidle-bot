@@ -1,6 +1,8 @@
 import asyncio
 from email.mime import application
 from baiaidle.guild import process_guild_tasks
+from baiaidle.sell import manage_training, manage_house_training
+
 
 from telegram import (
     Update,
@@ -145,6 +147,16 @@ class TelegramController:
             BotCommand(
                 "stopautoboss",
                 "Parar AutoBoss",
+            ),
+
+            BotCommand(
+                "treino",
+                "Forçar ida para o Treino Online",
+            ),
+
+            BotCommand(
+                "casa", 
+                "Forçar ida para o Dummie da Casa",
             ),
 
             BotCommand(
@@ -852,6 +864,92 @@ class TelegramController:
                 "❌ Erro ao parar AutoBoss:\n"
                 f"{e}"
             )
+
+
+    # ============================================================
+    # /TREINO
+    # ============================================================
+
+    async def treino(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
+            return
+
+        await update.message.reply_text("⏳ Salvando hunt atual e viajando para o Treino Online...")
+
+        # Precisamos rodar a viagem de forma isolada, então pausamos o ciclo de vendas principal
+        self.bot.pause_hunt()
+
+        try:
+            # 1. Salva a hunt atual
+            hunt_atual = await get_current_hunt(self.bot.tab)
+            if not hunt_atual:
+                hunt_atual = "Hunt Desconhecida"
+
+            await update.message.reply_text(f"📍 Hunt salva: {hunt_atual}\nIniciando treinamento...")
+
+            # 2. Roda o motor de treinamento sem travar o bot de Telegram
+            # Criamos uma tarefa em background para o bot não ficar congelado esperando a stamina encher
+            asyncio.create_task(
+                manage_training(
+                    self.bot.tab,
+                    self.bot.stop_event,
+                    self.bot.hunt_pause_event,
+                    self.bot.on_message,
+                    hunt_atual
+                )
+            )
+
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao processar o treino: {e}")
+        finally:
+            # Retomamos o loop principal (a venda continuará acontecendo dentro do Treino)
+            self.bot.resume_hunt()
+
+
+    # ============================================================
+    # /CASA
+    # ============================================================
+
+    async def casa(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
+            return
+
+        await update.message.reply_text("⏳ Salvando hunt atual e viajando para a Casa...")
+
+        self.bot.pause_hunt()
+
+        try:
+            hunt_atual = await get_current_hunt(self.bot.tab)
+            if not hunt_atual:
+                hunt_atual = "Hunt Desconhecida"
+
+            await update.message.reply_text(f"📍 Hunt salva: {hunt_atual}\nIniciando treino nos dummies da casa...")
+
+            asyncio.create_task(
+                manage_house_training(
+                    self.bot.tab,
+                    self.bot.stop_event,
+                    self.bot.hunt_pause_event,
+                    self.bot.on_message,
+                    hunt_atual
+                )
+            )
+
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao processar a casa: {e}")
+        finally:
+            self.bot.resume_hunt()
+
     # ============================================================
     # /GUILDTASK
     # ============================================================
@@ -889,7 +987,7 @@ class TelegramController:
             await update.message.reply_text(f"❌ Erro ao processar task da guild: {e}")
         finally:
             self.bot.resume_hunt()
-            
+
     # ============================================================
     # /RESET
     # ============================================================
@@ -1127,6 +1225,19 @@ async def main():
         )
     )
 
+    application.add_handler(
+        CommandHandler(
+            "treino", 
+            controller.treino
+            )
+    )
+    
+    application.add_handler(
+        CommandHandler(
+            "casa", 
+            controller.casa)
+    )
+    
     application.add_handler(
         CommandHandler(
             "guildtask",

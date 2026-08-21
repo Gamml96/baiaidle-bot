@@ -15,7 +15,7 @@ from baiaidle.actions import (
 )
 
 # === IMPORTANDO FUNÇÕES DE HUNT E TREINO ===
-from baiaidle.hunts import get_current_hunt, change_hunt, go_to_training
+from baiaidle.hunts import get_current_hunt, change_hunt, go_to_training, go_to_house
 from baiaidle.guild import get_tracked_task_progress, process_guild_tasks
 
 
@@ -504,6 +504,57 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
                 
     return True
 
+async def manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=False):
+    """
+    Controla o ciclo do bot na Casa enquanto a stamina regenera.
+    Acorda a cada 60s, mas avisa o Telegram apenas a cada 10 minutos.
+    """
+    success = await go_to_house(tab)
+    if not success:
+        if on_message and not silent_fail:
+            await on_message("❌ Nenhuma Casa com dummy ativo encontrada no momento.")
+        return False
+        
+    training = True
+    last_report_time = asyncio.get_running_loop().time()
+    
+    while training and not stop_event.is_set():
+        if not pause_event.is_set():
+            await pause_event.wait()
+            continue
+            
+        for _ in range(60):
+            if stop_event.is_set() or not pause_event.is_set():
+                break
+            await asyncio.sleep(1)
+            
+        if stop_event.is_set() or not pause_event.is_set():
+            continue
+            
+        hud_data = await get_hud_data(tab)
+        current_stam_str = hud_data.get("stamina_pct", "0%")
+        current_stam_val = parse_clean_int(current_stam_str)
+        stam_time = hud_data.get("stamina_time", "00:00")
+        
+        now = asyncio.get_running_loop().time()
+        
+        if current_stam_val >= VOLTAR_PARA_HUNT:
+            msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Saindo da Casa e retornando para: {current_hunt}."
+            print(msg_done)
+            if on_message:
+                await on_message(f"✅ {msg_done}")
+            
+            await change_hunt(tab, current_hunt)
+            return True
+            
+        if now - last_report_time >= 600:
+            last_report_time = now
+            report_msg = f"🏠 *Treinando na Casa...*\n⚡ Stamina atual: {current_stam_str}\n⏳ Tempo para 100%: {stam_time}"
+            print(report_msg)
+            if on_message:
+                await on_message(report_msg)
+                
+    return True
 
 # ================================================================
 # LOOP DA HUNT
@@ -656,12 +707,21 @@ async def run_sell(
                     if not current_hunt:
                         current_hunt = "Hunt Desconhecida"
                         
-                    msg = f"🔋 *Stamina Crítica* ({stamina_val}%).\n\n⏸️ Pausando a hunt atual ({current_hunt}) e indo para o Treino Online."
+                    msg = f"🔋 *Stamina Crítica* ({stamina_val}%).\n\n⏸️ Pausando a hunt atual ({current_hunt}) e tentando ir para a Casa..."
                     print(msg.replace('*', ''))
                     if on_message:
                         await on_message(f"⚠️ {msg}")
                         
-                    await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
+                    # 1. Tenta ir para a Casa primeiro (silencioso em caso de falha)
+                    house_success = await manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=True)
+                    
+                    # 2. Se falhou (não tinha casa disponível), ativa o Plano B!
+                    if not house_success:
+                        if on_message:
+                            await on_message("❌ Casa indisponível. Redirecionando para o Treino Online padrão...")
+                        
+                        await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
+                        
             # ====================================================
             # VERIFICAR PROGRESSO DA TASK DA GUILDA
             # ====================================================
@@ -678,7 +738,7 @@ async def run_sell(
                         
                     # Executa a rotina inteira de trocar tasks
                     await process_guild_tasks(tab, on_message)
-                    
+
     except asyncio.CancelledError:
 
         print(
