@@ -25,7 +25,6 @@ from baiaidle.config import (
     TELEGRAM_BOT_TOKEN,
 )
 
-# === IMPORTANDO NOSSO NOVO MÓDULO DE HUNTS ===
 from baiaidle.hunts import (
     get_current_hunt,
     get_hunts_list,
@@ -33,7 +32,8 @@ from baiaidle.hunts import (
     debug_hunts_dom
 )
 
-from baiaidle.actions import get_party_info
+from baiaidle.actions import get_party_info 
+
 
 # ================================================================
 # SUPERVISOR
@@ -114,10 +114,12 @@ class TelegramController:
                 "status",
                 "Mostrar status",
             ),
+
             BotCommand(
                 "party",                   
                 "Ver status da equipe",    
             ),
+
             BotCommand(
                 "hunts",
                 "Listar hunts disponíveis",
@@ -141,6 +143,11 @@ class TelegramController:
             BotCommand(
                 "stopautoboss",
                 "Parar AutoBoss",
+            ),
+
+            BotCommand(
+                "reset",
+                "Zerar estatísticas e Analyzer",
             ),
 
             BotCommand(
@@ -180,15 +187,7 @@ class TelegramController:
             "========================================"
         )
 
-        # --------------------------------------------------------
-        # RETOMAR HUNT
-        # --------------------------------------------------------
-
         self.bot.resume_hunt()
-
-        # --------------------------------------------------------
-        # MENSAGEM TELEGRAM
-        # --------------------------------------------------------
 
         if self.auto_boss_instance:
 
@@ -229,20 +228,15 @@ class TelegramController:
             "Aguarde o login e a validação."
         )
 
-        # ============================================================
-        # INJETANDO O CALLBACK NO GAMEBOT
-        # ============================================================
         chat_id = update.effective_chat.id
 
         async def send_hunt_msg(text):
             try:
-                await context.bot.send_message(chat_id=chat_id, text=text)
+                await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
             except Exception as e:
                 print(f"Erro ao enviar mensagem para o Telegram: {e}")
 
-        # Atrela o enviador de mensagens à instância do GameBot
         self.bot.on_message = send_hunt_msg
-        # ============================================================
 
         try:
 
@@ -409,7 +403,6 @@ class TelegramController:
 
             return
 
-        # Busca o nome da hunt atual caso o bot esteja online caçando
         try:
             current_hunt = await get_current_hunt(self.bot.tab)
         except:
@@ -422,7 +415,7 @@ class TelegramController:
             f"AutoBoss: inativo."
         )
 
-# ============================================================
+    # ============================================================
     # /PARTY
     # ============================================================
 
@@ -447,7 +440,6 @@ class TelegramController:
             msg = "👥 *SUA PARTY*\n\n"
 
             for member in party_data:
-                # Escolhe um emoji dependendo da função (role)
                 role = member['role']
                 if role == "TANK":
                     role_emoji = "🛡️"
@@ -461,17 +453,15 @@ class TelegramController:
                 msg += f"{role_emoji} *{role}* - {member['name']} ({member['meta']})\n"
                 msg += f"❤️ HP: {member['hp']} | 💧 Mana: {member['mana']}\n"
                 
-                # if member['magic_shield']:
-                #     msg += f"💠 M. Shield: {member['magic_shield']}\n"
+                if member['magic_shield']:
+                    msg += f"💠 M. Shield: {member['magic_shield']}\n"
                 
                 msg += f"🌟 XP: {member['xp_pct']}\n\n"
 
-            # O parse_mode="Markdown" permite que os nomes fiquem em negrito
             await update.message.reply_text(msg.strip(), parse_mode="Markdown")
 
         except Exception as e:
             await update.message.reply_text(f"❌ Erro ao ler Party: {e}")
-
 
     # ============================================================
     # /HUNTS
@@ -488,7 +478,6 @@ class TelegramController:
 
         await update.message.reply_text("⏳ Capturando lista atual de Hunts disponíveis...")
         
-        # Pausamos a hunt para navegar no menu com segurança
         self.bot.pause_hunt()
         try:
             current = await get_current_hunt(self.bot.tab)
@@ -533,7 +522,6 @@ class TelegramController:
         hunt_identifier = " ".join(context.args)
         await update.message.reply_text(f"⏳ Alterando destino de caça para: {hunt_identifier}...")
         
-        # Pausamos a hunt de vendas para focar na mudança
         self.bot.pause_hunt()
         try:
             success, msg = await change_hunt(self.bot.tab, hunt_identifier)
@@ -551,7 +539,6 @@ class TelegramController:
     # ============================================================
 
     async def debughunt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Ferramenta caso a extração ou mudança de hunt falhe"""
         if not self.authorized(update):
             await self.reject(update)
             return
@@ -708,10 +695,6 @@ class TelegramController:
 
             return
 
-        # ========================================================
-        # CRIAR AUTOBOSS
-        # ========================================================
-
         self.auto_boss_instance = AutoBoss(
             self.bot.tab
         )
@@ -738,17 +721,9 @@ class TelegramController:
             send_message
         )
 
-        # ========================================================
-        # CALLBACK DE FINALIZAÇÃO
-        # ========================================================
-
         self.auto_boss_instance.on_finished = (
             self.autoboss_finished
         )
-
-        # ========================================================
-        # PAUSAR HUNT
-        # ========================================================
 
         self.bot.pause_hunt()
 
@@ -866,6 +841,41 @@ class TelegramController:
             )
 
     # ============================================================
+    # /RESET
+    # ============================================================
+
+    async def reset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
+            return
+
+        # Passo 1: Clica no botão de reset principal
+        js_click_reset = "document.getElementById('hunt-reset')?.click();"
+        
+        # Passo 2: Clica no botão de confirmação que aparece no modal
+        js_click_confirm = "document.getElementById('confirm-yes')?.click();"
+        
+        try:
+            # Aciona o reset
+            await self.bot.tab.execute_script(js_click_reset)
+            
+            # Aguarda o modal de confirmação abrir na tela
+            await asyncio.sleep(0.5)
+            
+            # Confirma a ação clicando em "Zerar"
+            await self.bot.tab.execute_script(js_click_confirm)
+            
+            # Zera as estatísticas internas do nosso bot
+            self.bot.hunt_stats.reset()
+            
+            await update.message.reply_text("🔄 *Estatísticas do bot e Hunt Analyzer zerados com sucesso!*", parse_mode="Markdown")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao resetar: {e}")
+    # ============================================================
     # /HELP
     # ============================================================
 
@@ -900,7 +910,7 @@ Para o bot.
 Mostra o estado atual e a Hunt.
 
 /party
-Mostra o status da equipe.
+Exibe os dados de vida, mana e status da equipe atual.
 
 /hunts
 Lista todos os mapas de caça disponíveis.
@@ -916,6 +926,9 @@ Inicia AutoBoss usando os índices.
 
 /stopautoboss
 Para o AutoBoss e retoma a Hunt.
+
+/reset
+Zera as métricas do Hunt Analyzer no jogo e as estatísticas do Bot.
 
 /help
 Mostra esta mensagem.
@@ -993,7 +1006,6 @@ async def main():
         )
     )
 
-    # NOVO COMANDO HUNT
     application.add_handler(
         CommandHandler(
             "hunt",
@@ -1026,6 +1038,14 @@ async def main():
         CommandHandler(
             "stopautoboss",
             controller.stopautoboss,
+        )
+    )
+
+    # ADICIONADO O HANDLER DO COMANDO RESET
+    application.add_handler(
+        CommandHandler(
+            "reset",
+            controller.reset,
         )
     )
 

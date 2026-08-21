@@ -13,7 +13,7 @@ from baiaidle.browser import (
 )
 from baiaidle.login import login
 from baiaidle.actions import validate_sale
-from baiaidle.sell import run_sell
+from baiaidle.sell import run_sell, HuntStats
 
 
 class GameBot:
@@ -34,7 +34,10 @@ class GameBot:
 
         self.starting = False
 
-        self.on_message = None  # <--- NOVA LINHA: Callback do Telegram
+        self.on_message = None 
+        
+        # Instanciamos o objeto de estatísticas para ser acessado por qualquer comando
+        self.hunt_stats = HuntStats()
 
     # ============================================================
     # START
@@ -117,10 +120,8 @@ class GameBot:
                 url
             )
 
-            # === NOVA LINHA ADICIONADA AQUI ===
             print("Ativando bypass automático do Cloudflare em segundo plano...")
             await self.tab.enable_auto_solve_cloudflare_captcha()
-            # ==================================
 
             await asyncio.sleep(3)
 
@@ -180,6 +181,9 @@ class GameBot:
 
             self.running = True
 
+            # Zera as estatísticas ao iniciar a hunt
+            self.hunt_stats.reset()
+
             # ====================================================
             # HUNT
             # ====================================================
@@ -189,7 +193,8 @@ class GameBot:
                     self.tab,
                     self.stop_event,
                     self.hunt_pause_event,
-                    self.on_message,  # <--- NOVA LINHA: Passando o callback para a hunt
+                    self.hunt_stats, # Passa as estatísticas
+                    self.on_message,
                 )
             )
 

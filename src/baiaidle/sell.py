@@ -40,32 +40,38 @@ VOLTAR_PARA_HUNT = 95
 @dataclass
 class HuntStats:
 
-    started_at: float
+    started_at: float = 0.0
     total_gold: int = 0
     sales: int = 0
-    
-    # Variáveis para rastreio de XP baseada na diferença
     initial_xp: int | None = None
     current_xp: int = 0
+
+    def reset(self):
+        """Zera todos os dados da sessão."""
+        self.started_at = asyncio.get_running_loop().time()
+        self.total_gold = 0
+        self.sales = 0
+        self.initial_xp = None
+        self.current_xp = 0
 
     def add_sale(self, value: int):
         self.total_gold += value
         self.sales += 1
 
     def update_xp(self, current_hud_xp: int):
-        """Atualiza a XP atual e define a base se for a primeira leitura."""
         if current_hud_xp > 0:
             if self.initial_xp is None:
                 self.initial_xp = current_hud_xp
             self.current_xp = current_hud_xp
 
     def get_session_xp(self) -> int:
-        """Calcula a XP ganha apenas durante esta sessão."""
         if self.initial_xp is None or self.current_xp <= self.initial_xp:
             return 0
         return self.current_xp - self.initial_xp
 
     def elapsed(self) -> float:
+        if self.started_at == 0.0:
+            return 0
         return asyncio.get_running_loop().time() - self.started_at
 
     def gold_per_hour(self) -> float:
@@ -78,8 +84,7 @@ class HuntStats:
         elapsed = self.elapsed()
         if elapsed <= 0:
             return 0
-        session_xp = self.get_session_xp()
-        return session_xp / elapsed * 3600
+        return self.get_session_xp() / elapsed * 3600
 
 
 # ================================================================
@@ -372,7 +377,6 @@ async def execute_sale(
         "Venda processada com sucesso."
     )
 
-    # Coleta os dados atualizados do HUD após a venda processada
     hud_data = await get_hud_data(tab)
     
     current_balance_str = hud_data.get("gold", "0")
@@ -380,9 +384,8 @@ async def execute_sale(
     stamina_pct = hud_data.get("stamina_pct", "0%")
     stamina_time = hud_data.get("stamina_time", "00:00")
 
-    # Extrai o XP atual bruto do jogo e atualiza as estatísticas
-    current_raw_xp = parse_clean_int(current_xp_str)
-    stats.update_xp(current_raw_xp)
+    current_xp = parse_clean_int(current_xp_str)
+    stats.update_xp(current_xp)
 
     if sale_value > 0:
 
@@ -407,7 +410,7 @@ async def execute_sale(
 
         if on_message:
             msg_telegram = (
-                f"💰 VENDA #{stats.sales}\n\n"
+                f"💰 *VENDA #{stats.sales}*\n\n"
                 f"⏱️ Duração: {format_duration(stats.elapsed())}\n"
                 f"⚡ Stamina: {stamina_pct} (Tempo: {stamina_time})\n\n"
                 f"🪙 Valor: {format_number(sale_value)} gold\n"
@@ -441,16 +444,13 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
         return False
         
     training = True
-    # Registra o tempo atual para o intervalo de mensagens de 10 min (600s)
     last_report_time = asyncio.get_running_loop().time()
     
     while training and not stop_event.is_set():
-        # Respeita o comando global de /stop ou pausas no bot
         if not pause_event.is_set():
             await pause_event.wait()
             continue
             
-        # Dorme por 60 segundos, mas picotado para ser interrompível
         for _ in range(60):
             if stop_event.is_set() or not pause_event.is_set():
                 break
@@ -466,7 +466,6 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
         
         now = asyncio.get_running_loop().time()
         
-        # Objetivo Alcançado: Voltar para a Hunt
         if current_stam_val >= VOLTAR_PARA_HUNT:
             msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Retornando para a hunt: {current_hunt}."
             print(msg_done)
@@ -476,7 +475,6 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
             await change_hunt(tab, current_hunt)
             return True
             
-        # A cada 10 minutos mandamos um status atualizado
         if now - last_report_time >= 600:
             last_report_time = now
             report_msg = f"🧘‍♂️ *Treinando...*\n⚡ Stamina atual: {current_stam_str}\n⏳ Tempo para 100%: {stam_time}"
@@ -495,14 +493,9 @@ async def run_sell(
     tab,
     stop_event,
     pause_event,
+    stats: HuntStats,
     on_message=None, 
 ):
-
-    stats = HuntStats(
-        started_at=(
-            asyncio.get_running_loop().time()
-        )
-    )
 
     print()
     print(
@@ -628,7 +621,7 @@ async def run_sell(
                         remaining,
                     )
 
-                continue # Se a venda falhou, ele reinicia o loop sem checar a stamina
+                continue 
 
             # ====================================================
             # VERIFICAR STAMINA APÓS A VENDA
@@ -638,7 +631,6 @@ async def run_sell(
                 stamina_str = hud_data.get("stamina_pct", "0%")
                 stamina_val = parse_clean_int(stamina_str)
                 
-                # Se for maior que 0 (para evitar falsos positivos de leitura) e menor ou igual a 40
                 if 0 < stamina_val <= IR_PARA_TREINO_ONLINE:
                     current_hunt = await get_current_hunt(tab)
                     if not current_hunt:
@@ -649,7 +641,6 @@ async def run_sell(
                     if on_message:
                         await on_message(f"⚠️ {msg}")
                         
-                    # Aqui o bot "prende" a execução no gerenciador de treino até bater 95%
                     await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
 
     except asyncio.CancelledError:
