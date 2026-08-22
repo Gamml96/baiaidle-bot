@@ -2,7 +2,6 @@ import asyncio
 import random
 from dataclasses import dataclass
 
-
 from baiaidle.actions import (
     get_sale_value,
     get_sell_button_state,
@@ -17,7 +16,7 @@ from baiaidle.actions import (
 # === IMPORTANDO FUNÇÕES DE HUNT E TREINO ===
 from baiaidle.hunts import get_current_hunt, change_hunt, go_to_training, go_to_house
 from baiaidle.guild import get_tracked_task_progress, process_guild_tasks
-
+from baiaidle.codex import process_codex_routine
 
 # ================================================================
 # CONFIGURAÇÃO
@@ -49,6 +48,8 @@ class HuntStats:
     initial_xp: int | None = None
     current_xp: int = 0
     min_tier_to_stash: int = 4
+    force_action: str | None = None
+    codex_progress: str = "0%"
 
     def reset(self):
         """Zera todos os dados da sessão."""
@@ -57,6 +58,8 @@ class HuntStats:
         self.sales = 0
         self.initial_xp = None
         self.current_xp = 0
+        self.force_action = None
+        self.codex_progress = "0%"
 
     def add_sale(self, value: int):
         self.total_gold += value
@@ -426,13 +429,15 @@ async def execute_sale(
         print(f"Stamina: {stamina_pct} (Regenera em: {stamina_time})")
         print(f"Tempo: {format_duration(stats.elapsed())}")
         print(f"Gold/h: {format_number(int(stats.gold_per_hour()))}")
+        print(f"Codex da Hunt: {stats.codex_progress}")
         print("========================================")
 
         if on_message:
             msg_telegram = (
                 f"💰 *VENDA #{stats.sales}*\n\n"
                 f"⏱️ Duração: {format_duration(stats.elapsed())}\n"
-                f"⚡ Stamina: {stamina_pct} (Tempo: {stamina_time})\n\n"
+                f"⚡ Stamina: {stamina_pct} (Tempo: {stamina_time})\n"
+                f"📖 Codex Atual: {stats.codex_progress}\n\n"
                 f"🪙 Valor: {format_number(sale_value)} gold\n"
                 f"📈 Acumulado da Hunt: {format_number(stats.total_gold)} gold\n"
                 f"⚖️ Gold/h: {format_number(int(stats.gold_per_hour()))}\n"
@@ -497,7 +502,7 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
             
         if now - last_report_time >= 600:
             last_report_time = now
-            report_msg = f"🧘‍♂️ *Treinando...*\n⚡ Stamina atual: {current_stam_str}\n⏳ Tempo para 100%: {stam_time}"
+            report_msg = f"🧘‍♂️ *Treinando...*\n⚡ Stamina atual: {current_stam_str} ({stam_time})\n⏳ "
             print(report_msg)
             if on_message:
                 await on_message(report_msg)
@@ -549,7 +554,7 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
             
         if now - last_report_time >= 600:
             last_report_time = now
-            report_msg = f"🏠 *Treinando na Casa...*\n⚡ Stamina atual: {current_stam_str}\n⏳ Tempo para 100%: {stam_time}"
+            report_msg = f"🏠 *Treinando na Casa...*\n⚡ Stamina atual: {current_stam_str} ({stam_time})\n⏳ "
             print(report_msg)
             if on_message:
                 await on_message(report_msg)
@@ -568,81 +573,79 @@ async def run_sell(
     on_message=None, 
 ):
 
-    print()
-    print(
-        "========================================"
-    )
-
-    print(
-        "HUNT INICIADA"
-    )
-
-    print(
-        "========================================"
-    )
+    print("\n========================================")
+    print("HUNT INICIADA")
+    print("========================================")
 
     try:
 
         while not stop_event.is_set():
 
+            # ====================================================
+            # INTERRUPÇÃO MANUAL (VIA TELEGRAM)
+            # ====================================================
+            if stats.force_action:
+                action = stats.force_action
+                stats.force_action = None
+                
+                current_hunt = await get_current_hunt(tab)
+                if not current_hunt:
+                    current_hunt = "Hunt Desconhecida"
+                    
+                if action == "casa":
+                    if on_message:
+                        await on_message("🏠 Iniciando ida manual para a Casa...")
+                    
+                    house_success = await manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=True)
+                    if not house_success:
+                        if on_message:
+                            await on_message("❌ Casa indisponível. Redirecionando para o Treino Online padrão...")
+                        await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
+                        
+                elif action == "treino":
+                    if on_message:
+                        await on_message("🧘‍♂️ Iniciando ida manual para o Treino Online...")
+                    await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
+                
+                continue 
+            # ====================================================
+
             if not pause_event.is_set():
-
-                print()
-                print(
-                    "Hunt pausada."
-                )
-
+                print("\nHunt pausada.")
                 await pause_event.wait()
-
                 if stop_event.is_set():
-
                     break
-
-                print()
-                print(
-                    "Hunt retomada."
-                )
-
+                print("\nHunt retomada.")
                 continue
 
             delay = random_main_delay()
-
-            print()
-            print(
-                f"Próxima venda em "
-                f"{delay:.1f}s."
-            )
-
+            print(f"\nPróxima venda em {delay:.1f}s.")
             remaining = delay
 
             while remaining > 0:
-
-                if stop_event.is_set():
-
+                if stop_event.is_set() or not pause_event.is_set():
                     break
-
-                if not pause_event.is_set():
-
+                if stats.force_action:
                     break
-
-                sleep_time = min(
-                    1,
-                    remaining,
-                )
-
-                await asyncio.sleep(
-                    sleep_time
-                )
-
+                    
+                sleep_time = min(1, remaining)
+                await asyncio.sleep(sleep_time)
                 remaining -= sleep_time
 
-            if stop_event.is_set():
-
-                break
+            if stop_event.is_set() or stats.force_action:
+                continue
 
             if not pause_event.is_set():
-
                 continue
+
+            # ====================================================
+            # VERIFICAR CODEX ANTES DA VENDA
+            # ====================================================
+            if not stop_event.is_set() and pause_event.is_set() and not stats.force_action:
+                current_hunt = await get_current_hunt(tab)
+                if current_hunt and current_hunt != "Hunt Desconhecida":
+                    delivered, progress = await process_codex_routine(tab, current_hunt, on_message)
+                    stats.codex_progress = progress
 
             success = await execute_sale(
                 tab,
@@ -651,46 +654,19 @@ async def run_sell(
                 on_message=on_message,
             )
 
-            if (
-                not success
-                and not stop_event.is_set()
-                and pause_event.is_set()
-            ):
-
-                print()
-                print(
-                    "A venda não foi concluída."
-                )
-
-                retry_delay = (
-                    random_retry_delay()
-                )
-
-                print(
-                    f"Nova tentativa em "
-                    f"{retry_delay:.1f}s."
-                )
-
+            if not success and not stop_event.is_set() and pause_event.is_set() and not stats.force_action:
+                print("\nA venda não foi concluída.")
+                retry_delay = random_retry_delay()
+                print(f"Nova tentativa em {retry_delay:.1f}s.")
                 remaining = retry_delay
 
                 while remaining > 0:
-
-                    if stop_event.is_set():
-
+                    if stop_event.is_set() or not pause_event.is_set():
                         break
-
-                    if not pause_event.is_set():
-
+                    if stats.force_action:
                         break
-
-                    await asyncio.sleep(
-                        min(1, remaining)
-                    )
-
-                    remaining -= min(
-                        1,
-                        remaining,
-                    )
+                    await asyncio.sleep(min(1, remaining))
+                    remaining -= min(1, remaining)
 
                 continue 
 
@@ -712,14 +688,11 @@ async def run_sell(
                     if on_message:
                         await on_message(f"⚠️ {msg}")
                         
-                    # 1. Tenta ir para a Casa primeiro (silencioso em caso de falha)
                     house_success = await manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=True)
                     
-                    # 2. Se falhou (não tinha casa disponível), ativa o Plano B!
                     if not house_success:
                         if on_message:
                             await on_message("❌ Casa indisponível. Redirecionando para o Treino Online padrão...")
-                        
                         await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
 
             # ====================================================
@@ -728,7 +701,6 @@ async def run_sell(
             if not stop_event.is_set() and pause_event.is_set():
                 task_data = await get_tracked_task_progress(tab)
                 
-                # Se a task estiver terminada, entregamos e pegamos uma nova!
                 if task_data and task_data.get("finished"):
                     msg = f"✅ *Task Finalizada!* ({task_data['name']})\nIndo até a Guilda entregar e buscar uma nova..."
                     print(msg.replace('*', ''))
@@ -736,20 +708,10 @@ async def run_sell(
                     if on_message:
                         await on_message(msg)
                         
-                    # Executa a rotina inteira de trocar tasks
                     await process_guild_tasks(tab, on_message)
 
     except asyncio.CancelledError:
-
-        print(
-            "Task da Hunt cancelada."
-        )
-
+        print("Task da Hunt cancelada.")
         raise
-
     finally:
-
-        print()
-        print(
-            "Hunt encerrada."
-        )
+        print("\nHunt encerrada.")
