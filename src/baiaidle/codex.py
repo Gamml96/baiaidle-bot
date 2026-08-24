@@ -72,12 +72,15 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
     
     delivered_any = False
     
-    # 2. ENTREGAR TUDO QUE ESTIVER DISPONÍVEL
+    # 2. ENTREGAR TUDO QUE ESTIVER DISPONÍVEL (COM TRAVA DE SEGURANÇA)
     for _ in range(3):
         js_click = """
         (() => {
             const buttons = Array.from(document.querySelectorAll('.cx-list .cx-entry .cx-give'));
-            const available = buttons.find(b => !b.disabled);
+            
+            // TRAVA DE SEGURANÇA: Só aceita se não estiver desativado E se o texto for exatamente 'Entregar'
+            const available = buttons.find(b => !b.disabled && b.innerText.trim() === 'Entregar');
+            
             if(available) {
                 const entry = available.closest('.cx-entry');
                 let name = "Codex Desconhecido";
@@ -119,7 +122,7 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
         else:
             break 
 
-    # 3. LER A PORCENTAGEM DE PROGRESSO (NOVO)
+    # 3. LER A PORCENTAGEM DE PROGRESSO
     js_read_progress = """
     (() => {
         const entry = document.querySelector('.cx-list .cx-entry');
@@ -128,7 +131,6 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
         const barEl = entry.querySelector('.cx-bar-fill');
         if (!barEl) return "0%";
         
-        // Retorna ex: "33.6%"
         return barEl.style.width || "0%";
     })()
     """
