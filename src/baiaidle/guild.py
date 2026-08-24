@@ -21,7 +21,6 @@ def parse_json_result(result):
 async def open_guild_tasks(tab):
     """Navega pelo menu Social > Guild e abre a aba de Tasks."""
     print("Abrindo menu da Guild > Tasks...")
-    
     js_navigate = """
     (() => {
         const btnSocial = document.getElementById('tab-social');
@@ -42,11 +41,19 @@ async def open_guild_tasks(tab):
     })()
     """
     await tab.execute_script(js_navigate)
-    await asyncio.sleep(2.5) # Aguarda o carregamento completo do modal
+    await asyncio.sleep(2.5) 
     return True
 
+async def close_guild_modal(tab):
+    """Fecha a janela da Guilda."""
+    await tab.execute_script("(() => { const btn = document.querySelector('.gw-x'); if(btn) btn.click(); })()")
+    await asyncio.sleep(1)
+
 async def interact_with_guild_tasks(tab, action="read", target_task_name=None):
-    """Lê, aceita ou entrega tasks."""
+    """Lê, aceita ou entrega tasks com proteção de strings JSON e suporte a tasks em andamento."""
+    safe_action = json.dumps(action)
+    safe_target = json.dumps(target_task_name) if target_task_name else "null"
+    
     js = f"""
     (() => {{
         const cards = Array.from(document.querySelectorAll('.gwt-card'));
@@ -54,27 +61,40 @@ async def interact_with_guild_tasks(tab, action="read", target_task_name=None):
         
         cards.forEach(card => {{
             const nameEl = card.querySelector('.gwt-name');
-            const btnEl = card.querySelector('.gw-btn');
-            const barEl = card.querySelector('.gwt-bar i');
-            
-            if (!nameEl || !btnEl) return;
+            if (!nameEl) return; // Se não tem nome, ignora
             
             const name = nameEl.innerText.trim();
-            const btnText = btnEl.innerText.trim();
-            const isDisabled = btnEl.disabled;
-            const progress = barEl ? parseFloat(barEl.style.width || '0') : 0;
+            const btnEl = card.querySelector('.gw-btn'); // Pode ser nulo se estiver em andamento
+            const trackBtn = card.querySelector('.gwt-track');
+            const barEl = card.querySelector('.gwt-bar i');
+            const diffEl = card.querySelector('.gwt-diff');
             
-            if ("{action}" !== "read" && name === "{target_task_name}") {{
-                if (!isDisabled) {{
+            let btnText = "";
+            let isDisabled = true;
+            
+            // Se o botão principal existe (Aceitar / Entregar)
+            if (btnEl) {{
+                btnText = btnEl.innerText.trim();
+                isDisabled = btnEl.disabled;
+                
+                if ({safe_action} !== "read" && name === {safe_target} && !isDisabled) {{
                     btnEl.click();
                 }}
             }}
+            
+            const progress = barEl ? parseFloat(barEl.style.width || '0') : 0;
+            
+            // Normaliza a dificuldade
+            let difficulty = diffEl ? diffEl.innerText.trim().toLowerCase() : 'desconhecida';
+            difficulty = difficulty.replace('á', 'a').replace('é', 'e').replace('í', 'i');
             
             tasks.push({{
                 name: name,
                 button: btnText,
                 disabled: isDisabled,
-                progress_pct: progress
+                progress_pct: progress,
+                has_track: !!trackBtn,
+                difficulty: difficulty
             }});
         }});
         
@@ -86,12 +106,13 @@ async def interact_with_guild_tasks(tab, action="read", target_task_name=None):
 
 async def track_task_on_hud(tab, task_name):
     """Clica no botão 'Rastrear na tela'."""
+    safe_target = json.dumps(task_name)
     js = f"""
     (() => {{
         const cards = Array.from(document.querySelectorAll('.gwt-card'));
         for (const card of cards) {{
             const nameEl = card.querySelector('.gwt-name');
-            if (nameEl && nameEl.innerText.trim() === "{task_name}") {{
+            if (nameEl && nameEl.innerText.trim() === {safe_target}) {{
                 const trackBtn = card.querySelector('.gwt-track');
                 if (trackBtn) {{
                     trackBtn.click();
@@ -105,13 +126,8 @@ async def track_task_on_hud(tab, task_name):
     await tab.execute_script(js)
     await asyncio.sleep(0.5)
 
-async def close_guild_modal(tab):
-    """Fecha a janela da Guilda."""
-    await tab.execute_script("(() => { const btn = document.querySelector('.gw-x'); if(btn) btn.click(); })()")
-    await asyncio.sleep(1)
-
 async def process_guild_tasks(tab, on_message=None):
-    """Abre menu, entrega prontas, aceita novas e viaja para a hunt da task."""
+    """Rotina autônoma: entrega concluídas, retoma em andamento, e lista novas."""
     if not await open_guild_tasks(tab):
         return False, "Não foi possível abrir o menu da Guild."
 
@@ -133,29 +149,80 @@ async def process_guild_tasks(tab, on_message=None):
     if delivered:
         tasks = await interact_with_guild_tasks(tab, action="read")
         
-    # 2. ACEITAR NOVA TASK
-    accepted_task = None
-    for t in tasks:
-        if t['button'] == 'Aceitar' and not t['disabled']:
-            accepted_task = t['name']
-            await interact_with_guild_tasks(tab, action="accept", target_task_name=t['name'])
-            if on_message: await on_message(f"📜 *Nova Task Aceita:*\nCaçando em {t['name']}...")
-            await asyncio.sleep(1)
-            await track_task_on_hud(tab, t['name'])
-            break
-            
+    # 2. RECUPERAR TASK EM ANDAMENTO
+    # Procura todas as tasks que têm o botão de rastrear na tela (são as que estão ativas)
+    tasks_in_progress = [t for t in tasks if t['has_track']]
+    if tasks_in_progress:
+        # Pega a primeira task em andamento da lista
+        t = tasks_in_progress[0]
+        await track_task_on_hud(tab, t['name'])
+        await close_guild_modal(tab)
+        await change_hunt(tab, t['name'])
+        if on_message:
+            await on_message(f"🔄 *Retomando Task em Andamento!*\nLocal: {t['name']} (Progresso: {t['progress_pct']}%)")
+        return True, "recuperada"
+
+    # 3. LISTAR TASKS E PERGUNTAR NO TELEGRAM (COM BOTÕES)
+    available_tasks = [t for t in tasks if t['button'] == 'Aceitar' and not t['disabled']]
+    
     await close_guild_modal(tab)
     
-    # 3. VIAJAR PARA A HUNT DA TASK
-    if accepted_task:
-        await change_hunt(tab, accepted_task)
-        return True, f"Iniciando task em: {accepted_task}"
+    if available_tasks:
+        msg = "📜 *Novas Tasks Disponíveis!*\nEscolha qual deseja iniciar clicando em um dos botões abaixo:"
+        emojis = {"facil": "🟢", "media": "🟡", "dificil": "🔴"}
         
-    # Retornos para quando não há nova task
+        buttons = []
+        for t in available_tasks:
+            emoji = emojis.get(t['difficulty'], "⚪")
+            buttons.append({
+                "text": f"{emoji} {t['name']} ({t['difficulty'].capitalize()})",
+                "callback_data": f"task_{t['difficulty']}"
+            })
+            
+        if on_message:
+            import inspect
+            if 'buttons' in inspect.signature(on_message).parameters:
+                await on_message(msg, buttons=buttons)
+            else:
+                msg_txt = msg + "\n"
+                for b in buttons:
+                    msg_txt += f"\n{b['text']} -> Digite /task {b['callback_data'].split('_')[1]}"
+                await on_message(msg_txt)
+                
+        return True, "aguardando_escolha"
+        
     if delivered:
         return True, "limite_atingido"
     else:
         return False, "nenhuma_nova"
+
+async def accept_specific_task(tab, difficulty_choice, on_message=None):
+    """Aceita uma task baseada na dificuldade escolhida."""
+    if not await open_guild_tasks(tab):
+        return False, "Não foi possível abrir o menu da Guild."
+
+    tasks = await interact_with_guild_tasks(tab, action="read")
+    
+    target_task = None
+    for t in tasks:
+        if t['difficulty'] == difficulty_choice and t['button'] == 'Aceitar' and not t['disabled']:
+            target_task = t
+            break
+            
+    if target_task:
+        await interact_with_guild_tasks(tab, action="accept", target_task_name=target_task['name'])
+        if on_message: 
+            await on_message(f"📜 *Task Aceita:*\nCaçando em {target_task['name']}...")
+            
+        await asyncio.sleep(1)
+        await track_task_on_hud(tab, target_task['name'])
+        await close_guild_modal(tab)
+        await change_hunt(tab, target_task['name'])
+        
+        return True, f"Iniciando task em: {target_task['name']}"
+    else:
+        await close_guild_modal(tab)
+        return False, f"Nenhuma task de nível '{difficulty_choice}' disponível ou o limite foi atingido."
 
 async def get_tracked_task_progress(tab):
     """Lê a caixinha do HUD e verifica se completou."""
@@ -192,5 +259,5 @@ async def get_tracked_task_progress(tab):
             "max": max_kills,
             "finished": current_kills >= max_kills
         }
-    except Exception as e:
+    except Exception:
         return None

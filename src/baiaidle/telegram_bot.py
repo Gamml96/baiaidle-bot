@@ -1,18 +1,21 @@
 import asyncio
 from email.mime import application
-from baiaidle.guild import process_guild_tasks
-from baiaidle.sell import manage_training, manage_house_training
 
+from baiaidle.guild import process_guild_tasks, accept_specific_task
+from baiaidle.sell import manage_training, manage_house_training
 
 from telegram import (
     Update,
     BotCommand,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
 )
 
 from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
+    CallbackQueryHandler,
 )
 
 from baiaidle.autoboss import (
@@ -165,6 +168,11 @@ class TelegramController:
             ),
 
             BotCommand(
+                "task",
+                "Aceitar task específica",
+            ),
+
+            BotCommand(
                 "reset",
                 "Zerar estatísticas e Analyzer",
             ),
@@ -252,9 +260,23 @@ class TelegramController:
 
         chat_id = update.effective_chat.id
 
-        async def send_hunt_msg(text):
+        # Ajustado para suportar o envio de botões
+        async def send_hunt_msg(text, buttons=None):
+            reply_markup = None
+            if buttons:
+                keyboard = [
+                    [InlineKeyboardButton(b["text"], callback_data=b["callback_data"])]
+                    for b in buttons
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
             try:
-                await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
+                await context.bot.send_message(
+                    chat_id=chat_id, 
+                    text=text, 
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
             except Exception as e:
                 print(f"Erro ao enviar mensagem para o Telegram: {e}")
 
@@ -585,7 +607,7 @@ class TelegramController:
         finally:
             self.bot.resume_hunt()
 
-# ============================================================
+    # ============================================================
     # /BOSSES
     # ============================================================
 
@@ -879,7 +901,6 @@ class TelegramController:
             await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
             return
 
-        # Envia o sinal para o sell.py interromper as vendas
         self.bot.hunt_stats.force_action = "treino"
         await update.message.reply_text("⏳ Comando recebido!\nO bot interromperá as vendas para ir ao Treino Online instantaneamente.")
 
@@ -896,7 +917,6 @@ class TelegramController:
             await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
             return
 
-        # Envia o sinal para o sell.py interromper as vendas
         self.bot.hunt_stats.force_action = "casa"
         await update.message.reply_text("⏳ Comando recebido!\nO bot interromperá as vendas para ir à Casa instantaneamente.")
 
@@ -917,26 +937,89 @@ class TelegramController:
         self.bot.pause_hunt()
         
         try:
-            # 1. Salva a hunt atual no início do comando
             hunt_de_inicio = await get_current_hunt(self.bot.tab)
-            
-            # 2. Roda a automação
             success, msg = await process_guild_tasks(self.bot.tab, self.bot.on_message)
             
-            # 3. Se não pegou uma task nova, viaja de volta para a hunt salva
-            if msg in ["limite_atingido", "nenhuma_nova"]:
+            if msg in ["limite_atingido", "nenhuma_nova", "aguardando_escolha"]:
                 await change_hunt(self.bot.tab, hunt_de_inicio)
-                msg_final = f"✅ Tasks finalizadas!\nRetornando para a hunt: {hunt_de_inicio}"
-                await update.message.reply_text(msg_final)
+                if msg != "aguardando_escolha":
+                    msg_final = f"✅ Tasks finalizadas!\nRetornando para a hunt: {hunt_de_inicio}"
+                    await update.message.reply_text(msg_final)
+            elif success and msg == "recuperada":
+                pass
             elif success:
                 await update.message.reply_text(f"✅ {msg}")
             else:
-                await update.message.reply_text(f"⚠️ Erro inesperado: {msg}")
+                await update.message.reply_text(f"⚠️ Aviso: {msg}")
                 
         except Exception as e:
             await update.message.reply_text(f"❌ Erro ao processar task da guild: {e}")
         finally:
             self.bot.resume_hunt()
+
+    # ============================================================
+    # /TASK (Comando Direto)
+    # ============================================================
+
+    async def task(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
+            return
+
+        if not context.args or context.args[0].lower() not in ["facil", "media", "dificil"]:
+            await update.message.reply_text("⚠️ Uso incorreto.\nDigite: /task facil, /task media ou /task dificil")
+            return
+            
+        dificuldade = context.args[0].lower()
+        await update.message.reply_text(f"⏳ Buscando task {dificuldade}...")
+        
+        self.bot.pause_hunt()
+        try:
+            success, msg = await accept_specific_task(self.bot.tab, dificuldade, self.bot.on_message)
+            if success:
+                await update.message.reply_text(f"✅ {msg}")
+            else:
+                await update.message.reply_text(f"⚠️ {msg}")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao aceitar task: {e}")
+        finally:
+            self.bot.resume_hunt()
+
+    # ============================================================
+    # OUVINTE DE BOTÕES INLINE (TASKS)
+    # ============================================================
+
+    async def inline_button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        query = update.callback_query
+        await query.answer() 
+        
+        data = query.data
+        
+        if data.startswith("task_"):
+            dificuldade = data.split("_")[1]
+            
+            if not self.bot.is_running():
+                await query.edit_message_text("🔴 O bot está parado.\nUse /start primeiro.")
+                return
+
+            await query.edit_message_text(f"⏳ Buscando e aceitando task {dificuldade}...")
+            
+            self.bot.pause_hunt()
+            try:
+                success, msg = await accept_specific_task(self.bot.tab, dificuldade, self.bot.on_message)
+                
+                if success:
+                    await query.message.reply_text(f"✅ {msg}")
+                else:
+                    await query.message.reply_text(f"⚠️ {msg}")
+            except Exception as e:
+                await query.message.reply_text(f"❌ Erro ao aceitar task: {e}")
+            finally:
+                self.bot.resume_hunt()
 
     # ============================================================
     # /RESET
@@ -951,23 +1034,14 @@ class TelegramController:
             await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
             return
 
-        # Passo 1: Clica no botão de reset principal
         js_click_reset = "document.getElementById('hunt-reset')?.click();"
-        
-        # Passo 2: Clica no botão de confirmação que aparece no modal
         js_click_confirm = "document.getElementById('confirm-yes')?.click();"
         
         try:
-            # Aciona o reset
             await self.bot.tab.execute_script(js_click_reset)
-            
-            # Aguarda o modal de confirmação abrir na tela
             await asyncio.sleep(0.5)
-            
-            # Confirma a ação clicando em "Zerar"
             await self.bot.tab.execute_script(js_click_confirm)
             
-            # Zera as estatísticas internas do nosso bot
             self.bot.hunt_stats.reset()
             
             await update.message.reply_text("🔄 *Estatísticas do bot e Hunt Analyzer zerados com sucesso!*", parse_mode="Markdown")
@@ -1060,6 +1134,21 @@ Inicia AutoBoss usando os índices.
 
 /stopautoboss
 Para o AutoBoss e retoma a Hunt.
+
+/guildtask
+Gerencia as tasks da Guilda (Entregar / Pegar nova).
+
+/task <dificuldade>
+Aceita uma task de Guild específica. Ex: /task facil
+
+/treino
+Leva o boneco para recuperar stamina no Treino Online.
+
+/casa
+Leva o boneco para recuperar stamina no Dummie da Casa.
+
+/settier <numero>
+Define qual raridade de item deve ser enviada pro baú (ex: /settier 4)
 
 /reset
 Zera as métricas do Hunt Analyzer no jogo e as estatísticas do Bot.
@@ -1179,19 +1268,27 @@ async def main():
         CommandHandler(
             "treino", 
             controller.treino
-            )
+        )
     )
     
     application.add_handler(
         CommandHandler(
             "casa", 
-            controller.casa)
+            controller.casa
+        )
     )
 
     application.add_handler(
         CommandHandler(
             "guildtask",
             controller.guildtask,
+        )
+    )
+    
+    application.add_handler(
+        CommandHandler(
+            "task",
+            controller.task,
         )
     )
 
@@ -1213,6 +1310,13 @@ async def main():
         CommandHandler(
             "help",
             controller.help,
+        )
+    )
+    
+    # Registro do Ouvinte de Botões Inline
+    application.add_handler(
+        CallbackQueryHandler(
+            controller.inline_button_handler
         )
     )
 
