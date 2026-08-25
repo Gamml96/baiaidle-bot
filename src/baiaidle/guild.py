@@ -50,7 +50,7 @@ async def close_guild_modal(tab):
     await asyncio.sleep(1)
 
 async def interact_with_guild_tasks(tab, action="read", target_task_name=None):
-    """Lê, aceita ou entrega tasks com proteção de strings JSON e suporte a tasks em andamento."""
+    """Lê, aceita ou entrega tasks extraindo as recompensas detalhadas."""
     safe_action = json.dumps(action)
     safe_target = json.dumps(target_task_name) if target_task_name else "null"
     
@@ -61,18 +61,26 @@ async def interact_with_guild_tasks(tab, action="read", target_task_name=None):
         
         cards.forEach(card => {{
             const nameEl = card.querySelector('.gwt-name');
-            if (!nameEl) return; // Se não tem nome, ignora
+            if (!nameEl) return; 
             
             const name = nameEl.innerText.trim();
-            const btnEl = card.querySelector('.gw-btn'); // Pode ser nulo se estiver em andamento
+            const btnEl = card.querySelector('.gw-btn'); 
             const trackBtn = card.querySelector('.gwt-track');
             const barEl = card.querySelector('.gwt-bar i');
             const diffEl = card.querySelector('.gwt-diff');
             
+            // Extração de recompensas
+            const paySpans = card.querySelectorAll('.gwt-pay span b');
+            const points = paySpans.length > 0 ? paySpans[0].innerText.trim() : '0';
+            const exp = paySpans.length > 1 ? paySpans[1].innerText.trim() : '0';
+            const rep = paySpans.length > 2 ? paySpans[2].innerText.trim() : '0';
+            
+            const countEl = card.querySelector('.gwt-count b');
+            const target_count = countEl ? countEl.innerText.trim() : '0';
+            
             let btnText = "";
             let isDisabled = true;
             
-            // Se o botão principal existe (Aceitar / Entregar)
             if (btnEl) {{
                 btnText = btnEl.innerText.trim();
                 isDisabled = btnEl.disabled;
@@ -84,7 +92,6 @@ async def interact_with_guild_tasks(tab, action="read", target_task_name=None):
             
             const progress = barEl ? parseFloat(barEl.style.width || '0') : 0;
             
-            // Normaliza a dificuldade
             let difficulty = diffEl ? diffEl.innerText.trim().toLowerCase() : 'desconhecida';
             difficulty = difficulty.replace('á', 'a').replace('é', 'e').replace('í', 'i');
             
@@ -94,7 +101,11 @@ async def interact_with_guild_tasks(tab, action="read", target_task_name=None):
                 disabled: isDisabled,
                 progress_pct: progress,
                 has_track: !!trackBtn,
-                difficulty: difficulty
+                difficulty: difficulty,
+                pay_points: points,
+                pay_exp: exp,
+                pay_rep: rep,
+                target_count: target_count
             }});
         }});
         
@@ -150,10 +161,8 @@ async def process_guild_tasks(tab, on_message=None):
         tasks = await interact_with_guild_tasks(tab, action="read")
         
     # 2. RECUPERAR TASK EM ANDAMENTO
-    # Procura todas as tasks que têm o botão de rastrear na tela (são as que estão ativas)
     tasks_in_progress = [t for t in tasks if t['has_track']]
     if tasks_in_progress:
-        # Pega a primeira task em andamento da lista
         t = tasks_in_progress[0]
         await track_task_on_hud(tab, t['name'])
         await close_guild_modal(tab)
@@ -162,22 +171,31 @@ async def process_guild_tasks(tab, on_message=None):
             await on_message(f"🔄 *Retomando Task em Andamento!*\nLocal: {t['name']} (Progresso: {t['progress_pct']}%)")
         return True, "recuperada"
 
-    # 3. LISTAR TASKS E PERGUNTAR NO TELEGRAM (COM BOTÕES)
+    # 3. LISTAR TASKS E PERGUNTAR NO TELEGRAM (DETALHADO)
     available_tasks = [t for t in tasks if t['button'] == 'Aceitar' and not t['disabled']]
     
     await close_guild_modal(tab)
     
     if available_tasks:
-        msg = "📜 *Novas Tasks Disponíveis!*\nEscolha qual deseja iniciar clicando em um dos botões abaixo:"
+        msg = "📜 *Novas Tasks Disponíveis!*\n\n"
         emojis = {"facil": "🟢", "media": "🟡", "dificil": "🔴"}
         
         buttons = []
         for t in available_tasks:
             emoji = emojis.get(t['difficulty'], "⚪")
+            
+            # Monta o texto visual rico na mensagem
+            msg += f"{emoji} *{t['name']}* ({t['difficulty'].capitalize()})\n"
+            msg += f"🎯 {t['target_count']} monstros da fase\n"
+            msg += f"💰 {t['pay_points']} pts | 🌟 {t['pay_exp']} exp | 🤝 {t['pay_rep']} rep\n\n"
+            
+            # Monta o botão limpo e enxuto
             buttons.append({
-                "text": f"{emoji} {t['name']} ({t['difficulty'].capitalize()})",
+                "text": f"{emoji} Aceitar {t['difficulty'].capitalize()}",
                 "callback_data": f"task_{t['difficulty']}"
             })
+            
+        msg += "_Escolha qual deseja iniciar clicando em um dos botões:_"
             
         if on_message:
             import inspect

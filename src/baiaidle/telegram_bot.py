@@ -3,6 +3,7 @@ from email.mime import application
 
 from baiaidle.guild import process_guild_tasks, accept_specific_task
 from baiaidle.sell import manage_training, manage_house_training
+from baiaidle.daily import collect_daily_reward
 
 from telegram import (
     Update,
@@ -177,6 +178,11 @@ class TelegramController:
                 "Zerar estatísticas e Analyzer",
             ),
             BotCommand(
+                "daily", 
+                "Tentar coletar a recompensa diária"
+            ),
+
+            BotCommand(
                 "settier",                          
                 "Define a raridade para proteger",  
             ),
@@ -293,7 +299,11 @@ class TelegramController:
                 await update.message.reply_text(
                     "🟢 " + message
                 )
-
+                # =======================================================
+                # TENTA PEGAR A DAILY LOGO APÓS O LOGIN COM SUCESSO
+                # =======================================================
+                asyncio.create_task(collect_daily_reward(self.bot.tab, self.bot.on_message))
+                # =======================================================
             else:
 
                 await update.message.reply_text(
@@ -1022,6 +1032,31 @@ class TelegramController:
                 self.bot.resume_hunt()
 
     # ============================================================
+    # /DAILY
+    # ============================================================
+
+    async def daily(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
+            return
+
+        await update.message.reply_text("⏳ Verificando a Daily Reward...")
+        
+        self.bot.pause_hunt()
+        try:
+            claimed = await collect_daily_reward(self.bot.tab, self.bot.on_message)
+            if not claimed:
+                await update.message.reply_text("⏳ A recompensa diária ainda não está disponível.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao coletar a daily: {e}")
+        finally:
+            self.bot.resume_hunt()
+
+    # ============================================================
     # /RESET
     # ============================================================
 
@@ -1296,6 +1331,12 @@ async def main():
         CommandHandler(
             "reset",
             controller.reset,
+        )
+    )
+    application.add_handler(
+        CommandHandler(
+            "daily", 
+            controller.daily
         )
     )
 

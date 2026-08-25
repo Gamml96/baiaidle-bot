@@ -45,36 +45,31 @@ class HuntStats:
     started_at: float = 0.0
     total_gold: int = 0
     sales: int = 0
-    initial_xp: int | None = None
     current_xp: int = 0
     min_tier_to_stash: int = 4
     force_action: str | None = None
     codex_progress: str = "0%"
+    last_task_report: float = 0.0
 
     def reset(self):
         """Zera todos os dados da sessão."""
         self.started_at = asyncio.get_running_loop().time()
         self.total_gold = 0
         self.sales = 0
-        self.initial_xp = None
         self.current_xp = 0
         self.force_action = None
         self.codex_progress = "0%"
+        self.last_task_report = 0.0
 
     def add_sale(self, value: int):
         self.total_gold += value
         self.sales += 1
 
-    def update_xp(self, current_hud_xp: int):
-        if current_hud_xp > 0:
-            if self.initial_xp is None:
-                self.initial_xp = current_hud_xp
-            self.current_xp = current_hud_xp
+    def update_xp(self, gained_xp: int):
+        self.current_xp = gained_xp
 
     def get_session_xp(self) -> int:
-        if self.initial_xp is None or self.current_xp <= self.initial_xp:
-            return 0
-        return self.current_xp - self.initial_xp
+        return self.current_xp
 
     def elapsed(self) -> float:
         if self.started_at == 0.0:
@@ -403,12 +398,28 @@ async def execute_sale(
     hud_data = await get_hud_data(tab)
     
     current_balance_str = hud_data.get("gold", "0")
-    current_xp_str = hud_data.get("xp", "0")
     stamina_pct = hud_data.get("stamina_pct", "0%")
     stamina_time = hud_data.get("stamina_time", "00:00")
 
-    current_xp = parse_clean_int(current_xp_str)
+    # ==========================================================
+    # LER XP DIRETAMENTE DO HUNT ANALYZER (#an-raw)
+    # ==========================================================
+    js_analyzer = "(() => { const el = document.getElementById('an-raw'); return el ? el.innerText.trim() : '0'; })()"
+    res_analyzer = await tab.execute_script(js_analyzer)
+    
+    analyzer_xp_str = "0"
+    if isinstance(res_analyzer, dict):
+        try:
+            analyzer_xp_str = res_analyzer["result"]["result"].get("value", "0")
+        except:
+            pass
+    else:
+        if res_analyzer:
+            analyzer_xp_str = str(res_analyzer)
+
+    current_xp = parse_clean_int(analyzer_xp_str)
     stats.update_xp(current_xp)
+    # ==========================================================
 
     if sale_value > 0:
 
@@ -628,6 +639,30 @@ async def run_sell(
                 if stats.force_action:
                     break
                     
+                # ====================================================
+                # AVISO DE PROGRESSO DE TASK (A CADA 120s)
+                # ====================================================
+                now = asyncio.get_running_loop().time()
+                if now - stats.last_task_report >= 120:
+                    stats.last_task_report = now
+                    
+                    # Checa o progresso na tela silenciosamente
+                    task_data = await get_tracked_task_progress(tab)
+                    if task_data and not task_data.get("finished"):
+                        max_kills = task_data['max']
+                        current_kills = task_data['current']
+                        pct = (current_kills / max_kills * 100) if max_kills > 0 else 0
+                        
+                        prog_msg = f"🎯 *Task em Andamento:* {task_data['name']}\nProgresso: {pct:.1f}% ({current_kills}/{max_kills})"
+                        print(f"\n{prog_msg.replace('*', '')}")
+                        
+                        if on_message:
+                            try:
+                                await on_message(prog_msg)
+                            except Exception as e:
+                                print(f"Erro ao enviar aviso de Task: {e}")
+                # ====================================================
+
                 sleep_time = min(1, remaining)
                 await asyncio.sleep(sleep_time)
                 remaining -= sleep_time
@@ -696,7 +731,7 @@ async def run_sell(
                         await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
 
             # ====================================================
-            # VERIFICAR PROGRESSO DA TASK DA GUILDA
+            # VERIFICAR SE A TASK DA GUILDA FOI FINALIZADA
             # ====================================================
             if not stop_event.is_set() and pause_event.is_set():
                 task_data = await get_tracked_task_progress(tab)
