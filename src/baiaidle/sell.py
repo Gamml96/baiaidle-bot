@@ -362,16 +362,16 @@ async def execute_sale(
 
         return False
 
-    if not await wait_for_cloudflare(
-        tab,
-        timeout=60,
-    ):
+    # if not await wait_for_cloudflare(
+    #     tab,
+    #     timeout=60,
+    # ):
 
-        print(
-            "ERRO: Cloudflare."
-        )
+    #     print(
+    #         "ERRO: Cloudflare."
+    #     )
 
-        return False
+    #     return False
 
     print(
         "Aguardando processamento..."

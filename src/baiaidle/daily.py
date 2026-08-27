@@ -12,7 +12,7 @@ def extract_execute_result(result):
         return result
 
 async def collect_daily_reward(tab, on_message=None):
-    """Abre o menu Daily, tenta coletar e usa o cooldown como prova de sucesso."""
+    """Abre o menu Daily, tenta coletar (modo humanizado) e usa o cooldown como prova de sucesso."""
     global _daily_scheduled
     print("\nVerificando Recompensa Diária (Daily)...")
     
@@ -39,9 +39,21 @@ async def collect_daily_reward(tab, on_message=None):
     
     # Se a palavra 'coletar' estiver no botão, tentamos resgatar
     if "coletar" in btn_text:
-        print("Botão de coleta ativo! Tentando clicar...")
-        js_click = "(() => { const b = document.getElementById('daily-claim-btn'); if(b) b.click(); })()"
-        await tab.execute_script(js_click)
+        print("Botão de coleta ativo! Tentando clicar fisicamente (Humanizado)...")
+        
+        # ==========================================================
+        # CLIQUE HUMANIZADO VIA PYDOLL
+        # ==========================================================
+        try:
+            # Procura o elemento físico na tela pelo ID
+            btn_element = await tab.find(id="daily-claim-btn", timeout=5)
+            if btn_element:
+                await btn_element.click(humanize=True)
+            else:
+                print("⚠️ Elemento do botão não encontrado pelo Pydoll.")
+        except Exception as e:
+            print(f"⚠️ Erro ao tentar clicar fisicamente: {e}")
+        # ==========================================================
         
         # 3. VERIFICAÇÃO DE GARANTIA (SMART WAIT / POLLING)
         # O bot vai checar a cada 0.5s por até 5 segundos para garantir que o jogo processou

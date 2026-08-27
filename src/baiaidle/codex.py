@@ -72,13 +72,12 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
     
     delivered_any = False
     
-    # 2. ENTREGAR TUDO QUE ESTIVER DISPONÍVEL (COM TRAVA DE SEGURANÇA)
+    # 2. ENTREGAR TUDO QUE ESTIVER DISPONÍVEL (COM RETENTATIVA INTELIGENTE)
     for _ in range(3):
+        # Tenta achar um botão disponível
         js_click = """
         (() => {
             const buttons = Array.from(document.querySelectorAll('.cx-list .cx-entry .cx-give'));
-            
-            // TRAVA DE SEGURANÇA: Só aceita se não estiver desativado E se o texto for exatamente 'Entregar'
             const available = buttons.find(b => !b.disabled && b.innerText.trim() === 'Entregar');
             
             if(available) {
@@ -108,19 +107,32 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
             
         if data.get("clicked"):
             codex_name = data.get("name", "Codex")
-            print(f"Modal de confirmação aberto para: {codex_name}")
-            await asyncio.sleep(1) 
+            print(f"Tentando entregar: {codex_name}")
             
-            js_confirm = "(() => { const btn = document.getElementById('confirm-yes'); if(btn) { btn.click(); return true; } return false; })()"
-            await tab.execute_script(js_confirm)
+            # ESPERA INTELIGENTE PELO MODAL DE CONFIRMAÇÃO (Até 5 segundos)
+            # Dá tempo de sobra pro Shield resolver o Cloudflare e o modal abrir
+            modal_opened = False
+            for _ in range(10):
+                await asyncio.sleep(0.5)
+                js_check_modal = "(() => { const btn = document.getElementById('confirm-yes'); return !!btn; })()"
+                res_modal = await tab.execute_script(js_check_modal)
+                if extract_execute_result(res_modal):
+                    modal_opened = True
+                    break
             
-            delivered_any = True
-            if on_message:
-                await on_message(f"📖 *Codex Entregue!*\nItens consumidos para o bônus: {codex_name}")
+            if modal_opened:
+                js_confirm = "(() => { const btn = document.getElementById('confirm-yes'); if(btn) { btn.click(); return true; } return false; })()"
+                await tab.execute_script(js_confirm)
                 
-            await asyncio.sleep(1.5)
+                delivered_any = True
+                if on_message:
+                    await on_message(f"📖 *Codex Entregue!*\nItens consumidos para o bônus: {codex_name}")
+                await asyncio.sleep(1.5)
+            else:
+                print("⚠️ Falha ao confirmar entrega do Codex (Provável interrupção do Cloudflare). O bot tentará novamente no próximo ciclo.")
+                break # Sai do loop for para não ficar travado
         else:
-            break 
+            break # Não há mais nada para entregar
 
     # 3. LER A PORCENTAGEM DE PROGRESSO
     js_read_progress = """
