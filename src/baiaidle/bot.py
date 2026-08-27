@@ -255,6 +255,13 @@ class GameBot:
             )
 
             # ====================================================
+            # LIGA O SHIELD ANTES DA VALIDAÇÃO
+            # ====================================================
+            self.cloudflare_monitor_task = asyncio.create_task(
+                self.monitor_cloudflare()
+            )
+
+            # ====================================================
             # VALIDAÇÃO
             # ====================================================
 
@@ -306,11 +313,6 @@ class GameBot:
             # Inicia o vigia de HP paralelamente
             self.party_monitor_task = asyncio.create_task(
                 self.monitor_party_health()
-            )
-            
-            # Inicia o vigia de Cloudflare paralelamente
-            self.cloudflare_monitor_task = asyncio.create_task(
-                self.monitor_cloudflare()
             )
 
             print(

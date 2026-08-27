@@ -1028,71 +1028,87 @@ async def wait_for_sale_processed(
 
 
 # ================================================================
-# VALIDAÇÃO DA SESSÃO
+# VALIDAÇÃO DA SESSÃO (OTIMIZADA E SEGURA)
 # ================================================================
-
 
 async def validate_sale(
     tab,
     timeout: float = 0,
 ) -> bool:
     """
-    Valida a sessão através de duas vendas.
-
-    A disponibilidade da venda não possui timeout
-    por padrão.
-
-    O cooldown NÃO é utilizado como critério obrigatório
-    de sucesso, porque o Chromium headless Linux pode
-    manter o botão #sell-all como enabled.
+    Tenta validar a sessão com 1 venda. Se o Cloudflare aparecer
+    e anular a venda, aguarda o Shield resolver e tenta uma 2ª vez
+    como prova real do cooldown.
     """
 
-    print()
-    print(
-        "=== VALIDAÇÃO DA SESSÃO ==="
-    )
+    print("\n=== VALIDAÇÃO DA SESSÃO ===")
+    print("Executando venda inicial de alinhamento...")
 
-    # ============================================================
-    # PRIMEIRA VENDA
-    # ============================================================
-
-    print()
-    print(
-        "Verificando disponibilidade "
-        "da primeira venda..."
-    )
-
-    if not await wait_until_sell_available(
-        tab,
-        timeout=timeout,
-    ):
-
-        print(
-            "ERRO: primeira venda "
-            "não está disponível."
-        )
-
+    if not await wait_until_sell_available(tab, timeout=timeout):
+        print("ERRO: A venda não está disponível.")
         return False
 
-    print()
-    print(
-        "=== PRIMEIRA VENDA ==="
-    )
+    if not await open_sale_confirmation(tab):
+        print("ERRO: Não pôde iniciar a venda.")
+        return False
 
-    print(
-        "A primeira venda será usada "
-        "para validar a sessão."
-    )
+    sale_value = await get_sale_value(tab)
+    if sale_value:
+        print(f"Valor da venda: {format_gold(sale_value)} gold")
 
-    if not await open_sale_confirmation(
-        tab
-    ):
+    if not await confirm_sale(tab):
+        print("ERRO: Não pôde confirmar a venda.")
+        return False
 
-        print(
-            "ERRO: primeira venda "
-            "não pôde ser iniciada."
-        )
+    print("\nAguardando processamento...")
+    await asyncio.sleep(4)
 
+    # Verifica se o cooldown ativou de primeira
+    cooldown_ok = await wait_for_sell_cooldown(tab, timeout=10)
+
+    if cooldown_ok:
+        print("\n========================================")
+        print("✅ VALIDAÇÃO CONCLUÍDA: Venda confirmada e Cooldown ativado!")
+        print("========================================")
+        return True
+
+    # Se não ativou, o Cloudflare provavelmente bloqueou o clique
+    print("⚠️ Venda anulada (provável bloqueio do Cloudflare).")
+    print("⏳ Aguardando o Shield limpar a tela para a prova real...")
+    
+    # Dá 6 segundos para o Shield de background localizar o captcha e clicar
+    await asyncio.sleep(6) 
+
+    # ============================================================
+    # PROVA REAL (SEGUNDA TENTATIVA)
+    # ============================================================
+    print("\n=== SEGUNDA TENTATIVA DE VALIDAÇÃO ===")
+    
+    if not await wait_until_sell_available(tab, timeout=timeout):
+        print("ERRO: A segunda venda não ficou disponível.")
+        return False
+
+    if not await open_sale_confirmation(tab):
+        print("ERRO: Não pôde iniciar a segunda venda.")
+        return False
+
+    if not await confirm_sale(tab):
+        print("ERRO: Não pôde confirmar a segunda venda.")
+        return False
+
+    print("\nAguardando processamento da segunda tentativa...")
+    await asyncio.sleep(4)
+
+    cooldown_ok_2 = await wait_for_sell_cooldown(tab, timeout=10)
+
+    print("\n========================================")
+    if cooldown_ok_2:
+        print("✅ VALIDAÇÃO CONCLUÍDA: Segunda venda confirmada e Cooldown ativado!")
+        print("========================================")
+        return True
+    else:
+        print("❌ ERRO: A segunda venda também falhou. Validação não confirmada.")
+        print("========================================")
         return False
 
     # ============================================================
@@ -1409,7 +1425,7 @@ async def get_party_info(tab) -> list:
             // Se tem Magic Shield, vamos extrair o valor (ex: 4.901 / 4.909)
             let msValue = "";
             if (msBadge && manaTip && manaTip.includes('Magic Shield')) {
-                const msMatch = manaTip.match(/Magic Shield ([0-9\.]+ \/ [0-9\.]+)/);
+                const msMatch = manaTip.match(/Magic Shield ([0-9\\.]+ \\/ [0-9\\.]+)/);
                 if (msMatch) {
                     msValue = msMatch[1];
                 }
