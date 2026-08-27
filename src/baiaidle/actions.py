@@ -1101,7 +1101,7 @@ async def validate_sale(
 
     cooldown_ok_2 = await wait_for_sell_cooldown(tab, timeout=10)
 
-    print("\n========================================")
+    print("\n========================================")      
     if cooldown_ok_2:
         print("✅ VALIDAÇÃO CONCLUÍDA: Segunda venda confirmada e Cooldown ativado!")
         print("========================================")

@@ -508,7 +508,14 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
             if on_message:
                 await on_message(f"✅ {msg_done}")
             
-            await change_hunt(tab, current_hunt)
+            # Tenta voltar para a hunt repetidamente até conseguir
+            viagem_sucesso = False
+            while not viagem_sucesso and not stop_event.is_set():
+                viagem_sucesso, msg_viagem = await change_hunt(tab, current_hunt)
+                if not viagem_sucesso:
+                    print(f"⚠️ Falha ao voltar para a Hunt. Tentando novamente em 5s... Erro: {msg_viagem}")
+                    await asyncio.sleep(5)
+                    
             return True
             
         if now - last_report_time >= 600:
