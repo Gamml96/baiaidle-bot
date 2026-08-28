@@ -187,6 +187,10 @@ class TelegramController:
                 "Define a raridade para proteger",  
             ),
             BotCommand(
+                "print",
+                "Tirar um print da tela do jogo",
+            ),           
+            BotCommand(
                 "help",
                 "Mostrar ajuda",
             ),
@@ -1084,6 +1088,37 @@ class TelegramController:
             await update.message.reply_text(f"❌ Erro ao resetar: {e}")
 
     # ============================================================
+    # /PRINT
+    # ============================================================
+
+    async def print_screen(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not self.authorized(update):
+            await self.reject(update)
+            return
+
+        if not self.bot.is_running():
+            await update.message.reply_text("🔴 O bot está parado.\nUse /start primeiro.")
+            return
+
+        msg = await update.message.reply_text("📸 Tirando print da tela, aguarde...")
+
+        try:
+            file_path = "print_baiak.png"
+            
+            # O Pydoll tira o screenshot da aba atual e salva no arquivo
+            await self.bot.tab.take_screenshot(file_path)
+            
+            # Abre a imagem e envia pelo Telegram
+            with open(file_path, "rb") as photo:
+                await update.message.reply_photo(photo=photo, caption="🖥️ Print da tela atual!")
+                
+            # Apaga a mensagem de "aguarde..." para deixar o chat limpo
+            await msg.delete()
+
+        except Exception as e:
+            await msg.edit_text(f"❌ Erro ao capturar a tela: {e}")
+
+    # ============================================================
     # /SETTIER <numero>
     # ============================================================
 
@@ -1181,6 +1216,9 @@ Leva o boneco para recuperar stamina no Treino Online.
 
 /casa
 Leva o boneco para recuperar stamina no Dummie da Casa.
+
+/print
+Tira um print da tela do jogo e envia pro Telegram.
 
 /settier <numero>
 Define qual raridade de item deve ser enviada pro baú (ex: /settier 4)
@@ -1346,7 +1384,12 @@ async def main():
             controller.settier,
         )
     )
-
+    application.add_handler(
+        CommandHandler(
+            "print",
+            controller.print_screen,
+        )
+    )
     application.add_handler(
         CommandHandler(
             "help",
