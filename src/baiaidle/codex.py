@@ -86,10 +86,11 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
     await tab.execute_script(js_global_filter)
     await asyncio.sleep(2) 
     
-    delivered_any = False
+    delivered_entries = [] # Lista para acumular as entregas
     
     # Aumentamos o limite para 15 entregas por ciclo, já que agora é global
     for _ in range(15):
+        # AQUI ESTÁ A MÁGICA: Extraímos o nome e a porcentagem ANTES de clicar!
         js_click = """
         (() => {
             const buttons = Array.from(document.querySelectorAll('.cx-list .cx-entry .cx-give'));
@@ -98,12 +99,18 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
             if(available) {
                 const entry = available.closest('.cx-entry');
                 let name = "Codex Desconhecido";
+                let pct = "0%";
+                
                 if(entry) {
                     const nameEl = entry.querySelector('.cx-entry-name');
                     if(nameEl) name = nameEl.innerText.trim();
+                    
+                    const barEl = entry.querySelector('.cx-bar-fill');
+                    if(barEl) pct = barEl.style.width || "0%";
                 }
+                
                 available.click(); 
-                return JSON.stringify({ clicked: true, name: name });
+                return JSON.stringify({ clicked: true, name: name, pct: pct });
             }
             return JSON.stringify({ clicked: false });
         })()
@@ -122,7 +129,9 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
             
         if data.get("clicked"):
             codex_name = data.get("name", "Codex")
-            print(f"Tentando entregar: {codex_name}")
+            old_pct = data.get("pct", "0%")
+            
+            print(f"Tentando entregar: {codex_name} (Progresso anterior: {old_pct})")
             
             # ESPERA INTELIGENTE PELO MODAL DE CONFIRMAÇÃO (Até 5 segundos)
             modal_opened = False
@@ -137,16 +146,21 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
             if modal_opened:
                 js_confirm = "(() => { const btn = document.getElementById('confirm-yes'); if(btn) { btn.click(); return true; } return false; })()"
                 await tab.execute_script(js_confirm)
+                await asyncio.sleep(1.5) # Aguarda a interface atualizar
                 
-                delivered_any = True
-                if on_message:
-                    await on_message(f"📖 *Codex Entregue!*\nEntrada concluída/atualizada: {codex_name}")
-                await asyncio.sleep(1.5)
+                # Adiciona à lista de consolidação com o progresso anterior
+                delivered_entries.append(f"🔸 {codex_name} (Estava em: *{old_pct}*)")
+                
             else:
                 print("⚠️ Falha ao confirmar entrega do Codex (Provável interrupção do Cloudflare). O bot tentará novamente no próximo ciclo.")
                 break 
         else:
             break # Não há mais nada globalmente entregável nesta página
+
+    # Dispara a mensagem consolidada no Telegram, se houver entregas
+    if delivered_entries and on_message:
+        msg_consolidada = "📖 *Resumo de Codex Entregues:*\n\n" + "\n".join(delivered_entries)
+        await on_message(msg_consolidada)
 
     # ==========================================================
     # FASE 2: LER PROGRESSO DA HUNT ATUAL
@@ -196,4 +210,4 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
             
     # FECHAR MODAL
     await close_codex_menu(tab)
-    return delivered_any, progress_val
+    return (len(delivered_entries) > 0), progress_val
