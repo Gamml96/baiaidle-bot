@@ -131,11 +131,11 @@ def find_browser() -> str:
     if system == "Linux":
 
         candidates = [
-            Path("/snap/bin/chromium"),
-            Path("/usr/bin/chromium"),
-            Path("/usr/bin/chromium-browser"),
-            Path("/usr/bin/google-chrome"),
             Path("/usr/bin/google-chrome-stable"),
+            Path("/usr/bin/google-chrome"),
+            Path("/usr/bin/chromium-browser"),
+            Path("/usr/bin/chromium"),
+            Path("/snap/bin/chromium"),
         ]
 
         for candidate in candidates:
