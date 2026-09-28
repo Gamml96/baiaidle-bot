@@ -584,9 +584,23 @@ class TelegramController:
         try:
             success, msg = await change_hunt(self.bot.tab, hunt_identifier)
             if success:
-                await update.message.reply_text(f"✅ {msg}")
+                # ========================================================
+                # RESET AUTOMÁTICO APÓS MUDANÇA DE HUNT BEM SUCEDIDA
+                # ========================================================
+                js_click_reset = "document.getElementById('hunt-reset')?.click();"
+                js_click_confirm = "document.getElementById('confirm-yes')?.click();"
+                
+                await self.bot.tab.execute_script(js_click_reset)
+                await asyncio.sleep(0.5)
+                await self.bot.tab.execute_script(js_click_confirm)
+                
+                self.bot.hunt_stats.reset()
+                
+                # Responde ao usuário confirmando a mudança e o reset
+                await update.message.reply_text(f"✅ {msg}\n🔄 Estatísticas e Analyzer resetados automaticamente!")
             else:
                 await update.message.reply_text(f"❌ {msg}")
+                
         except Exception as e:
             await update.message.reply_text(f"❌ Erro ao mudar de hunt: {e}")
         finally:
