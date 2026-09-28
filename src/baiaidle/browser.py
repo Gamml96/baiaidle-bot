@@ -257,38 +257,29 @@ def create_browser() -> Chrome:
     options.binary_location = binary
 
     # ============================================================
-    # Linux
+    # Linux (Sandbox)
     # ============================================================
-    #
-    # IMPORTANTE: não usar --headless aqui. O Cloudflare Turnstile
-    # detecta navegadores headless e força a verificação humana,
-    # o que quebra o AutoBoss. Em vez disso, o Chromium roda em
-    # modo normal dentro de um display virtual (Xvfb), iniciado
-    # por start_virtual_display() antes de criar o browser.
-    #
     if platform.system() == "Linux":
         options.add_argument("--no-sandbox")
-        options.add_argument("--window-size=1280,720")
-        options.add_argument("--start-maximized")
 
     # ============================================================
-    # Anti-fingerprinting
+    # Configurações Universais (Windows e Linux)
     # ============================================================
-    #
-    # Reduz sinais óbvios de automação que sites como o Cloudflare
-    # usam para identificar bots (navigator.webdriver, banner de
-    # "Chrome sendo controlado por software automatizado", etc.)
-    #
-    options.add_argument(
-        "--disable-blink-features=AutomationControlled"
-    )
+    # Garante que a página sempre tenha espaço para renderizar os elementos
+    options.add_argument("--window-size=1280,720")
+    options.add_argument("--start-maximized")
 
-    options.add_argument(
-        "--disable-dev-shm-usage"
-    )
+    # ============================================================
+    # Anti-fingerprinting e Perfil
+    # ============================================================
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-dev-shm-usage")
+    
+    # NOVAS FLAGS: Evitam que o Chrome bloqueie o carregamento do jogo
+    options.add_argument("--disable-features=IsolateOrigins,site-per-process")
+    options.add_argument("--disable-web-security")
 
-    options.add_argument(
-        f"--user-data-dir={CHROMIUM_USER_DATA_DIR}"
-    )
+    profile_path = str(CHROMIUM_USER_DATA_DIR).replace('\\', '/')
+    options.add_argument(f"--user-data-dir={profile_path}")
 
     return Chrome(options=options)
