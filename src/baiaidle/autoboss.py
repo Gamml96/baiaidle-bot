@@ -158,6 +158,9 @@ async def open_teleport_menu(tab):
         "Menu de teleportes aberto."
     )
 
+    # Pausa adicionada para a animação do menu lateral
+    await asyncio.sleep(1)
+
     return True
 
 
@@ -311,6 +314,9 @@ async def open_boss_menu(
         "Clique em Chefes enviado."
     )
 
+    # Pausa adicionada para o modal central abrir na tela
+    await asyncio.sleep(1.5)
+
     return True
 
 
@@ -371,6 +377,9 @@ async def wait_for_boss_menu(
                 "Menu de bosses encontrado."
             )
 
+            # Pausa adicionada para estabilizar a renderização dos botões
+            await asyncio.sleep(1)
+
             return True
 
         elapsed = (
@@ -386,254 +395,105 @@ async def wait_for_boss_menu(
             0.25
         )
 
-
 # ================================================================
-# CAPTURAR BOSSES DISPONÍVEIS
+# CAPTURAR BOSSES DISPONÍVEIS (MODO DEBUG)
 # ================================================================
 
-async def get_boss_list(
-    tab,
-) -> tuple[str, list[BossInfo]]:
+async def get_boss_list(tab) -> tuple[str, list[BossInfo]]:
 
-    if not await open_boss_menu(
-        tab
-    ):
+    if not await open_boss_menu(tab):
+        raise RuntimeError("Não foi possível abrir o menu de bosses.")
 
-        raise RuntimeError(
-            "Não foi possível abrir "
-            "o menu de bosses."
-        )
-
-    if not await wait_for_boss_menu(
-        tab
-    ):
-
-        raise RuntimeError(
-            "Lista de bosses não apareceu."
-        )
+    if not await wait_for_boss_menu(tab):
+        raise RuntimeError("Lista de bosses não apareceu.")
 
     js = """
     (() => {
-
-        const container =
-            document.evaluate(
-                '//*[@id="boss-modal-body"]/div[5]/div[2]/div[1]/div[2]',
-                document,
-                null,
-                XPathResult.FIRST_ORDERED_NODE_TYPE,
-                null
-            ).singleNodeValue;
+        const container = document.evaluate(
+            '//*[@id="boss-modal-body"]/div[5]/div[2]/div[1]/div[2]',
+            document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+        ).singleNodeValue;
             
-        const chargesElement = 
-            document.querySelector(".boss-global b");
-            
-        const charges = 
-            chargesElement 
-                ? chargesElement.innerText.trim() 
-                : "?/40";
+        const chargesElement = document.querySelector(".boss-global b");
+        const charges = chargesElement ? chargesElement.innerText.trim() : "?/40";
 
         if (!container) {
-
-            return JSON.stringify({
-
-                found: false,
-
-                error:
-                    "Container de bosses não encontrado"
-
-            });
-
+            return JSON.stringify({ found: false, error: "Container não encontrado" });
         }
 
-        const cards =
-            Array.from(
-                container.children
-            );
-
+        const cards = Array.from(container.children);
         const bosses = [];
+        const debug_info = []; // Guarda tudo que ele ver para o terminal
 
-        cards.forEach(
-            (card, index) => {
+        cards.forEach((card, index) => {
+            const nameElement = card.querySelector(".boss-cell-name");
+            const statusElement = card.querySelector(".boss-cell-status");
+            const button = card.querySelector(".boss-fight");
 
-                const nameElement =
-                    card.querySelector(
-                        ".boss-cell-name"
-                    );
+            const name = nameElement ? nameElement.innerText.trim() : "Sem Nome";
+            const status = statusElement ? statusElement.innerText.trim() : "";
+            const statusClass = statusElement ? statusElement.className : "";
+            const disabled = button ? button.disabled : true;
 
-                const statusElement =
-                    card.querySelector(
-                        ".boss-cell-status"
-                    );
+            // Salva no debug independentemente de estar vivo ou morto
+            debug_info.push({
+                index: index + 1,
+                name: name,
+                status: status,
+                disabled: disabled
+            });
 
-                const button =
-                    card.querySelector(
-                        ".boss-fight"
-                    );
-
-                if (!nameElement) {
-
-                    return;
-
-                }
-
-                const name =
-                    nameElement.innerText.trim();
-
-                const status =
-                    statusElement
-                        ? statusElement.innerText.trim()
-                        : "";
-
-                const statusClass =
-                    statusElement
-                        ? statusElement.className
-                        : "";
-
-                const disabled =
-                    button
-                        ? button.disabled
-                        : false;
-
-                if (
-                    status !== ""
-                    ||
-                    disabled
-                ) {
-
-                    return;
-
-                }
-
+            // Só adiciona na fila de combate se estiver liberado
+            if (status === "" && !disabled) {
                 bosses.push({
-
-                    index:
-                        index + 1,
-
-                    name:
-                        name,
-
-                    status:
-                        status,
-
-                    status_class:
-                        statusClass,
-
-                    button_text:
-                        button
-                            ? button.innerText.trim()
-                            : null,
-
-                    button_disabled:
-                        disabled
-
+                    index: index + 1,
+                    name: name,
+                    status: status,
+                    status_class: statusClass,
+                    button_text: button ? button.innerText.trim() : null,
+                    button_disabled: disabled
                 });
-
             }
-        );
-
-        return JSON.stringify({
-
-            found: true,
-
-            total:
-                cards.length,
-                
-            charges: 
-                charges,
-
-            bosses:
-                bosses
-
         });
 
+        return JSON.stringify({
+            found: true,
+            total: cards.length,
+            charges: charges,
+            bosses: bosses,
+            debug: debug_info
+        });
     })()
     """
 
-    result = await tab.execute_script(
-        js
-    )
+    result = await tab.execute_script(js)
+    data = parse_json_result(result)
 
-    data = parse_json_result(
-        result
-    )
-
-    if not data:
-
-        raise RuntimeError(
-            "Não foi possível interpretar "
-            "a lista de bosses."
-        )
-
-    if not data.get("found"):
-
-        raise RuntimeError(
-            data.get(
-                "error",
-                "Lista não encontrada."
-            )
-        )
+    if not data or not data.get("found"):
+        raise RuntimeError(data.get("error", "Lista não encontrada.") if data else "Erro no Parse.")
 
     charges = data.get("charges", "?/40")
+    
+    print("\n========== RAIO-X DA LISTA DE BOSSES ==========")
+    for item in data.get("debug", []):
+        print(f"[{item['index']}] {item['name']} | Status: '{item['status']}' | Botão Bloqueado: {item['disabled']}")
+    print("===============================================\n")
+
     bosses = []
-
-    for item in data.get(
-        "bosses",
-        []
-    ):
-
-        name = item.get(
-            "name"
-        )
-
-        if not name:
-
-            continue
-
+    for item in data.get("bosses", []):
         bosses.append(
             BossInfo(
-
-                index=int(
-                    item["index"]
-                ),
-
-                name=name,
-
-                status=item.get(
-                    "status"
-                ),
-
-                status_class=item.get(
-                    "status_class"
-                ),
-
-                button_text=item.get(
-                    "button_text"
-                ),
-
-                button_disabled=item.get(
-                    "button_disabled"
-                )
-
+                index=int(item["index"]),
+                name=item["name"],
+                status=item.get("status"),
+                status_class=item.get("status_class"),
+                button_text=item.get("button_text"),
+                button_disabled=item.get("button_disabled")
             )
         )
 
-    print()
-    print(
-        f"Cargas: {charges} | {len(bosses)} bosses disponíveis."
-    )
-
-    for boss in bosses:
-
-        print(
-            f"{boss.index} - {boss.name}"
-        )
-
-    await close_boss_menu(
-        tab
-    )
-
+    await close_boss_menu(tab)
     return charges, bosses
-
 
 # ================================================================
 # FECHAR MODAL
@@ -863,115 +723,61 @@ def parse_boss_indices(
 
 
 # ================================================================
-# LOCALIZAR CARD
+# LOCALIZAR CARD (MODO DEBUG)
 # ================================================================
 
-async def find_boss_card(
-    tab,
-    boss_name: str,
-):
-
-    safe_name = json.dumps(
-        boss_name,
-        ensure_ascii=False
-    )
+async def find_boss_card(tab, boss_name: str):
+    
+    safe_name = json.dumps(boss_name, ensure_ascii=False)
 
     js = f"""
     (() => {{
-
-        const bossName = {safe_name};
-
-        const cards =
-            Array.from(
-                document.querySelectorAll(
-                    "#boss-modal-body .boss-cell"
-                )
-            );
-
-        const card =
-            cards.find(
-                element => {{
-
-                    const name =
-                        element.querySelector(
-                            ".boss-cell-name"
-                        );
-
-                    return name &&
-                        name.innerText.trim()
-                            === bossName;
-
-                }}
-            );
-
-        if (!card) {{
-
-            return JSON.stringify({{
-
-                found: false,
-
-                error:
-                    "Boss não encontrado",
-
-                boss_name:
-                    bossName
-
-            }});
-
-        }}
-
-        const nameElement =
-            card.querySelector(
-                ".boss-cell-name"
-            );
-
-        const status =
-            card.querySelector(
-                ".boss-cell-status"
-            );
-
-        const button =
-            card.querySelector(
-                ".boss-fight"
-            );
-
-        return JSON.stringify({{
-
-            found: true,
-
-            name:
-                nameElement
-                    ? nameElement.innerText.trim()
-                    : null,
-
-            status:
-                status
-                    ? status.innerText.trim()
-                    : "",
-
-            button_text:
-                button
-                    ? button.innerText.trim()
-                    : null,
-
-            button_disabled:
-                button
-                    ? button.disabled
-                    : null
-
+        const targetName = {safe_name};
+        const cards = Array.from(document.querySelectorAll("#boss-modal-body .boss-cell"));
+        
+        const allNames = cards.map(c => {{
+            const n = c.querySelector(".boss-cell-name");
+            return n ? n.innerText.trim() : "SEM NOME";
         }});
 
+        const card = cards.find(element => {{
+            const name = element.querySelector(".boss-cell-name");
+            return name && name.innerText.trim() === targetName;
+        }});
+
+        if (!card) {{
+            return JSON.stringify({{
+                found: false,
+                error: "Boss não encontrado",
+                target_name: targetName,
+                names_on_screen: allNames
+            }});
+        }}
+
+        const nameElement = card.querySelector(".boss-cell-name");
+        const status = card.querySelector(".boss-cell-status");
+        const button = card.querySelector(".boss-fight");
+
+        return JSON.stringify({{
+            found: true,
+            name: nameElement ? nameElement.innerText.trim() : null,
+            status: status ? status.innerText.trim() : "",
+            button_text: button ? button.innerText.trim() : null,
+            button_disabled: button ? button.disabled : null
+        }});
     }})()
     """
 
-    result = await tab.execute_script(
-        js
-    )
-
-    return parse_json_result(
-        result
-    )
-
+    result = await tab.execute_script(js)
+    data = parse_json_result(result)
+    
+    if data and not data.get("found"):
+        print("\n========== DEBUG DE FALHA NO CARD ==========")
+        print(f"O bot procurou exatamente por: '{data.get('target_name')}'")
+        print(f"Nomes que ele enxergou na tela: {data.get('names_on_screen')}")
+        print("============================================\n")
+        
+    return data
 
 # ================================================================
 # CLICAR CARD
@@ -3187,21 +2993,6 @@ class AutoBoss:
                     f"*{boss.name}*"
                 )
 
-                # =================================================
-                # TELEPORT
-                # =================================================
-
-                if not await open_teleport_menu(
-                    self.tab
-                ):
-
-                    self.state.results[index] = "❌"
-                    await self.send_message(
-                        "❌ Não foi possível "
-                        "abrir Teleportes."
-                    )
-
-                    continue
 
                 # =================================================
                 # CHEFES
