@@ -42,6 +42,9 @@ class GameBot:
         # Níveis iniciais da party (registrados na inicialização do bot)
         self.initial_party_levels = {}
 
+        self.auto_boss_instance = None
+        self.telegram_controller = None
+
     # ============================================================
     # VIGIA DE CLOUDFLARE SURPRESA (BACKGROUND)
     # ============================================================
@@ -449,6 +452,15 @@ class GameBot:
                     pass
                     
             self.cloudflare_monitor_task = None
+
+        # ========================================================
+        # ENCERRAR AGENDAMENTO DA DAILY REWARD
+        # ========================================================
+        try:
+            from baiaidle.daily import cancel_daily_schedule
+            cancel_daily_schedule()
+        except Exception:
+            pass
 
         # ========================================================
         # TAB

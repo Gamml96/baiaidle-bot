@@ -39,7 +39,7 @@ from baiaidle.hunts import (
 )
 from baiaidle.guild import process_guild_tasks, accept_specific_task
 from baiaidle.battlepass import process_battlepass, choose_battlepass_mission
-from baiaidle.daily import collect_daily_reward
+from baiaidle.daily import collect_daily_reward, cancel_daily_schedule
 from baiaidle.actions import get_party_info, extract_member_level
 
 
@@ -91,6 +91,7 @@ class TelegramController:
 
         # Vincula o envio de mensagens do GameBot ao Telegram
         self.bot.on_message = self.send_hunt_msg
+        self.bot.telegram_controller = self
 
     # ============================================================
     # AUTORIZAÇÃO E SEGURANÇA
@@ -259,15 +260,36 @@ class TelegramController:
             success, message = await self.bot.start()
             if success:
                 await update.message.reply_text(f"🟢 {message}")
-                # Tenta resgatar daily reward logo após login bem-sucedido
-                asyncio.create_task(collect_daily_reward(self.bot.tab, self.bot.on_message))
+                # Inicia rotina da Daily de forma segura (com lock e pausa de hunt)
+                asyncio.create_task(self._start_daily_routine())
             else:
                 await update.message.reply_text(f"⚠️ {message}")
         except Exception as e:
             await update.message.reply_text(f"❌ Erro ao iniciar bot:\n{e}")
 
+    async def _start_daily_routine(self):
+        """Verificação inicial da Daily com segurança (lock e pausa de hunt)."""
+        await asyncio.sleep(2)
+        if not self.bot.is_running():
+            return
+        async with self.action_lock:
+            self.bot.pause_hunt()
+            try:
+                await collect_daily_reward(
+                    self.bot.tab,
+                    self.bot.on_message,
+                    bot=self.bot,
+                    action_lock=self.action_lock,
+                )
+            except Exception as e:
+                print(f"Erro na verificação inicial da Daily: {e}")
+            finally:
+                self.bot.resume_hunt()
+
     @authorized_only
     async def stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        cancel_daily_schedule()
+
         if not self.bot.is_running():
             await update.message.reply_text("🔴 O bot já está parado.")
             return
@@ -884,7 +906,12 @@ class TelegramController:
         async with self.action_lock:
             self.bot.pause_hunt()
             try:
-                claimed = await collect_daily_reward(self.bot.tab, self.bot.on_message)
+                claimed = await collect_daily_reward(
+                    self.bot.tab,
+                    self.bot.on_message,
+                    bot=self.bot,
+                    action_lock=self.action_lock,
+                )
                 if not claimed:
                     await update.message.reply_text("⏳ A recompensa diária ainda não está disponível.")
             except Exception as e:
@@ -1066,6 +1093,7 @@ async def main():
         await asyncio.Event().wait()
     finally:
         print("\nEncerrando bot do Telegram...")
+        cancel_daily_schedule()
         # Garante o fechamento limpo do navegador evitando processos órfãos
         if controller.bot.is_running():
             print("Parando GameBot e liberando navegador Chromium...")
