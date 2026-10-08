@@ -12,7 +12,7 @@ from baiaidle.browser import (
     stop_virtual_display,
 )
 from baiaidle.login import login
-from baiaidle.actions import validate_sale, get_party_info
+from baiaidle.actions import validate_sale, get_party_info, extract_member_level
 from baiaidle.sell import run_sell, HuntStats
 
 
@@ -38,6 +38,9 @@ class GameBot:
         
         # Instanciamos o objeto de estatísticas para ser acessado por qualquer comando
         self.hunt_stats = HuntStats()
+
+        # Níveis iniciais da party (registrados na inicialização do bot)
+        self.initial_party_levels = {}
 
     # ============================================================
     # VIGIA DE CLOUDFLARE SURPRESA (BACKGROUND)
@@ -143,6 +146,37 @@ class GameBot:
                 if self.stop_event.is_set():
                     break
                 await asyncio.sleep(1)
+
+    # ============================================================
+    # REGISTRO DE NÍVEL INICIAL DA PARTY
+    # ============================================================
+
+    async def record_initial_party(self):
+        """
+        Registra os níveis iniciais de cada membro da party assim que o bot inicia.
+        """
+        self.initial_party_levels = {}
+        for attempt in range(5):
+            if not self.tab:
+                break
+            try:
+                party_data = await get_party_info(self.tab)
+                if party_data:
+                    for member in party_data:
+                        name = member.get("name")
+                        role = member.get("role")
+                        lvl = extract_member_level(member)
+                        if lvl is not None:
+                            if name:
+                                self.initial_party_levels[name] = lvl
+                            if role:
+                                self.initial_party_levels[f"role_{role}"] = lvl
+                    if self.initial_party_levels:
+                        print(f"✅ Níveis iniciais da party registrados: {self.initial_party_levels}")
+                        break
+            except Exception as e:
+                print(f"Aviso ao registrar níveis iniciais da party (tentativa {attempt + 1}): {e}")
+            await asyncio.sleep(1)
 
     # ============================================================
     # START
@@ -319,6 +353,11 @@ class GameBot:
                 "Hunt iniciada."
             )
 
+            # ====================================================
+            # REGISTRO DE NÍVEIS INICIAIS DA PARTY
+            # ====================================================
+            await self.record_initial_party()
+
             print(
                 "BOT ONLINE."
             )
@@ -449,6 +488,7 @@ class GameBot:
         stop_virtual_display()
 
         self.running = False
+        self.initial_party_levels = {}
 
         print(
             "BOT OFFLINE."

@@ -1431,10 +1431,20 @@ async def get_party_info(tab) -> list:
                 }
             }
 
+            let level = null;
+            if (metaEl) {
+                const metaText = (metaEl.innerText || '').trim();
+                const lvlMatch = metaText.match(/(?:lvl|lv|level)\\.?\\s*(\\d+)/i) || metaText.match(/(\\d+)/);
+                if (lvlMatch) {
+                    level = parseInt(lvlMatch[1], 10);
+                }
+            }
+
             return {
                 role: roleEl ? roleEl.innerText.trim() : '',
                 name: nameEl ? nameEl.innerText.trim() : '',
                 meta: metaEl ? metaEl.innerText.trim() : '',
+                level: level,
                 hp: hpEl ? hpEl.innerText.trim() : '',
                 mana: manaEl ? manaEl.innerText.trim() : '',
                 magic_shield: msValue,
@@ -1456,6 +1466,32 @@ async def get_party_info(tab) -> list:
         print("Erro ao extrair dados da Party:", e)
 
     return []
+
+
+def extract_member_level(member: dict | None) -> int | None:
+    """
+    Extrai o nível numérico de um membro da party a partir dos dados lidos.
+    """
+    if not isinstance(member, dict):
+        return None
+
+    level = member.get("level")
+    if level is not None:
+        try:
+            return int(level)
+        except (ValueError, TypeError):
+            pass
+
+    meta = str(member.get("meta", ""))
+    match = re.search(r"(?:lvl|lv|level)\.?\s*(\d+)", meta, re.IGNORECASE)
+    if match:
+        return int(match.group(1))
+
+    match_num = re.search(r"(\d+)", meta)
+    if match_num:
+        return int(match_num.group(1))
+
+    return None
 
 # ================================================================
 # GUARDAR ITENS VALIOSOS (SHIFT + CLIQUE)

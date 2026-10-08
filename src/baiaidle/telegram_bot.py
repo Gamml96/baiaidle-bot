@@ -34,7 +34,7 @@ from baiaidle.hunts import (
 )
 from baiaidle.guild import process_guild_tasks, accept_specific_task
 from baiaidle.daily import collect_daily_reward
-from baiaidle.actions import get_party_info
+from baiaidle.actions import get_party_info, extract_member_level
 
 
 # ================================================================
@@ -276,6 +276,63 @@ class TelegramController:
             await update.message.reply_text(f"❌ Erro ao parar bot:\n{e}")
 
     # ============================================================
+    # RESUMO DE EXPERIÊNCIA DA EQUIPE
+    # ============================================================
+
+    def _format_party_xp_summary(self, party_data: list) -> str:
+        """
+        Formata o resumo de experiência da Party (Lvl inicial, Lvl atual e XP).
+        """
+        if not party_data:
+            return ""
+
+        role_emojis = {
+            "TANK": "🛡️",
+            "SUP": "🪄",
+            "DPS": "⚔️",
+        }
+
+        lines = ["👥 *EXPERIÊNCIA DA EQUIPE*"]
+
+        for member in party_data:
+            role = member.get("role", "Membro")
+            role_emoji = role_emojis.get(role, "👤")
+            name = member.get("name", "Desconhecido")
+            xp = member.get("xp_pct", "")
+            if xp and not xp.endswith("%"):
+                xp = f"{xp}%"
+            if not xp:
+                xp = "0%"
+
+            curr_lvl = extract_member_level(member)
+
+            # Busca level inicial registrado
+            init_lvl = self.bot.initial_party_levels.get(name)
+            if init_lvl is None and role:
+                init_lvl = self.bot.initial_party_levels.get(f"role_{role}")
+
+            # Se não havia sido registrado no start, registra agora como fallback
+            if init_lvl is None and curr_lvl is not None:
+                init_lvl = curr_lvl
+                self.bot.initial_party_levels[name] = curr_lvl
+                if role:
+                    self.bot.initial_party_levels[f"role_{role}"] = curr_lvl
+
+            lines.append("")
+            lines.append(f"{role_emoji} *{role}* - {name}")
+
+            if init_lvl is not None and curr_lvl is not None:
+                diff = curr_lvl - init_lvl
+                diff_str = f"+{diff}" if diff >= 0 else f"{diff}"
+                lines.append(f"⭐ Lvl Inicial: {init_lvl} | Atual: {curr_lvl} ({diff_str}) | 🌟 XP: {xp}")
+            elif curr_lvl is not None:
+                lines.append(f"⭐ Lvl Atual: {curr_lvl} | 🌟 XP: {xp}")
+            else:
+                lines.append(f"🌟 XP: {xp}")
+
+        return "\n".join(lines)
+
+    # ============================================================
     # HANDLER: /STATUS
     # ============================================================
 
@@ -284,6 +341,16 @@ class TelegramController:
         if not self.bot.is_running():
             await update.message.reply_text("🔴 BOT OFFLINE\n\nUse /start para iniciar.")
             return
+
+        # Resumo de experiência dos personagens
+        party_summary = ""
+        if self.bot.tab:
+            try:
+                party_data = await get_party_info(self.bot.tab)
+                if party_data:
+                    party_summary = self._format_party_xp_summary(party_data)
+            except Exception as e:
+                print(f"Erro ao obter party no status: {e}")
 
         if self.auto_boss_instance and self.auto_boss_instance.state.running:
             state = self.auto_boss_instance.state
@@ -312,7 +379,11 @@ class TelegramController:
                     marker = "⏳"
                 lines.append(f"{marker} {index}")
 
-            await self.reply_safe(update, "\n".join(lines))
+            if party_summary:
+                lines.append("")
+                lines.append(party_summary)
+
+            await self.reply_safe(update, "\n".join(lines), parse_mode="Markdown")
             return
 
         current_hunt = "Desconhecida"
@@ -322,12 +393,20 @@ class TelegramController:
             except Exception:
                 current_hunt = "Desconhecida"
 
-        await update.message.reply_text(
-            f"🟢 BOT ONLINE\n\n"
-            f"Atividade: 🏹 HUNT\n"
-            f"Local atual: {current_hunt}\n\n"
-            f"AutoBoss: inativo."
-        )
+        lines = [
+            "🟢 BOT ONLINE",
+            "",
+            "Atividade: 🏹 HUNT",
+            f"Local atual: {current_hunt}",
+            "",
+            "AutoBoss: inativo.",
+        ]
+
+        if party_summary:
+            lines.append("")
+            lines.append(party_summary)
+
+        await self.reply_safe(update, "\n".join(lines), parse_mode="Markdown")
 
     # ============================================================
     # HANDLER: /PARTY
