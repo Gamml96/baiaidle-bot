@@ -26,6 +26,14 @@ from baiaidle.autoboss import (
     format_boss_list,
     parse_boss_indices,
 )
+from baiaidle.autoboss_scheduler import (
+    load_autoboss_preset,
+    set_preset_indices,
+    set_preset_enabled,
+    format_time_until_midnight,
+    start_autoboss_scheduler,
+    stop_autoboss_scheduler,
+)
 from baiaidle.bot import GameBot
 from baiaidle.config import (
     TELEGRAM_ALLOWED_USER_ID,
@@ -92,6 +100,9 @@ class TelegramController:
         # Vincula o envio de mensagens do GameBot ao Telegram
         self.bot.on_message = self.send_hunt_msg
         self.bot.telegram_controller = self
+
+        # Inicia o agendador de AutoBoss das 00h em segundo plano
+        start_autoboss_scheduler(self)
 
     # ============================================================
     # AUTORIZAÇÃO E SEGURANÇA
@@ -207,6 +218,10 @@ class TelegramController:
             BotCommand("bosses", "Listar bosses disponíveis"),
             BotCommand("autoboss", "Iniciar AutoBoss"),
             BotCommand("stopautoboss", "Parar AutoBoss"),
+            BotCommand("setautoboss", "Definir lista padrão de bosses"),
+            BotCommand("autoboss_on", "Ligar AutoBoss automático às 00h"),
+            BotCommand("autoboss_off", "Desligar AutoBoss automático às 00h"),
+            BotCommand("autoboss_status", "Ver status do AutoBoss e agendamento"),
             BotCommand("treino", "Forçar ida para o Treino Online"),
             BotCommand("casa", "Forçar ida para o Dummie da Casa"),
             BotCommand("guildtask", "Iniciar/Entregar Task da Guild"),
@@ -238,6 +253,7 @@ class TelegramController:
 
         if self.auto_boss_instance:
             await self.auto_boss_instance.send_message("🏹 Hunt retomada automaticamente.")
+        self.auto_boss_instance = None
 
     # ============================================================
     # HANDLERS: START & STOP
@@ -611,17 +627,31 @@ class TelegramController:
             return
 
         if not context.args:
-            await update.message.reply_text(
-                "Uso:\n/autoboss 1,2,3\n\nExemplo:\n/autoboss 1,20,3"
-            )
-            return
-
-        argument = " ".join(context.args)
-        try:
-            indices = parse_boss_indices(argument)
-        except ValueError as e:
-            await update.message.reply_text(f"❌ {e}")
-            return
+            preset = load_autoboss_preset()
+            indices = preset.get("boss_indices", [])
+            if indices:
+                indices_str = ", ".join(map(str, indices))
+                await self.reply_safe(
+                    update,
+                    f"🚀 *Iniciando AutoBoss na lista predefinida:* `[{indices_str}]`...",
+                    parse_mode="Markdown"
+                )
+            else:
+                await update.message.reply_text(
+                    "ℹ️ *Nenhuma lista predefinida configurada.*\n\n"
+                    "Uso:\n"
+                    "• `/autoboss 1,2,3` - Inicia com a lista informada\n"
+                    "• `/setautoboss 1,2,3` - Define a lista predefinida permanente",
+                    parse_mode="Markdown"
+                )
+                return
+        else:
+            argument = " ".join(context.args)
+            try:
+                indices = parse_boss_indices(argument)
+            except ValueError as e:
+                await update.message.reply_text(f"❌ {e}")
+                return
 
         self.auto_boss_instance = AutoBoss(self.bot.tab)
 
@@ -646,6 +676,110 @@ class TelegramController:
             self.bot.resume_hunt()
             self.auto_boss_instance = None
             await update.message.reply_text(f"❌ Erro ao iniciar AutoBoss:\n{e}")
+
+    @authorized_only
+    async def setautoboss(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not context.args:
+            preset = load_autoboss_preset()
+            indices = preset.get("boss_indices", [])
+            enabled = preset.get("enabled", False)
+            status_emoji = "🟢 Ativado" if enabled else "🔴 Desativado"
+            indices_str = ", ".join(map(str, indices)) if indices else "Nenhum configurado"
+            await self.reply_safe(
+                update,
+                f"📋 *Configuração da Lista Predefinida do AutoBoss*\n\n"
+                f"• Bosses predefinidos: `[{indices_str}]`\n"
+                f"• Agendamento das 00h: {status_emoji}\n\n"
+                f"Para alterar a lista de bosses, use:\n`/setautoboss 1,2,3`",
+                parse_mode="Markdown"
+            )
+            return
+
+        argument = " ".join(context.args)
+        try:
+            indices = parse_boss_indices(argument)
+            preset = set_preset_indices(indices)
+            indices_str = ", ".join(map(str, indices))
+            enabled = preset.get("enabled", False)
+            status_text = "🟢 Ativado (rodará às 00h)" if enabled else "🔴 Desativado (use /autoboss_on para ativar às 00h)"
+            await self.reply_safe(
+                update,
+                f"✅ *Lista Predefinida de AutoBoss Atualizada!*\n\n"
+                f"📋 Bosses configurados: `[{indices_str}]`\n"
+                f"⏰ Agendamento das 00h: {status_text}\n\n"
+                f"Você pode iniciar essa lista a qualquer momento usando `/autoboss`.",
+                parse_mode="Markdown"
+            )
+        except ValueError as e:
+            await update.message.reply_text(f"❌ {e}\nExemplo de uso: `/setautoboss 1,2,3`", parse_mode="Markdown")
+
+    @authorized_only
+    async def autoboss_on(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        preset = set_preset_enabled(True)
+        indices = preset.get("boss_indices", [])
+        indices_str = ", ".join(map(str, indices)) if indices else "Nenhum (configure com /setautoboss)"
+        time_left = format_time_until_midnight()
+
+        msg = (
+            f"🟢 *AutoBoss Noturno Ativado com Sucesso!*\n\n"
+            f"O bot executará automaticamente às 00:00 (Horário de Brasília - reset diário de cargas).\n"
+            f"📋 *Lista Predefinida:* `[{indices_str}]`\n"
+            f"⏳ *Próximo reset em:* {time_left}\n\n"
+        )
+        if not indices:
+            msg += "⚠️ *Atenção:* Você ainda não definiu a lista de bosses. Use `/setautoboss 1,2,3` para configurar."
+        else:
+            msg += "Use `/autoboss_off` caso queira desativar o agendamento."
+
+        await self.reply_safe(update, msg, parse_mode="Markdown")
+
+    @authorized_only
+    async def autoboss_off(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        set_preset_enabled(False)
+        await self.reply_safe(
+            update,
+            "🔴 *AutoBoss Noturno Desativado.*\n\n"
+            "O agendamento automático das 00h (Horário de Brasília) foi desligado.\n"
+            "Você ainda pode iniciar o AutoBoss manualmente a qualquer momento com `/autoboss`.",
+            parse_mode="Markdown"
+        )
+
+    @authorized_only
+    async def autoboss_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        preset = load_autoboss_preset()
+        indices = preset.get("boss_indices", [])
+        indices_str = ", ".join(map(str, indices)) if indices else "Nenhum"
+        enabled = preset.get("enabled", False)
+        status_sched = "🟢 Ativado (rodará às 00h)" if enabled else "🔴 Desativado"
+        time_left = format_time_until_midnight()
+
+        is_running = self.auto_boss_instance and self.auto_boss_instance.state.running
+        status_current = "⚔️ Em combate" if is_running else "💤 Parado"
+
+        text = (
+            f"📊 *PAINEL AUTOBOSS*\n\n"
+            f"• Estado atual: {status_current}\n"
+            f"• Agendamento (00h): {status_sched}\n"
+            f"• Lista predefinida: `[{indices_str}]`\n"
+            f"• Próximo reset das cargas em: {time_left} (00:00 Horário de Brasília)\n"
+        )
+
+        if self.bot.is_running() and not self.action_lock.locked():
+            try:
+                charges, _ = await get_boss_list(self.bot.tab)
+                text += f"• Cargas disponíveis: *{charges}*\n"
+            except Exception:
+                pass
+
+        text += (
+            f"\nComandos úteis:\n"
+            f"• `/autoboss` - Executa a lista predefinida\n"
+            f"• `/setautoboss 1,2,3` - Altera a lista predefinida\n"
+            f"• `/autoboss_on` - Ativa agendamento das 00h\n"
+            f"• `/autoboss_off` - Desativa agendamento das 00h\n"
+            f"• `/stopautoboss` - Interrompe AutoBoss em andamento"
+        )
+        await self.reply_safe(update, text, parse_mode="Markdown")
 
     @authorized_only
     @require_bot_running
@@ -1014,8 +1148,12 @@ Hunts e Rotinas:
 /hunts - Lista todos os mapas de caça disponíveis
 /hunt <id/nome> - Muda de hunt (ex: /hunt 1 ou /hunt Livraria)
 /bosses - Lista bosses disponíveis e cargas
-/autoboss <ids> - Inicia AutoBoss (ex: /autoboss 1,2,3)
+/autoboss [ids] - Inicia AutoBoss (executa a lista padrão se sem parâmetros)
 /stopautoboss - Para o AutoBoss e retoma a Hunt
+/setautoboss <ids> - Define a lista padrão permanente (ex: /setautoboss 1,2,3)
+/autoboss_on - Liga o agendamento automático às 00h (reset das cargas)
+/autoboss_off - Desliga o agendamento automático às 00h
+/autoboss_status - Exibe painel e status do AutoBoss
 /daily - Tenta coletar a recompensa diária
 /guildtask - Gerencia tasks da Guilda (entregar/pegar)
 /task <dificuldade> - Aceita task específica (facil, media, dificil)
@@ -1062,6 +1200,11 @@ async def main():
     application.add_handler(CommandHandler("bosses", controller.bosses))
     application.add_handler(CommandHandler("autoboss", controller.autoboss))
     application.add_handler(CommandHandler("stopautoboss", controller.stopautoboss))
+    application.add_handler(CommandHandler("setautoboss", controller.setautoboss))
+    application.add_handler(CommandHandler("autoboss_preset", controller.setautoboss))
+    application.add_handler(CommandHandler("autoboss_on", controller.autoboss_on))
+    application.add_handler(CommandHandler("autoboss_off", controller.autoboss_off))
+    application.add_handler(CommandHandler("autoboss_status", controller.autoboss_status))
     application.add_handler(CommandHandler("treino", controller.treino))
     application.add_handler(CommandHandler("casa", controller.casa))
     application.add_handler(CommandHandler("guildtask", controller.guildtask))
@@ -1094,6 +1237,7 @@ async def main():
     finally:
         print("\nEncerrando bot do Telegram...")
         cancel_daily_schedule()
+        stop_autoboss_scheduler()
         # Garante o fechamento limpo do navegador evitando processos órfãos
         if controller.bot.is_running():
             print("Parando GameBot e liberando navegador Chromium...")
