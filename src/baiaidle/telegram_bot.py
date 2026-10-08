@@ -5,6 +5,8 @@ from pathlib import Path
 from telegram import (
     Update,
     BotCommand,
+    BotCommandScopeDefault,
+    BotCommandScopeAllPrivateChats,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
@@ -33,6 +35,7 @@ from baiaidle.hunts import (
     debug_hunts_dom,
 )
 from baiaidle.guild import process_guild_tasks, accept_specific_task
+from baiaidle.battlepass import process_battlepass, choose_battlepass_mission
 from baiaidle.daily import collect_daily_reward
 from baiaidle.actions import get_party_info, extract_member_level
 
@@ -204,6 +207,8 @@ class TelegramController:
             BotCommand("casa", "Forçar ida para o Dummie da Casa"),
             BotCommand("guildtask", "Iniciar/Entregar Task da Guild"),
             BotCommand("task", "Aceitar task específica"),
+            BotCommand("passe", "Iniciar/Entregar missões do Passe"),
+            BotCommand("passetask", "Aceitar missão específica do Passe"),
             BotCommand("reset", "Zerar estatísticas e Analyzer"),
             BotCommand("daily", "Tentar coletar a recompensa diária"),
             BotCommand("settier", "Define a raridade para proteger"),
@@ -211,8 +216,9 @@ class TelegramController:
             BotCommand("help", "Mostrar ajuda"),
         ]
 
-        await self.application.bot.set_my_commands(commands)
-        print("Menu de comandos do Telegram configurado com sucesso.")
+        await self.application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+        await self.application.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
+        print("Menu de comandos do Telegram configurado com sucesso (Default e AllPrivateChats).")
 
     # ============================================================
     # CALLBACK: AUTOBOSS CONCLUÍDO
@@ -735,33 +741,125 @@ class TelegramController:
 
     @authorized_only
     @require_bot_running
+    async def passe(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if context.args:
+            return await self.passetask(update, context)
+
+        if self.auto_boss_instance and self.auto_boss_instance.state.running:
+            await update.message.reply_text("⚠️ O AutoBoss está em execução. Aguarde finalizar ou use /stopautoboss.")
+            return
+
+        if self.action_lock.locked():
+            await update.message.reply_text("⏳ Há outra ação em andamento no jogo. Aguarde um instante.")
+            return
+
+        await update.message.reply_text("⏳ Processando missões do Passe de Batalha...")
+
+        async with self.action_lock:
+            self.bot.pause_hunt()
+            try:
+                hunt_de_inicio = await get_current_hunt(self.bot.tab)
+                success, msg = await process_battlepass(self.bot.tab, self.bot.on_message)
+
+                if msg in ["finalizado", "nenhuma_nova", "aguardando_escolha"]:
+                    if msg != "aguardando_escolha":
+                        await change_hunt(self.bot.tab, hunt_de_inicio)
+                        await update.message.reply_text(f"✅ Missões do Passe finalizadas!\nRetornando para a hunt: {hunt_de_inicio}")
+                elif success and msg == "recuperada":
+                    pass
+                elif success:
+                    await update.message.reply_text(f"✅ {msg}")
+                else:
+                    await update.message.reply_text(f"⚠️ Aviso: {msg}")
+            except Exception as e:
+                await update.message.reply_text(f"❌ Erro ao processar passe: {e}")
+            finally:
+                self.bot.resume_hunt()
+
+    @authorized_only
+    @require_bot_running
+    async def passetask(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not context.args:
+            await update.message.reply_text(
+                "⚠️ Uso incorreto.\nDigite: /passetask facil, /passetask media ou /passetask dificil\n(Ou: /passe <dificuldade>)"
+            )
+            return
+
+        dificuldade = context.args[0].lower().replace("á", "a").replace("é", "e").replace("í", "i")
+        if dificuldade not in ["facil", "media", "dificil"]:
+            await update.message.reply_text("⚠️ Dificuldade inválida.\nOpções: facil, media ou dificil")
+            return
+
+        if self.auto_boss_instance and self.auto_boss_instance.state.running:
+            await update.message.reply_text("⚠️ O AutoBoss está em execução. Aguarde finalizar ou use /stopautoboss.")
+            return
+
+        if self.action_lock.locked():
+            await update.message.reply_text("⏳ Há outra ação em andamento no jogo. Aguarde um instante.")
+            return
+
+        await update.message.reply_text(f"⏳ Buscando missão do Passe ({dificuldade})...")
+
+        async with self.action_lock:
+            self.bot.pause_hunt()
+            try:
+                success, msg = await choose_battlepass_mission(self.bot.tab, dificuldade, on_message=self.bot.on_message)
+                if success:
+                    await update.message.reply_text(f"✅ {msg}")
+                else:
+                    await update.message.reply_text(f"⚠️ {msg}")
+            except Exception as e:
+                await update.message.reply_text(f"❌ Erro ao aceitar missão do Passe: {e}")
+            finally:
+                self.bot.resume_hunt()
+
+    @authorized_only
+    @require_bot_running
     async def inline_button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
 
         data = query.data
-        if not data or not data.startswith("task_"):
+        if not data:
             return
 
         if self.action_lock.locked():
             await query.answer("⏳ Outra ação já está em andamento. Aguarde.", show_alert=True)
             return
 
-        dificuldade = data.split("_")[1]
-        await query.edit_message_text(f"⏳ Buscando e aceitando task {dificuldade}...")
+        if data.startswith("task_"):
+            dificuldade = data.split("_")[1]
+            await query.edit_message_text(f"⏳ Buscando e aceitando task {dificuldade}...")
 
-        async with self.action_lock:
-            self.bot.pause_hunt()
-            try:
-                success, msg = await accept_specific_task(self.bot.tab, dificuldade, self.bot.on_message)
-                if success:
-                    await query.message.reply_text(f"✅ {msg}")
-                else:
-                    await query.message.reply_text(f"⚠️ {msg}")
-            except Exception as e:
-                await query.message.reply_text(f"❌ Erro ao aceitar task: {e}")
-            finally:
-                self.bot.resume_hunt()
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    success, msg = await accept_specific_task(self.bot.tab, dificuldade, self.bot.on_message)
+                    if success:
+                        await query.message.reply_text(f"✅ {msg}")
+                    else:
+                        await query.message.reply_text(f"⚠️ {msg}")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao aceitar task: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif data.startswith("bp_"):
+            dificuldade = data.split("_")[1]
+            await query.edit_message_text(f"⏳ Buscando e aceitando missão do Passe ({dificuldade})...")
+
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    success, msg = await choose_battlepass_mission(self.bot.tab, dificuldade, on_message=self.bot.on_message)
+                    if success:
+                        await query.message.reply_text(f"✅ {msg}")
+                    else:
+                        await query.message.reply_text(f"⚠️ {msg}")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao aceitar missão do Passe: {e}")
+                finally:
+                    self.bot.resume_hunt()
 
     # ============================================================
     # HANDLERS: ROTINAS EXTRAS (DAILY & RESET)
@@ -891,6 +989,8 @@ Hunts e Rotinas:
 /daily - Tenta coletar a recompensa diária
 /guildtask - Gerencia tasks da Guilda (entregar/pegar)
 /task <dificuldade> - Aceita task específica (facil, media, dificil)
+/passe - Gerencia missões do Passe de Batalha (entregar/pegar)
+/passetask <dificuldade> - Aceita missão do Passe (facil, media, dificil)
 /treino - Força ida para o Treino Online
 /casa - Força ida para o Dummie da Casa
 
@@ -936,6 +1036,8 @@ async def main():
     application.add_handler(CommandHandler("casa", controller.casa))
     application.add_handler(CommandHandler("guildtask", controller.guildtask))
     application.add_handler(CommandHandler("task", controller.task))
+    application.add_handler(CommandHandler("passe", controller.passe))
+    application.add_handler(CommandHandler("passetask", controller.passetask))
     application.add_handler(CommandHandler("reset", controller.reset))
     application.add_handler(CommandHandler("daily", controller.daily))
     application.add_handler(CommandHandler("settier", controller.settier))

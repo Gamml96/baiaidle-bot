@@ -17,6 +17,7 @@ from baiaidle.actions import (
 from baiaidle.hunts import get_current_hunt, change_hunt, go_to_training, go_to_house
 from baiaidle.guild import get_tracked_task_progress, process_guild_tasks
 from baiaidle.codex import process_codex_routine
+from baiaidle.battlepass import get_tracked_battlepass_progress, process_battlepass
 
 # ================================================================
 # CONFIGURAÇÃO
@@ -668,6 +669,22 @@ async def run_sell(
                                 await on_message(prog_msg)
                             except Exception as e:
                                 print(f"Erro ao enviar aviso de Task: {e}")
+
+                    # Checa o progresso do Passe de Batalha silenciosamente
+                    bp_data = await get_tracked_battlepass_progress(tab)
+                    if bp_data and not bp_data.get("finished"):
+                        max_kills = bp_data['max']
+                        current_kills = bp_data['current']
+                        pct = (current_kills / max_kills * 100) if max_kills > 0 else 0
+
+                        bp_msg = f"🎟️ *Passe de Batalha:* {bp_data['hunt_name']}\nProgresso: {pct:.1f}% ({current_kills}/{max_kills})"
+                        print(f"\n{bp_msg.replace('*', '')}")
+
+                        if on_message:
+                            try:
+                                await on_message(bp_msg)
+                            except Exception as e:
+                                print(f"Erro ao enviar aviso de Passe: {e}")
                 # ====================================================
 
                 sleep_time = min(1, remaining)
@@ -751,6 +768,21 @@ async def run_sell(
                         await on_message(msg)
                         
                     await process_guild_tasks(tab, on_message)
+
+            # ====================================================
+            # VERIFICAR SE O PASSE DE BATALHA FOI FINALIZADO
+            # ====================================================
+            if not stop_event.is_set() and pause_event.is_set():
+                bp_data = await get_tracked_battlepass_progress(tab)
+
+                if bp_data and bp_data.get("finished"):
+                    msg = f"✅ *Missão do Passe Finalizada!* ({bp_data['hunt_name']})\nIndo até o Passe entregar e verificar as próximas..."
+                    print(msg.replace('*', ''))
+
+                    if on_message:
+                        await on_message(msg)
+
+                    await process_battlepass(tab, on_message)
 
     except asyncio.CancelledError:
         print("Task da Hunt cancelada.")
