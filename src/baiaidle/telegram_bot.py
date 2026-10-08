@@ -2,6 +2,7 @@ import asyncio
 import functools
 from pathlib import Path
 
+# pyrefly: ignore [missing-import]
 from telegram import (
     Update,
     BotCommand,
@@ -10,6 +11,8 @@ from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+
+# pyrefly: ignore [missing-import]
 from telegram.ext import (
     Application,
     CommandHandler,
