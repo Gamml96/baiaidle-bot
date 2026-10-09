@@ -1,5 +1,6 @@
 import asyncio
 import random
+import re
 from dataclasses import dataclass
 
 from baiaidle.actions import (
@@ -34,7 +35,11 @@ RETRY_JITTER_MIN = 5
 RETRY_JITTER_MAX = 10
 
 IR_PARA_TREINO_ONLINE = 20
-VOLTAR_PARA_HUNT = 95
+VOLTAR_PARA_HUNT = 100
+
+MAX_STAMINA_HOURS = 42
+MAX_STAMINA_MINUTES = MAX_STAMINA_HOURS * 60  # 2520 minutos (42 horas)
+STAMINA_RECOVERY_RATE = 8.0                   # 1 minuto real recupera 8 minutos de stamina
 
 # ================================================================
 # ESTATÍSTICAS
@@ -161,7 +166,6 @@ def parse_clean_int(text: str) -> int:
     """
     Remove pontos e caracteres não numéricos para converter em inteiro.
     """
-    import re
     cleaned = re.sub(r"[^0-9]", "", text)
     if not cleaned:
         return 0
@@ -169,6 +173,78 @@ def parse_clean_int(text: str) -> int:
         return int(cleaned)
     except ValueError:
         return 0
+
+
+def parse_stamina_time_to_minutes(stam_time: str) -> int | None:
+    """
+    Converte strings de tempo de stamina como '35:20', '35:20:00', '35h 20m', '35h'
+    em minutos totais de stamina. Retorna None se não for possível converter.
+    """
+    if not stam_time:
+        return None
+    s = stam_time.strip()
+
+    # Formato HH:MM ou HH:MM:SS (ex: "35:20" ou "35:20:00")
+    m = re.match(r"^(\d{1,3}):(\d{2})(?::\d{2})?$", s)
+    if m:
+        hours = int(m.group(1))
+        mins = int(m.group(2))
+        return hours * 60 + mins
+
+    # Formato com 'h' e 'm' (ex: "35h 20m", "35h", "20m")
+    m = re.match(r"^(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?$", s, re.IGNORECASE)
+    if m and (m.group(1) or m.group(2)):
+        hours = int(m.group(1)) if m.group(1) else 0
+        mins = int(m.group(2)) if m.group(2) else 0
+        return hours * 60 + mins
+
+    return None
+
+
+def calculate_remaining_recovery_time(stam_time_str: str, stam_pct_val: int) -> tuple[int, str]:
+    """
+    Calcula o tempo real estimado restante até atingir 100% de stamina (42 horas).
+    Considera a taxa de que a cada 1 minuto de treino real recupera-se 8 minutos de stamina.
+    Retorna (minutos_reais_restantes, string_formatada).
+    """
+    current_minutes = parse_stamina_time_to_minutes(stam_time_str)
+
+    # Se parseou com sucesso e stamina já está no máximo ou acima
+    if current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES:
+        return 0, "0m (100%)"
+
+    # Se parseou com sucesso e deu > 0, calcula a partir do tempo exato
+    if current_minutes is not None and current_minutes > 0:
+        needed_stamina_min = max(0, MAX_STAMINA_MINUTES - current_minutes)
+    elif stam_pct_val is not None and stam_pct_val > 0:
+        pct = max(0, min(100, stam_pct_val))
+        if pct >= 100:
+            return 0, "0m (100%)"
+        needed_stamina_min = MAX_STAMINA_MINUTES * (1.0 - (pct / 100.0))
+    else:
+        if current_minutes == 0 and stam_pct_val == 0:
+            needed_stamina_min = MAX_STAMINA_MINUTES
+        else:
+            return 0, "desconhecido"
+
+    if needed_stamina_min <= 0:
+        return 0, "0m (100%)"
+
+    real_minutes_needed = round(needed_stamina_min / STAMINA_RECOVERY_RATE)
+    if real_minutes_needed <= 0:
+        return 0, "< 1m"
+
+    hours = real_minutes_needed // 60
+    mins = real_minutes_needed % 60
+
+    if hours > 0 and mins > 0:
+        formatted = f"{hours}h {mins}m"
+    elif hours > 0:
+        formatted = f"{hours}h"
+    else:
+        formatted = f"{mins}m"
+
+    return real_minutes_needed, formatted
 
 
 # ================================================================
@@ -500,10 +576,11 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
         current_stam_str = hud_data.get("stamina_pct", "0%")
         current_stam_val = parse_clean_int(current_stam_str)
         stam_time = hud_data.get("stamina_time", "00:00")
+        current_minutes = parse_stamina_time_to_minutes(stam_time)
         
         now = asyncio.get_running_loop().time()
         
-        if current_stam_val >= VOLTAR_PARA_HUNT:
+        if current_stam_val >= VOLTAR_PARA_HUNT or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES):
             msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Retornando para a hunt: {current_hunt}."
             print(msg_done)
             if on_message:
@@ -521,7 +598,12 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
             
         if now - last_report_time >= 600:
             last_report_time = now
-            report_msg = f"🧘‍♂️ *Treinando...*\n⚡ Stamina atual: {current_stam_str} ({stam_time})\n⏳ "
+            _, time_remaining_str = calculate_remaining_recovery_time(stam_time, current_stam_val)
+            report_msg = (
+                f"🧘‍♂️ *Treinando...*\n"
+                f"⚡ Stamina atual: {current_stam_str} ({stam_time})\n"
+                f"⏳ Restante até 100%: ~{time_remaining_str}"
+            )
             print(report_msg)
             if on_message:
                 await on_message(report_msg)
@@ -559,21 +641,34 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
         current_stam_str = hud_data.get("stamina_pct", "0%")
         current_stam_val = parse_clean_int(current_stam_str)
         stam_time = hud_data.get("stamina_time", "00:00")
+        current_minutes = parse_stamina_time_to_minutes(stam_time)
         
         now = asyncio.get_running_loop().time()
         
-        if current_stam_val >= VOLTAR_PARA_HUNT:
+        if current_stam_val >= VOLTAR_PARA_HUNT or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES):
             msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Saindo da Casa e retornando para: {current_hunt}."
             print(msg_done)
             if on_message:
                 await on_message(f"✅ {msg_done}")
             
-            await change_hunt(tab, current_hunt)
+            # Tenta voltar para a hunt repetidamente até conseguir
+            viagem_sucesso = False
+            while not viagem_sucesso and not stop_event.is_set():
+                viagem_sucesso, msg_viagem = await change_hunt(tab, current_hunt)
+                if not viagem_sucesso:
+                    print(f"⚠️ Falha ao voltar para a Hunt. Tentando novamente em 5s... Erro: {msg_viagem}")
+                    await asyncio.sleep(5)
+
             return True
             
         if now - last_report_time >= 600:
             last_report_time = now
-            report_msg = f"🏠 *Treinando na Casa...*\n⚡ Stamina atual: {current_stam_str} ({stam_time})\n⏳ "
+            _, time_remaining_str = calculate_remaining_recovery_time(stam_time, current_stam_val)
+            report_msg = (
+                f"🏠 *Treinando na Casa...*\n"
+                f"⚡ Stamina atual: {current_stam_str} ({stam_time})\n"
+                f"⏳ Restante até 100%: ~{time_remaining_str}"
+            )
             print(report_msg)
             if on_message:
                 await on_message(report_msg)
