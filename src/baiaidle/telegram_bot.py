@@ -230,6 +230,7 @@ class TelegramController:
             BotCommand("passetask", "Aceitar missão específica do Passe"),
             BotCommand("reset", "Zerar estatísticas e Analyzer"),
             BotCommand("daily", "Tentar coletar a recompensa diária"),
+            BotCommand("defaulthunt", "Ver ou definir hunt padrão pós-treino"),
             BotCommand("settier", "Define a raridade para proteger"),
             BotCommand("print", "Tirar um print da tela do jogo"),
             BotCommand("help", "Mostrar ajuda"),
@@ -1133,6 +1134,26 @@ class TelegramController:
             await update.message.reply_text("❌ Por favor, digite apenas números. Ex: /settier 4")
 
     @authorized_only
+    async def defaulthunt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if not context.args:
+            current_default = self.bot.hunt_stats.default_hunt
+            await update.message.reply_text(
+                f"🎯 *Hunt Padrão Atual:* {current_default}\n\n"
+                f"Para alterar, use: `/defaulthunt <nome da hunt>`\n"
+                f"Exemplo: `/defaulthunt Infernal Demon`",
+                parse_mode="Markdown"
+            )
+            return
+
+        new_hunt = " ".join(context.args).strip()
+        self.bot.hunt_stats.default_hunt = new_hunt
+        await update.message.reply_text(
+            f"✅ *Hunt padrão alterada!*\n"
+            f"O bot retornará para *{new_hunt}* após concluir o treino.",
+            parse_mode="Markdown"
+        )
+
+    @authorized_only
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = """
 🤖 BAIAK IDLE BOT
@@ -1163,6 +1184,7 @@ Hunts e Rotinas:
 /casa - Força ida para o Dummie da Casa
 
 Configurações e Manutenção:
+/defaulthunt [nome] - Ver ou definir hunt padrão de retorno pós-treino
 /settier <numero> - Define tier mínimo para proteger item no baú
 /reset - Zera o Hunt Analyzer no jogo e estatísticas do bot
 /debughunt - Salva o HTML do modal de Hunts para diagnóstico
@@ -1213,6 +1235,7 @@ async def main():
     application.add_handler(CommandHandler("passetask", controller.passetask))
     application.add_handler(CommandHandler("reset", controller.reset))
     application.add_handler(CommandHandler("daily", controller.daily))
+    application.add_handler(CommandHandler("defaulthunt", controller.defaulthunt))
     application.add_handler(CommandHandler("settier", controller.settier))
     application.add_handler(CommandHandler("print", controller.print_screen))
     application.add_handler(CommandHandler("help", controller.help))

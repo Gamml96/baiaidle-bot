@@ -6,6 +6,10 @@ from baiaidle.sell import (
     STAMINA_RECOVERY_RATE,
     parse_stamina_time_to_minutes,
     calculate_remaining_recovery_time,
+    DEFAULT_HUNT,
+    HuntStats,
+    is_training_location,
+    resolve_target_hunt,
 )
 
 class TestStaminaRecovery(unittest.TestCase):
@@ -14,6 +18,36 @@ class TestStaminaRecovery(unittest.TestCase):
         self.assertEqual(VOLTAR_PARA_HUNT, 100)
         self.assertEqual(MAX_STAMINA_MINUTES, 2520)  # 42h * 60m
         self.assertEqual(STAMINA_RECOVERY_RATE, 8.0)
+        self.assertEqual(DEFAULT_HUNT, "Infernal Demon")
+
+    def test_hunt_stats_default_hunt(self):
+        stats = HuntStats()
+        self.assertEqual(stats.default_hunt, "Infernal Demon")
+        stats.default_hunt = "Dragon Lord"
+        stats.reset()
+        self.assertEqual(stats.default_hunt, "Dragon Lord")
+
+    def test_is_training_location(self):
+        # Treino
+        self.assertEqual(is_training_location("Treino Online"), (True, "treino"))
+        self.assertEqual(is_training_location("Treino"), (True, "treino"))
+        self.assertEqual(is_training_location("Exercise Dummy"), (True, "treino"))
+        self.assertEqual(is_training_location("Treinamento"), (True, "treino"))
+        self.assertEqual(is_training_location("online training"), (True, "treino"))
+
+        # Casa
+        self.assertEqual(is_training_location("Casa"), (True, "casa"))
+        self.assertEqual(is_training_location("House"), (True, "casa"))
+        self.assertEqual(is_training_location("Casa de Amigo"), (True, "casa"))
+        self.assertEqual(is_training_location("Dummies"), (True, "casa"))
+        self.assertEqual(is_training_location("Dummy 1"), (True, "casa"))
+
+        # Hunts comuns
+        self.assertEqual(is_training_location("Infernal Demon"), (False, ""))
+        self.assertEqual(is_training_location("Dragon Lord"), (False, ""))
+        self.assertEqual(is_training_location("Rotworm"), (False, ""))
+        self.assertEqual(is_training_location(""), (False, ""))
+        self.assertEqual(is_training_location(None), (False, ""))
 
     def test_parse_stamina_time_to_minutes(self):
         self.assertEqual(parse_stamina_time_to_minutes("42:00"), 2520)

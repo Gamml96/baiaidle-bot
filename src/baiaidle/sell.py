@@ -41,6 +41,8 @@ MAX_STAMINA_HOURS = 42
 MAX_STAMINA_MINUTES = MAX_STAMINA_HOURS * 60  # 2520 minutos (42 horas)
 STAMINA_RECOVERY_RATE = 8.0                   # 1 minuto real recupera 8 minutos de stamina
 
+DEFAULT_HUNT = "Infernal Demon"
+
 # ================================================================
 # ESTATÍSTICAS
 # ================================================================
@@ -56,16 +58,23 @@ class HuntStats:
     force_action: str | None = None
     codex_progress: str = "0%"
     last_task_report: float = 0.0
+    default_hunt: str = DEFAULT_HUNT
 
     def reset(self):
         """Zera todos os dados da sessão."""
-        self.started_at = asyncio.get_running_loop().time()
+        try:
+            self.started_at = asyncio.get_running_loop().time()
+        except RuntimeError:
+            import time
+            self.started_at = time.time()
         self.total_gold = 0
         self.sales = 0
         self.current_xp = 0
         self.force_action = None
         self.codex_progress = "0%"
         self.last_task_report = 0.0
+        if not getattr(self, "default_hunt", None):
+            self.default_hunt = DEFAULT_HUNT
 
     def add_sale(self, value: int):
         self.total_gold += value
@@ -80,7 +89,12 @@ class HuntStats:
     def elapsed(self) -> float:
         if self.started_at == 0.0:
             return 0
-        return asyncio.get_running_loop().time() - self.started_at
+        try:
+            now = asyncio.get_running_loop().time()
+        except RuntimeError:
+            import time
+            now = time.time()
+        return now - self.started_at
 
     def gold_per_hour(self) -> float:
         elapsed = self.elapsed()
@@ -245,6 +259,42 @@ def calculate_remaining_recovery_time(stam_time_str: str, stam_pct_val: int) -> 
         formatted = f"{mins}m"
 
     return real_minutes_needed, formatted
+
+
+def is_training_location(location: str | None) -> tuple[bool, str]:
+    """
+    Identifica se a localização atual (#wave-title) é Treino Online ou Casa.
+    Retorna (is_training, tipo) onde tipo é 'treino', 'casa' ou ''.
+    """
+    if not location or not isinstance(location, str):
+        return False, ""
+    loc = location.strip().lower()
+
+    # Treino Online
+    if any(k in loc for k in ["treino", "exercise", "treinamento", "training"]):
+        return True, "treino"
+
+    # Casa
+    if any(k in loc for k in ["casa", "house", "dummy", "dummies"]):
+        return True, "casa"
+
+    return False, ""
+
+
+async def resolve_target_hunt(tab, stats: HuntStats | None = None) -> str:
+    """
+    Identifica a hunt atual. Se for desconhecida ou se o personagem estiver no treino/casa,
+    retorna a hunt padrão configurada (Infernal Demon por padrão).
+    """
+    fallback = (stats.default_hunt if stats and stats.default_hunt else DEFAULT_HUNT)
+    current = await get_current_hunt(tab)
+    if not current or not isinstance(current, str):
+        return fallback
+    current = current.strip()
+    is_training, _ = is_training_location(current)
+    if is_training or current.lower() == "hunt desconhecida":
+        return fallback
+    return current
 
 
 # ================================================================
@@ -545,16 +595,17 @@ async def execute_sale(
 # GERENCIADOR DE TREINO
 # ================================================================
 
-async def manage_training(tab, stop_event, pause_event, on_message, current_hunt):
+async def manage_training(tab, stop_event, pause_event, on_message, current_hunt, already_there=False):
     """
     Controla o ciclo do bot enquanto a stamina regenera.
     Acorda a cada 60s, mas avisa o Telegram apenas a cada 10 minutos.
     """
-    success = await go_to_training(tab)
-    if not success:
-        if on_message:
-            await on_message("❌ Falha ao tentar ir para o Treino Online. O bot tentará continuar as vendas.")
-        return False
+    if not already_there:
+        success = await go_to_training(tab)
+        if not success:
+            if on_message:
+                await on_message("❌ Falha ao tentar ir para o Treino Online. O bot tentará continuar as vendas.")
+            return False
         
     training = True
     last_report_time = asyncio.get_running_loop().time()
@@ -610,16 +661,17 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
                 
     return True
 
-async def manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=False):
+async def manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=False, already_there=False):
     """
     Controla o ciclo do bot na Casa enquanto a stamina regenera.
     Acorda a cada 60s, mas avisa o Telegram apenas a cada 10 minutos.
     """
-    success = await go_to_house(tab)
-    if not success:
-        if on_message and not silent_fail:
-            await on_message("❌ Nenhuma Casa com dummy ativo encontrada no momento.")
-        return False
+    if not already_there:
+        success = await go_to_house(tab)
+        if not success:
+            if on_message and not silent_fail:
+                await on_message("❌ Nenhuma Casa com dummy ativo encontrada no momento.")
+            return False
         
     training = True
     last_report_time = asyncio.get_running_loop().time()
@@ -702,9 +754,7 @@ async def run_sell(
                 action = stats.force_action
                 stats.force_action = None
                 
-                current_hunt = await get_current_hunt(tab)
-                if not current_hunt:
-                    current_hunt = "Hunt Desconhecida"
+                current_hunt = await resolve_target_hunt(tab, stats)
                     
                 if action == "casa":
                     if on_message:
@@ -722,6 +772,48 @@ async def run_sell(
                     await manage_training(tab, stop_event, pause_event, on_message, current_hunt)
                 
                 continue 
+            # ====================================================
+
+            # ====================================================
+            # DETECÇÃO AUTOMÁTICA DE LOCALIZAÇÃO (TREINO / CASA)
+            # ====================================================
+            current_loc = await get_current_hunt(tab)
+            is_training, train_type = is_training_location(current_loc)
+            if is_training:
+                hud_data = await get_hud_data(tab)
+                stam_pct = parse_clean_int(hud_data.get("stamina_pct", "0%"))
+                stam_time = hud_data.get("stamina_time", "00:00")
+                current_minutes = parse_stamina_time_to_minutes(stam_time)
+                
+                is_full = (stam_pct >= VOLTAR_PARA_HUNT) or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES)
+                target_hunt = stats.default_hunt or DEFAULT_HUNT
+
+                if is_full:
+                    msg = f"🔋 Personagem detectado no {current_loc} com Stamina cheia ({stam_pct}%). Retornando para a hunt padrão: {target_hunt}."
+                    print(msg)
+                    if on_message:
+                        await on_message(f"✅ {msg}")
+                    await change_hunt(tab, target_hunt)
+                else:
+                    _, time_remaining_str = calculate_remaining_recovery_time(stam_time, stam_pct)
+                    mode_name = "Casa (Dummies)" if train_type == "casa" else "Treino Online"
+                    msg = (
+                        f"🧘‍♂️ *Modo Treino Ativado!*\n"
+                        f"Detectado que o personagem já está em: *{current_loc}* ({mode_name})\n\n"
+                        f"⚡ Stamina atual: {hud_data.get('stamina_pct', f'{stam_pct}%')} ({stam_time})\n"
+                        f"⏳ Restante até 100%: ~{time_remaining_str}\n"
+                        f"🎯 Hunt de retorno configurada: *{target_hunt}*"
+                    )
+                    print(msg.replace('*', ''))
+                    if on_message:
+                        await on_message(msg)
+
+                    if train_type == "casa":
+                        await manage_house_training(tab, stop_event, pause_event, on_message, target_hunt, silent_fail=True, already_there=True)
+                    else:
+                        await manage_training(tab, stop_event, pause_event, on_message, target_hunt, already_there=True)
+
+                continue
             # ====================================================
 
             if not pause_event.is_set():
@@ -833,9 +925,7 @@ async def run_sell(
                 stamina_val = parse_clean_int(stamina_str)
                 
                 if 0 < stamina_val <= IR_PARA_TREINO_ONLINE:
-                    current_hunt = await get_current_hunt(tab)
-                    if not current_hunt:
-                        current_hunt = "Hunt Desconhecida"
+                    current_hunt = await resolve_target_hunt(tab, stats)
                         
                     msg = f"🔋 *Stamina Crítica* ({stamina_val}%).\n\n⏸️ Pausando a hunt atual ({current_hunt}) e tentando ir para a Casa..."
                     print(msg.replace('*', ''))
