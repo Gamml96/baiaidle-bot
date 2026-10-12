@@ -850,13 +850,12 @@ class TelegramController:
         async with self.action_lock:
             self.bot.pause_hunt()
             try:
-                hunt_de_inicio = await get_current_hunt(self.bot.tab)
                 success, msg = await process_guild_tasks(self.bot.tab, self.bot.on_message)
 
-                if msg in ["limite_atingido", "nenhuma_nova", "aguardando_escolha"]:
-                    await change_hunt(self.bot.tab, hunt_de_inicio)
-                    if msg != "aguardando_escolha":
-                        await update.message.reply_text(f"✅ Tasks finalizadas!\nRetornando para a hunt: {hunt_de_inicio}")
+                if msg == "aguardando_escolha":
+                    pass
+                elif msg in ["limite_atingido", "nenhuma_nova"]:
+                    await update.message.reply_text("✅ Nenhuma task nova disponível na Guilda.")
                 elif success and msg == "recuperada":
                     pass
                 elif success:
@@ -871,8 +870,33 @@ class TelegramController:
     @authorized_only
     @require_bot_running
     async def task(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        if not context.args or context.args[0].lower() not in ["facil", "media", "dificil"]:
-            await update.message.reply_text("⚠️ Uso incorreto.\nDigite: /task facil, /task media ou /task dificil")
+        if not context.args:
+            await update.message.reply_text(
+                "⚠️ Uso incorreto.\n"
+                "Digite: `/task facil`, `/task media` ou `/task dificil`\n"
+                "Ou especifique: `/task diaria facil` ou `/task semanal media`",
+                parse_mode="Markdown"
+            )
+            return
+
+        args = [a.lower().replace("á", "a").replace("é", "e").replace("í", "i") for a in context.args]
+        dificuldade = None
+        categoria = None
+        for a in args:
+            if a in ["facil", "media", "dificil"]:
+                dificuldade = a
+            elif a in ["diaria", "diarias"]:
+                categoria = "diaria"
+            elif a in ["semanal", "semanais"]:
+                categoria = "semanal"
+
+        if not dificuldade:
+            await update.message.reply_text(
+                "⚠️ Dificuldade inválida.\n"
+                "Opções: `facil`, `media` ou `dificil`\n"
+                "Exemplos: `/task facil`, `/task semanal facil`",
+                parse_mode="Markdown"
+            )
             return
 
         if self.auto_boss_instance and self.auto_boss_instance.state.running:
@@ -883,13 +907,13 @@ class TelegramController:
             await update.message.reply_text("⏳ Há outra ação em andamento no jogo. Aguarde um instante.")
             return
 
-        dificuldade = context.args[0].lower()
-        await update.message.reply_text(f"⏳ Buscando task {dificuldade}...")
+        cat_desc = f" ({categoria.capitalize()})" if categoria else ""
+        await update.message.reply_text(f"⏳ Buscando task{cat_desc} ({dificuldade})...")
 
         async with self.action_lock:
             self.bot.pause_hunt()
             try:
-                success, msg = await accept_specific_task(self.bot.tab, dificuldade, self.bot.on_message)
+                success, msg = await accept_specific_task(self.bot.tab, dificuldade, category=categoria, on_message=self.bot.on_message)
                 if success:
                     await update.message.reply_text(f"✅ {msg}")
                 else:
@@ -988,13 +1012,21 @@ class TelegramController:
             return
 
         if data.startswith("task_"):
-            dificuldade = data.split("_")[1]
-            await query.edit_message_text(f"⏳ Buscando e aceitando task {dificuldade}...")
+            parts = data.split("_")
+            if len(parts) >= 3:
+                categoria = parts[1]
+                dificuldade = parts[2]
+            else:
+                categoria = None
+                dificuldade = parts[1]
+
+            label_cat = f" {categoria.capitalize()}" if categoria else ""
+            await query.edit_message_text(f"⏳ Buscando e aceitando task{label_cat} ({dificuldade})...")
 
             async with self.action_lock:
                 self.bot.pause_hunt()
                 try:
-                    success, msg = await accept_specific_task(self.bot.tab, dificuldade, self.bot.on_message)
+                    success, msg = await accept_specific_task(self.bot.tab, dificuldade, category=categoria, on_message=self.bot.on_message)
                     if success:
                         await query.message.reply_text(f"✅ {msg}")
                     else:
@@ -1177,7 +1209,7 @@ Hunts e Rotinas:
 /autoboss_status - Exibe painel e status do AutoBoss
 /daily - Tenta coletar a recompensa diária
 /guildtask - Gerencia tasks da Guilda (entregar/pegar)
-/task <dificuldade> - Aceita task específica (facil, media, dificil)
+/task [diaria|semanal] <facil|media|dificil> - Aceita task específica
 /passe - Gerencia missões do Passe de Batalha (entregar/pegar)
 /passetask <dificuldade> - Aceita missão do Passe (facil, media, dificil)
 /treino - Força ida para o Treino Online
