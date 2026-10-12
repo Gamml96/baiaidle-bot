@@ -1561,3 +1561,78 @@ async def stash_valuable_items(tab, min_tier: int = 4) -> dict:
         print(f"Erro ao tentar guardar itens valiosos: {e}")
         
     return {"stashed": 0, "items": []}
+
+
+# ================================================================
+# LOOT ANALYSER - MOEDAS (CRYSTAL, PLATINUM, GOLD)
+# ================================================================
+
+async def get_loot_analyzer_coins(tab) -> dict[str, int]:
+    """
+    Lê a quantidade de crystal coin, platinum coin e gold coin
+    diretamente do Loot Analyser (#loot-items).
+    Retorna {'crystal': int, 'platinum': int, 'gold': int}.
+    """
+    js = r"""
+    (() => {
+        const container = document.getElementById('loot-items') || document.querySelector('#panel-loot .supply-grid');
+        if (!container) return JSON.stringify({ crystal: 0, platinum: 0, gold: 0 });
+
+        const result = { crystal: 0, platinum: 0, gold: 0 };
+        const cells = container.querySelectorAll('.supply-cell');
+
+        for (const cell of cells) {
+            const title = (cell.getAttribute('title') || cell.getAttribute('data-tip') || cell.getAttribute('aria-label') || '').toLowerCase();
+            const img = cell.querySelector('img');
+            const imgSrc = img ? (img.getAttribute('src') || '') : '';
+
+            let coinType = null;
+            if (title.includes('crystal coin') || imgSrc.includes('/3043.') || imgSrc.includes('object/3043')) {
+                coinType = 'crystal';
+            } else if (title.includes('platinum coin') || imgSrc.includes('/3035.') || imgSrc.includes('object/3035')) {
+                coinType = 'platinum';
+            } else if ((title.includes('gold coin') || imgSrc.includes('/3031.') || imgSrc.includes('object/3031')) && !title.includes('gold ingot') && !title.includes('gold nugget')) {
+                coinType = 'gold';
+            }
+
+            if (coinType) {
+                let amt = 0;
+                const amtEl = cell.querySelector('.supply-amt');
+                if (amtEl) {
+                    const cleaned = amtEl.innerText.replace(/[^0-9]/g, '');
+                    if (cleaned) amt = parseInt(cleaned, 10);
+                }
+                if (!amt) {
+                    const match = (cell.getAttribute('title') || cell.getAttribute('data-tip') || '').match(/·\s*([\d\.,]+)x?/i);
+                    if (match) {
+                        const cleaned = match[1].replace(/[^0-9]/g, '');
+                        if (cleaned) amt = parseInt(cleaned, 10);
+                    }
+                }
+                result[coinType] += amt;
+            }
+        }
+
+        return JSON.stringify(result);
+    })()
+    """
+    try:
+        result = await tab.execute_script(js)
+        value = extract_execute_result(result)
+        if isinstance(value, str):
+            data = json.loads(value)
+            return {
+                "crystal": int(data.get("crystal", 0)),
+                "platinum": int(data.get("platinum", 0)),
+                "gold": int(data.get("gold", 0)),
+            }
+        elif isinstance(value, dict):
+            return {
+                "crystal": int(value.get("crystal", 0)),
+                "platinum": int(value.get("platinum", 0)),
+                "gold": int(value.get("gold", 0)),
+            }
+    except Exception as e:
+        print(f"Erro ao ler moedas do Loot Analyser: {e}")
+
+    return {"crystal": 0, "platinum": 0, "gold": 0}

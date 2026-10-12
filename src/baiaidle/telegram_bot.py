@@ -48,7 +48,9 @@ from baiaidle.hunts import (
 from baiaidle.guild import process_guild_tasks, accept_specific_task
 from baiaidle.battlepass import process_battlepass, choose_battlepass_mission
 from baiaidle.daily import collect_daily_reward, cancel_daily_schedule
-from baiaidle.actions import get_party_info, extract_member_level
+from baiaidle.actions import get_party_info, extract_member_level, get_loot_analyzer_coins
+from baiaidle.sell import format_number, format_duration
+
 
 
 # ================================================================
@@ -201,6 +203,14 @@ class TelegramController:
         await asyncio.sleep(0.5)
         await self.bot.tab.execute_script(js_click_confirm)
         self.bot.hunt_stats.reset()
+
+        # Reinicializa a contagem base das moedas no Loot Analyser
+        try:
+            current_coins = await get_loot_analyzer_coins(self.bot.tab)
+            self.bot.hunt_stats.init_coins(current_coins)
+        except Exception as e:
+            print(f"Erro ao reinicializar moedas do Loot Analyser no reset: {e}")
+
         return True
 
     # ============================================================
@@ -449,6 +459,24 @@ class TelegramController:
             "",
             "AutoBoss: inativo.",
         ]
+
+        if self.bot.hunt_stats.sales > 0 or self.bot.hunt_stats.total_gold > 0:
+            lines.extend([
+                "",
+                f"💰 Acumulado da Hunt: {format_number(self.bot.hunt_stats.total_gold)} gold ({self.bot.hunt_stats.sales} vendas)",
+                f"⏱️ Duração: {format_duration(self.bot.hunt_stats.elapsed())} | ⚖️ Gold/h: {format_number(int(self.bot.hunt_stats.gold_per_hour()))}",
+            ])
+            if self.bot.hunt_stats.total_coin_gold > 0:
+                parts = []
+                if self.bot.hunt_stats.session_crystal_coins > 0:
+                    parts.append(f"{format_number(self.bot.hunt_stats.session_crystal_coins)} crystal")
+                if self.bot.hunt_stats.session_platinum_coins > 0:
+                    parts.append(f"{format_number(self.bot.hunt_stats.session_platinum_coins)} plat")
+                if self.bot.hunt_stats.session_gold_coins > 0:
+                    parts.append(f"{format_number(self.bot.hunt_stats.session_gold_coins)} gold")
+                coins_str = ", ".join(parts)
+                lines.append(f"🪙 Moedas na Sessão: +{format_number(self.bot.hunt_stats.total_coin_gold)} gold ({coins_str})")
+
 
         if party_summary:
             lines.append("")

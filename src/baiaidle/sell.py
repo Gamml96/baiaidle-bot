@@ -11,7 +11,8 @@ from baiaidle.actions import (
     wait_for_cloudflare,
     wait_for_sell_cooldown,
     get_hud_data,
-    stash_valuable_items
+    stash_valuable_items,
+    get_loot_analyzer_coins,
 )
 
 # === IMPORTANDO FUNÇÕES DE HUNT E TREINO ===
@@ -59,6 +60,14 @@ class HuntStats:
     codex_progress: str = "0%"
     last_task_report: float = 0.0
     default_hunt: str = DEFAULT_HUNT
+    last_crystal_coins: int = 0
+    last_platinum_coins: int = 0
+    last_gold_coins: int = 0
+    coins_initialized: bool = False
+    session_crystal_coins: int = 0
+    session_platinum_coins: int = 0
+    session_gold_coins: int = 0
+    total_coin_gold: int = 0
 
     def reset(self):
         """Zera todos os dados da sessão."""
@@ -73,8 +82,63 @@ class HuntStats:
         self.force_action = None
         self.codex_progress = "0%"
         self.last_task_report = 0.0
+        self.last_crystal_coins = 0
+        self.last_platinum_coins = 0
+        self.last_gold_coins = 0
+        self.coins_initialized = False
+        self.session_crystal_coins = 0
+        self.session_platinum_coins = 0
+        self.session_gold_coins = 0
+        self.total_coin_gold = 0
         if not getattr(self, "default_hunt", None):
             self.default_hunt = DEFAULT_HUNT
+
+    def init_coins(self, coins: dict[str, int]):
+        """Inicializa a contagem base de moedas do Loot Analyser."""
+        self.last_crystal_coins = coins.get("crystal", 0)
+        self.last_platinum_coins = coins.get("platinum", 0)
+        self.last_gold_coins = coins.get("gold", 0)
+        self.coins_initialized = True
+
+    def calculate_coin_deltas(self, current_coins: dict[str, int]) -> tuple[dict[str, int], int]:
+        """
+        Calcula os deltas de moedas e valor total em gold sem atualizar o estado interno.
+        Valores:
+          1 crystal coin = 10.000 gold
+          1 platinum coin = 100 gold
+          1 gold coin = 1 gold
+        """
+        curr_crystal = current_coins.get("crystal", 0)
+        curr_platinum = current_coins.get("platinum", 0)
+        curr_gold = current_coins.get("gold", 0)
+
+        if not self.coins_initialized:
+            return {"crystal": 0, "platinum": 0, "gold": 0}, 0
+
+        delta_crystal = (curr_crystal - self.last_crystal_coins) if curr_crystal >= self.last_crystal_coins else curr_crystal
+        delta_platinum = (curr_platinum - self.last_platinum_coins) if curr_platinum >= self.last_platinum_coins else curr_platinum
+        delta_gold = (curr_gold - self.last_gold_coins) if curr_gold >= self.last_gold_coins else curr_gold
+
+        coin_gold = (delta_crystal * 10000) + (delta_platinum * 100) + (delta_gold * 1)
+        return {
+            "crystal": delta_crystal,
+            "platinum": delta_platinum,
+            "gold": delta_gold,
+        }, coin_gold
+
+    def commit_coins(self, current_coins: dict[str, int], deltas: dict[str, int], coin_gold: int):
+        """
+        Confirma a atualização do estado das moedas após uma venda bem-sucedida.
+        """
+        self.last_crystal_coins = current_coins.get("crystal", 0)
+        self.last_platinum_coins = current_coins.get("platinum", 0)
+        self.last_gold_coins = current_coins.get("gold", 0)
+        self.coins_initialized = True
+
+        self.session_crystal_coins += deltas.get("crystal", 0)
+        self.session_platinum_coins += deltas.get("platinum", 0)
+        self.session_gold_coins += deltas.get("gold", 0)
+        self.total_coin_gold += coin_gold
 
     def add_sale(self, value: int):
         self.total_gold += value
@@ -107,6 +171,7 @@ class HuntStats:
         if elapsed <= 0:
             return 0
         return self.get_session_xp() / elapsed * 3600
+
 
 
 # ================================================================
@@ -148,6 +213,19 @@ def format_duration(
         f"{minutes:02d}:"
         f"{secs:02d}"
     )
+
+
+def format_coin_breakdown(deltas: dict[str, int]) -> str:
+    """Formata o detalhamento das moedas coletadas."""
+    parts = []
+    if deltas.get("crystal", 0) > 0:
+        parts.append(f"{format_number(deltas['crystal'])} crystal coin")
+    if deltas.get("platinum", 0) > 0:
+        parts.append(f"{format_number(deltas['platinum'])} platinum coin")
+    if deltas.get("gold", 0) > 0:
+        parts.append(f"{format_number(deltas['gold'])} gold coin")
+    return ", ".join(parts) if parts else "0 moedas"
+
 
 
 def random_main_delay() -> float:
@@ -450,6 +528,20 @@ async def execute_sale(
         await asyncio.sleep(1)
     # ==========================================
 
+    # === CAPTURA DE MOEDAS NO LOOT ANALYSER ===
+    # Moedas (crystal, platinum, gold) vão direto ao banco e não entram no pouch de venda,
+    # mas são registradas no Loot Analyser.
+    current_coins = await get_loot_analyzer_coins(tab)
+    if not stats.coins_initialized:
+        stats.init_coins(current_coins)
+        coin_deltas, coin_gold = {"crystal": 0, "platinum": 0, "gold": 0}, 0
+    else:
+        coin_deltas, coin_gold = stats.calculate_coin_deltas(current_coins)
+
+    if coin_gold > 0:
+        print(f"🪙 Moedas detectadas na hunt: +{format_number(coin_gold)} gold ({format_coin_breakdown(coin_deltas)})")
+    # ==========================================
+
     if not await open_sale_confirmation(
         tab
     ):
@@ -468,7 +560,7 @@ async def execute_sale(
     if sale_value:
 
         print(
-            "Valor da venda:",
+            "Valor da venda de itens:",
             f"{format_number(sale_value)} gold",
         )
 
@@ -522,6 +614,9 @@ async def execute_sale(
         "Venda processada com sucesso."
     )
 
+    # Confirma o avanço das moedas registradas após a venda bem-sucedida
+    stats.commit_coins(current_coins, coin_deltas, coin_gold)
+
     hud_data = await get_hud_data(tab)
     
     current_balance_str = hud_data.get("gold", "0")
@@ -548,10 +643,12 @@ async def execute_sale(
     stats.update_xp(current_xp)
     # ==========================================================
 
-    if sale_value > 0:
+    total_sale_value = sale_value + coin_gold
+
+    if total_sale_value > 0:
 
         stats.add_sale(
-            sale_value
+            total_sale_value
         )
         
         session_gained_xp = stats.get_session_xp()
@@ -559,7 +656,12 @@ async def execute_sale(
         print()
         print("========================================")
         print(f"VENDA #{stats.sales}")
-        print(f"Valor: {format_number(sale_value)} gold")
+        if coin_gold > 0:
+            print(f"Itens Vendidos: {format_number(sale_value)} gold")
+            print(f"Moedas Coletadas: +{format_number(coin_gold)} gold ({format_coin_breakdown(coin_deltas)})")
+            print(f"Valor Total desta Venda: {format_number(total_sale_value)} gold")
+        else:
+            print(f"Valor: {format_number(total_sale_value)} gold")
         print(f"Acumulado da Hunt: {format_number(stats.total_gold)} gold")
         print(f"Saldo Total (HUD): {current_balance_str}")
         print(f"XP Obtida na Sessão: {format_number(session_gained_xp)}")
@@ -571,18 +673,35 @@ async def execute_sale(
         print("========================================")
 
         if on_message:
-            msg_telegram = (
-                f"💰 *VENDA #{stats.sales}*\n\n"
-                f"⏱️ Duração: {format_duration(stats.elapsed())}\n"
-                f"⚡ Stamina: {stamina_pct} (Tempo: {stamina_time})\n"
-                f"📖 Codex Atual: {stats.codex_progress}\n\n"
-                f"🪙 Valor: {format_number(sale_value)} gold\n"
-                f"📈 Acumulado da Hunt: {format_number(stats.total_gold)} gold\n"
-                f"⚖️ Gold/h: {format_number(int(stats.gold_per_hour()))}\n"
-                f"🏦 Saldo Total: {current_balance_str}\n\n"
-                f"✨ XP Obtida na Sessão: {format_number(session_gained_xp)}\n"
-                f"📊 XP/h: {format_number(int(stats.xp_per_hour()))}\n"
-            )
+            if coin_gold > 0:
+                coin_str = format_coin_breakdown(coin_deltas)
+                msg_telegram = (
+                    f"💰 *VENDA #{stats.sales}*\n\n"
+                    f"⏱️ Duração: {format_duration(stats.elapsed())}\n"
+                    f"⚡ Stamina: {stamina_pct} (Tempo: {stamina_time})\n"
+                    f"📖 Codex Atual: {stats.codex_progress}\n\n"
+                    f"📦 Itens Vendidos: {format_number(sale_value)} gold\n"
+                    f"🪙 Moedas Coletadas: +{format_number(coin_gold)} gold ({coin_str})\n"
+                    f"💵 *Valor Total:* {format_number(total_sale_value)} gold\n"
+                    f"📈 Acumulado da Hunt: {format_number(stats.total_gold)} gold\n"
+                    f"⚖️ Gold/h: {format_number(int(stats.gold_per_hour()))}\n"
+                    f"🏦 Saldo Total: {current_balance_str}\n\n"
+                    f"✨ XP Obtida na Sessão: {format_number(session_gained_xp)}\n"
+                    f"📊 XP/h: {format_number(int(stats.xp_per_hour()))}\n"
+                )
+            else:
+                msg_telegram = (
+                    f"💰 *VENDA #{stats.sales}*\n\n"
+                    f"⏱️ Duração: {format_duration(stats.elapsed())}\n"
+                    f"⚡ Stamina: {stamina_pct} (Tempo: {stamina_time})\n"
+                    f"📖 Codex Atual: {stats.codex_progress}\n\n"
+                    f"🪙 Valor: {format_number(total_sale_value)} gold\n"
+                    f"📈 Acumulado da Hunt: {format_number(stats.total_gold)} gold\n"
+                    f"⚖️ Gold/h: {format_number(int(stats.gold_per_hour()))}\n"
+                    f"🏦 Saldo Total: {current_balance_str}\n\n"
+                    f"✨ XP Obtida na Sessão: {format_number(session_gained_xp)}\n"
+                    f"📊 XP/h: {format_number(int(stats.xp_per_hour()))}\n"
+                )
             
             try:
                 await on_message(msg_telegram)
@@ -742,6 +861,19 @@ async def run_sell(
     print("\n========================================")
     print("HUNT INICIADA")
     print("========================================")
+
+    # Inicializa a contagem base de moedas do Loot Analyser
+    if not stats.coins_initialized:
+        try:
+            initial_coins = await get_loot_analyzer_coins(tab)
+            stats.init_coins(initial_coins)
+            print(
+                f"Loot Analyser inicializado: {stats.last_crystal_coins} crystal, "
+                f"{stats.last_platinum_coins} plat, {stats.last_gold_coins} gold"
+            )
+        except Exception as e:
+            print(f"Aviso ao inicializar moedas do Loot Analyser: {e}")
+
 
     try:
 
