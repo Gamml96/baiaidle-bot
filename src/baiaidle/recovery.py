@@ -562,6 +562,59 @@ async def monitor_page_recovery(bot):
                     await asyncio.sleep(2.0)
                     continue
 
+                # 4. WATCHDOG DE CONGELAMENTO / INATIVIDADE (FREEZE WATCHDOG)
+                from baiaidle.settings import get_setting
+                watchdog_min = get_setting("watchdog_minutes", 10)
+                watchdog_timeout = max(180, watchdog_min * 60)
+                last_act = getattr(bot, "last_activity_time", None) or time.time()
+                inactivity_sec = time.time() - last_act
+
+                is_autoboss = getattr(bot, "auto_boss_instance", None) and bot.auto_boss_instance.state.running
+                if bot.is_hunt_running() and not is_autoboss and inactivity_sec >= watchdog_timeout:
+                    log_recovery(f"\n🚨 [WATCHDOG] Congelamento detectado! Sem atividade/venda há {int(inactivity_sec // 60)} minutos.")
+                    warn_msg = (
+                        f"🚨 *WATCHDOG ANTITRAVAMENTO ACIONADO!*\n"
+                        f"Nenhuma venda ou atividade detectada nos últimos {int(inactivity_sec // 60)} minutos.\n"
+                        f"🔄 Forçando recarregamento da página e recuperação da sessão..."
+                    )
+                    notifier = getattr(bot, "on_message", None)
+                    if notifier:
+                        try:
+                            res_w = notifier(warn_msg)
+                            if asyncio.iscoroutine(res_w):
+                                await res_w
+                        except Exception:
+                            pass
+
+                    try:
+                        await bot.tab.go_to(BAIAKIDLE_URL.rstrip("/") + "/jogar")
+                        await asyncio.sleep(3.0)
+                    except Exception:
+                        pass
+
+                    await ensure_page_session(bot, on_message=bot.on_message)
+                    if hasattr(bot, "touch_activity"):
+                        bot.touch_activity()
+                    await asyncio.sleep(2.0)
+                    continue
+
+                # 5. TESTE DE RESPONSIVIDADE JS (PING DA ABA) A CADA ~30s
+                if periodic_popup_counter == 3:
+                    try:
+                        await asyncio.wait_for(bot.tab.execute_script("1 + 1"), timeout=6.0)
+                    except Exception as e:
+                        log_recovery(f"\n🚨 [WATCHDOG] Falha no teste de ping da aba ({e})! Forçando recarregamento...")
+                        try:
+                            await bot.tab.go_to(BAIAKIDLE_URL.rstrip("/") + "/jogar")
+                            await asyncio.sleep(3.0)
+                        except Exception:
+                            pass
+                        await ensure_page_session(bot, on_message=bot.on_message)
+                        if hasattr(bot, "touch_activity"):
+                            bot.touch_activity()
+                        await asyncio.sleep(2.0)
+                        continue
+
                 # Checagem leve periódica de popups residuais (a cada ~15 segundos)
                 periodic_popup_counter += 1
                 if periodic_popup_counter >= 6:

@@ -242,6 +242,8 @@ class TelegramController:
             BotCommand("daily", "Tentar coletar a recompensa diária"),
             BotCommand("defaulthunt", "Ver ou definir hunt padrão pós-treino"),
             BotCommand("settier", "Define a raridade para proteger"),
+            BotCommand("menu", "Menu de atalhos rápidos interativos"),
+            BotCommand("config", "Painel de configurações via chat"),
             BotCommand("recuperar", "Fechar avisos/boas-vindas e recuperar sessão"),
             BotCommand("print", "Tirar um print da tela do jogo"),
             BotCommand("help", "Mostrar ajuda"),
@@ -442,7 +444,7 @@ class TelegramController:
                 lines.append("")
                 lines.append(party_summary)
 
-            await self.reply_safe(update, "\n".join(lines), parse_mode="Markdown")
+            await self.reply_safe(update, "\n".join(lines), reply_markup=self.get_quick_action_keyboard(), parse_mode="Markdown")
             return
 
         current_hunt = "Desconhecida"
@@ -483,21 +485,18 @@ class TelegramController:
             lines.append("")
             lines.append(party_summary)
 
-        await self.reply_safe(update, "\n".join(lines), parse_mode="Markdown")
+        await self.reply_safe(update, "\n".join(lines), reply_markup=self.get_quick_action_keyboard(), parse_mode="Markdown")
 
     # ============================================================
     # HANDLER: /PARTY
     # ============================================================
 
-    @authorized_only
-    @require_bot_running
-    async def party(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("⏳ Escaneando a equipe...")
-
+    async def _reply_party_details(self, target_message):
+        """Helper para escanear e exibir os dados da party."""
         try:
             party_data = await get_party_info(self.bot.tab)
             if not party_data:
-                await update.message.reply_text("❌ Nenhum membro da Party encontrado.")
+                await target_message.reply_text("❌ Nenhum membro da Party encontrado.")
                 return
 
             role_emojis = {
@@ -524,9 +523,15 @@ class TelegramController:
 
                 msg += f"🌟 XP: {xp}\n\n"
 
-            await self.reply_safe(update, msg.strip(), parse_mode="Markdown")
+            await self._send_safe_message(self.chat_id, msg.strip(), parse_mode="Markdown")
         except Exception as e:
-            await update.message.reply_text(f"❌ Erro ao ler Party: {e}")
+            await target_message.reply_text(f"❌ Erro ao ler Party: {e}")
+
+    @authorized_only
+    @require_bot_running
+    async def party(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("⏳ Escaneando a equipe...")
+        await self._reply_party_details(update.message)
 
     # ============================================================
     # HANDLERS: HUNTS
@@ -1079,8 +1084,247 @@ class TelegramController:
                         await query.message.reply_text(f"⚠️ {msg}")
                 except Exception as e:
                     await query.message.reply_text(f"❌ Erro ao aceitar missão do Passe: {e}")
+        elif data == "btn_menu":
+            text = (
+                "🎮 *PAINEL DE ATALHOS RÁPIDOS*\n\n"
+                "Escolha uma ação para executar imediatamente no jogo:"
+            )
+            try:
+                await query.edit_message_text(text, reply_markup=self.get_quick_action_keyboard(), parse_mode="Markdown")
+            except Exception:
+                await query.message.reply_text(text, reply_markup=self.get_quick_action_keyboard(), parse_mode="Markdown")
+
+        elif data == "btn_treino":
+            self.bot.hunt_stats.force_action = "treino"
+            await query.message.reply_text("🧘‍♂️ *Comando recebido!*\nO bot interromperá as vendas para ir ao Treino Online instantaneamente.", parse_mode="Markdown")
+
+        elif data == "btn_casa":
+            self.bot.hunt_stats.force_action = "casa"
+            await query.message.reply_text("🏠 *Comando recebido!*\nO bot interromperá as vendas para ir à Casa instantaneamente.", parse_mode="Markdown")
+
+        elif data == "btn_print":
+            msg = await query.message.reply_text("⏳ Capturando tela do jogo...")
+            file_path = Path("screenshot_temp.png")
+            try:
+                if not self.bot.tab:
+                    await msg.edit_text("❌ A aba do jogo não está disponível no momento.")
+                    return
+                await self.bot.tab.take_screenshot(str(file_path))
+                with open(file_path, "rb") as photo:
+                    await query.message.reply_photo(photo=photo, caption="🖥️ Print da tela atual!")
+                await msg.delete()
+            except Exception as e:
+                await msg.edit_text(f"❌ Erro ao capturar a tela: {e}")
+            finally:
+                file_path.unlink(missing_ok=True)
+
+        elif data == "btn_recuperar":
+            await query.message.reply_text("🔍 *Verificando estado da página, telas de boas-vindas e sessão...*", parse_mode="Markdown")
+            async with self.action_lock:
+                try:
+                    success, msg_rec = await self.bot.trigger_recovery()
+                    if success:
+                        await query.message.reply_text(f"✅ *Rotina de Recuperação Executada!*\n{msg_rec}", parse_mode="Markdown")
+                    else:
+                        await query.message.reply_text(f"⚠️ *Aviso na Recuperação:*\n{msg_rec}", parse_mode="Markdown")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao executar recuperação: {e}")
+
+        elif data == "btn_party":
+            await self._reply_party_details(query.message)
+
+        elif data == "btn_hunts":
+            if self.action_lock.locked():
+                await query.answer("⏳ Há outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            await query.message.reply_text("⏳ Capturando lista de Hunts...")
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    current = await get_current_hunt(self.bot.tab)
+                    hunts_data = await get_hunts_list(self.bot.tab)
+                    if not hunts_data:
+                        await query.message.reply_text("❌ Nenhuma hunt encontrada.")
+                    else:
+                        lines = [f"🗺️ *HUNTS DISPONÍVEIS*\n\n📍 Atual: *{current}*\n"]
+                        for h in hunts_data:
+                            lines.append(f"`{h['index']}` - {h['name']}")
+                        lines.append("\nPara mudar digite: `/hunt <numero>` ou `/hunt <nome>`")
+                        msg = "\n".join(lines)
+                        for chunk in [msg[i:i + 4000] for i in range(0, len(msg), 4000)]:
+                            await self._send_safe_message(self.chat_id, chunk, parse_mode="Markdown")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao listar hunts: {e}")
                 finally:
                     self.bot.resume_hunt()
+
+        elif data == "btn_autoboss":
+            if self.auto_boss_instance and self.auto_boss_instance.state.running:
+                await query.answer("⚠️ AutoBoss já está rodando!", show_alert=True)
+                return
+            preset = load_autoboss_preset()
+            indices = preset.get("boss_indices", [])
+            if not indices:
+                await query.message.reply_text("ℹ️ Nenhuma lista predefinida configurada. Use `/setautoboss 1,2,3` primeiro.", parse_mode="Markdown")
+                return
+            await query.message.reply_text(f"🚀 *Iniciando AutoBoss na lista:* `{indices}`...", parse_mode="Markdown")
+            self.auto_boss_instance = AutoBoss(self.bot.tab)
+            async def send_message(text):
+                await self.send_hunt_msg(text)
+            self.auto_boss_instance.on_message = send_message
+            self.auto_boss_instance.on_finished = self.autoboss_finished
+            self.bot.pause_hunt()
+            try:
+                success, message = await self.auto_boss_instance.start(indices)
+                if not success:
+                    self.bot.resume_hunt()
+                    self.auto_boss_instance = None
+                    await query.message.reply_text(f"❌ Falha: {message}")
+            except Exception as e:
+                self.bot.resume_hunt()
+                self.auto_boss_instance = None
+                await query.message.reply_text(f"❌ Erro no AutoBoss: {e}")
+
+        # === PAINEL DE CONFIGURAÇÕES (CFG) ===
+        elif data in ["btn_config", "cfg_menu", "cfg_refresh"]:
+            from baiaidle.settings import load_settings
+            settings = load_settings()
+            text = self.format_config_message(settings)
+            try:
+                await query.edit_message_text(text, reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
+            except Exception:
+                await query.message.reply_text(text, reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
+
+        elif data == "cfg_toggle_sales":
+            from baiaidle.settings import get_setting, set_setting, load_settings
+            cur = get_setting("notify_sales", True)
+            set_setting("notify_sales", not cur)
+            settings = load_settings()
+            await query.edit_message_text(self.format_config_message(settings), reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
+
+        elif data == "cfg_toggle_tasks":
+            from baiaidle.settings import get_setting, set_setting, load_settings
+            cur = get_setting("notify_tasks", True)
+            set_setting("notify_tasks", not cur)
+            settings = load_settings()
+            await query.edit_message_text(self.format_config_message(settings), reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
+
+        elif data == "cfg_menu_treino":
+            keyboard = [
+                [
+                    InlineKeyboardButton("10%", callback_data="cfg_set_treino_10"),
+                    InlineKeyboardButton("15%", callback_data="cfg_set_treino_15"),
+                    InlineKeyboardButton("20%", callback_data="cfg_set_treino_20"),
+                ],
+                [
+                    InlineKeyboardButton("25%", callback_data="cfg_set_treino_25"),
+                    InlineKeyboardButton("30%", callback_data="cfg_set_treino_30"),
+                    InlineKeyboardButton("🔙 Voltar", callback_data="btn_config"),
+                ],
+            ]
+            await query.edit_message_text(
+                "⚡ *Selecione o limite de stamina para ir ao treino:*\n_(O bot pausará a hunt e irá treinar quando a stamina atingir este valor)_",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+
+        elif data.startswith("cfg_set_treino_"):
+            from baiaidle.settings import set_setting, load_settings
+            val = int(data.split("_")[-1])
+            set_setting("stamina_treino", val)
+            settings = load_settings()
+            await query.edit_message_text(
+                f"✅ Limite de stamina para treino definido em *{val}%*!\n\n" + self.format_config_message(settings),
+                reply_markup=self.get_config_keyboard(settings),
+                parse_mode="Markdown"
+            )
+
+        elif data == "cfg_menu_retorno":
+            keyboard = [
+                [
+                    InlineKeyboardButton("70%", callback_data="cfg_set_retorno_70"),
+                    InlineKeyboardButton("80%", callback_data="cfg_set_retorno_80"),
+                    InlineKeyboardButton("90%", callback_data="cfg_set_retorno_90"),
+                    InlineKeyboardButton("100%", callback_data="cfg_set_retorno_100"),
+                ],
+                [
+                    InlineKeyboardButton("🔙 Voltar", callback_data="btn_config"),
+                ],
+            ]
+            await query.edit_message_text(
+                "🔋 *Selecione o limite de stamina para retornar à hunt:*\n_(O bot sairá do treino e voltará à hunt quando regenerar até este valor)_",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+
+        elif data.startswith("cfg_set_retorno_"):
+            from baiaidle.settings import set_setting, load_settings
+            val = int(data.split("_")[-1])
+            set_setting("stamina_retorno", val)
+            settings = load_settings()
+            await query.edit_message_text(
+                f"✅ Stamina de retorno definida em *{val}%*!\n\n" + self.format_config_message(settings),
+                reply_markup=self.get_config_keyboard(settings),
+                parse_mode="Markdown"
+            )
+
+        elif data == "cfg_menu_tier":
+            keyboard = [
+                [
+                    InlineKeyboardButton("Tier 3+", callback_data="cfg_set_tier_3"),
+                    InlineKeyboardButton("Tier 4+", callback_data="cfg_set_tier_4"),
+                    InlineKeyboardButton("Tier 5+", callback_data="cfg_set_tier_5"),
+                ],
+                [
+                    InlineKeyboardButton("🔙 Voltar", callback_data="btn_config"),
+                ],
+            ]
+            await query.edit_message_text(
+                "📦 *Selecione o tier mínimo de itens para guardar no baú:*\n_(Itens com tier igual ou superior serão guardados antes de cada venda)_",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+
+        elif data.startswith("cfg_set_tier_"):
+            from baiaidle.settings import set_setting, load_settings
+            val = int(data.split("_")[-1])
+            set_setting("min_tier_stash", val)
+            self.bot.hunt_stats.min_tier_to_stash = val
+            settings = load_settings()
+            await query.edit_message_text(
+                f"✅ Tier mínimo para baú definido em *Tier {val}+*!\n\n" + self.format_config_message(settings),
+                reply_markup=self.get_config_keyboard(settings),
+                parse_mode="Markdown"
+            )
+
+        elif data == "cfg_menu_wd":
+            keyboard = [
+                [
+                    InlineKeyboardButton("5 min", callback_data="cfg_set_wd_5"),
+                    InlineKeyboardButton("10 min", callback_data="cfg_set_wd_10"),
+                    InlineKeyboardButton("15 min", callback_data="cfg_set_wd_15"),
+                    InlineKeyboardButton("20 min", callback_data="cfg_set_wd_20"),
+                ],
+                [
+                    InlineKeyboardButton("🔙 Voltar", callback_data="btn_config"),
+                ],
+            ]
+            await query.edit_message_text(
+                "⏱️ *Selecione o tempo do Watchdog Antitravamento:*\n_(Se passar este tempo sem vendas/progresso durante a hunt, o bot forçará um refresh de recuperação)_",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+
+        elif data.startswith("cfg_set_wd_"):
+            from baiaidle.settings import set_setting, load_settings
+            val = int(data.split("_")[-1])
+            set_setting("watchdog_minutes", val)
+            settings = load_settings()
+            await query.edit_message_text(
+                f"✅ Watchdog Antitravamento definido em *{val} minutos*!\n\n" + self.format_config_message(settings),
+                reply_markup=self.get_config_keyboard(settings),
+                parse_mode="Markdown"
+            )
 
     # ============================================================
     # HANDLERS: ROTINAS EXTRAS (DAILY & RESET)
@@ -1185,6 +1429,8 @@ class TelegramController:
                 return
 
             self.bot.hunt_stats.min_tier_to_stash = new_tier
+            from baiaidle.settings import set_setting
+            set_setting("min_tier_stash", new_tier)
             await self.reply_safe(
                 update,
                 f"✅ *Proteção de Inventário Atualizada!*\n"
@@ -1238,6 +1484,91 @@ class TelegramController:
             except Exception as e:
                 await update.message.reply_text(f"❌ Erro ao executar recuperação: {e}")
 
+    # ============================================================
+    # MÉTODOS AUXILIARES: TECLADOS INLINE & CONFIGURAÇÕES
+    # ============================================================
+
+    def get_quick_action_keyboard(self) -> InlineKeyboardMarkup:
+        """Retorna o teclado inline com os atalhos rápidos das rotinas do bot."""
+        keyboard = [
+            [
+                InlineKeyboardButton("🗺️ Hunts", callback_data="btn_hunts"),
+                InlineKeyboardButton("⚔️ AutoBoss", callback_data="btn_autoboss"),
+            ],
+            [
+                InlineKeyboardButton("🧘‍♂️ Treino", callback_data="btn_treino"),
+                InlineKeyboardButton("🏠 Casa", callback_data="btn_casa"),
+            ],
+            [
+                InlineKeyboardButton("📸 Print", callback_data="btn_print"),
+                InlineKeyboardButton("🔄 Recuperar", callback_data="btn_recuperar"),
+            ],
+            [
+                InlineKeyboardButton("👥 Party", callback_data="btn_party"),
+                InlineKeyboardButton("⚙️ Configurações", callback_data="btn_config"),
+            ],
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    def format_config_message(self, settings: dict) -> str:
+        """Formata o texto de apresentação do Painel de Configurações."""
+        vendas_icon = "🟢 Ativado" if settings.get("notify_sales", True) else "🔴 Desativado"
+        tasks_icon = "🟢 Ativado" if settings.get("notify_tasks", True) else "🔴 Desativado"
+        
+        return (
+            "⚙️ *PAINEL DE CONFIGURAÇÕES RÁPIDAS*\n\n"
+            f"⚡ *Stamina para Treino:* `{settings.get('stamina_treino', 20)}%` (pausa hunt e vai treinar)\n"
+            f"🔋 *Stamina de Retorno:* `{settings.get('stamina_retorno', 100)}%` (volta à hunt pós-treino)\n"
+            f"📦 *Guardar no Baú:* `Tier {settings.get('min_tier_stash', 4)}+`\n"
+            f"⏱️ *Watchdog Antitravamento:* `{settings.get('watchdog_minutes', 10)} min`\n"
+            f"🔔 *Notificar Vendas:* {vendas_icon}\n"
+            f"🎯 *Notificar Tasks (120s):* {tasks_icon}\n\n"
+            "_Toque nos botões abaixo para alterar os parâmetros:_"
+        )
+
+    def get_config_keyboard(self, settings: dict) -> InlineKeyboardMarkup:
+        """Retorna os botões inline para o Painel de Configurações."""
+        vendas_label = "🔔 Vendas: ON" if settings.get("notify_sales", True) else "🔕 Vendas: OFF"
+        tasks_label = "🎯 Tasks: ON" if settings.get("notify_tasks", True) else "🎯 Tasks: OFF"
+
+        keyboard = [
+            [
+                InlineKeyboardButton(f"⚡ Treino ({settings.get('stamina_treino', 20)}%)", callback_data="cfg_menu_treino"),
+                InlineKeyboardButton(f"🔋 Retorno ({settings.get('stamina_retorno', 100)}%)", callback_data="cfg_menu_retorno"),
+            ],
+            [
+                InlineKeyboardButton(f"📦 Baú (Tier {settings.get('min_tier_stash', 4)}+)", callback_data="cfg_menu_tier"),
+                InlineKeyboardButton(f"⏱️ Watchdog ({settings.get('watchdog_minutes', 10)}m)", callback_data="cfg_menu_wd"),
+            ],
+            [
+                InlineKeyboardButton(vendas_label, callback_data="cfg_toggle_sales"),
+                InlineKeyboardButton(tasks_label, callback_data="cfg_toggle_tasks"),
+            ],
+            [
+                InlineKeyboardButton("🔄 Atualizar", callback_data="cfg_refresh"),
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+            ],
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @authorized_only
+    @require_bot_running
+    async def menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Exibe o menu de atalhos rápidos com botões inline."""
+        text = (
+            "🎮 *PAINEL DE ATALHOS RÁPIDOS*\n\n"
+            "Escolha uma ação para executar imediatamente no jogo:"
+        )
+        await self.reply_safe(update, text, reply_markup=self.get_quick_action_keyboard(), parse_mode="Markdown")
+
+    @authorized_only
+    async def config(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Exibe o painel de configurações rápidas."""
+        from baiaidle.settings import load_settings
+        settings = load_settings()
+        text = self.format_config_message(settings)
+        await self.reply_safe(update, text, reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
+
     @authorized_only
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = """
@@ -1269,6 +1600,8 @@ Hunts e Rotinas:
 /casa - Força ida para o Dummie da Casa
 
 Configurações e Manutenção:
+/menu - Menu interativo com botões de atalhos rápidos
+/config - Painel de configurações rápidas (stamina, watchdog, alertas)
 /defaulthunt [nome] - Ver ou definir hunt padrão de retorno pós-treino
 /settier <numero> - Define tier mínimo para proteger item no baú
 /recuperar - Fecha telas de boas-vindas/avisos e recupera sessão pós-refresh
@@ -1322,6 +1655,10 @@ async def main():
     application.add_handler(CommandHandler("passetask", controller.passetask))
     application.add_handler(CommandHandler("reset", controller.reset))
     application.add_handler(CommandHandler("daily", controller.daily))
+    application.add_handler(CommandHandler("menu", controller.menu))
+    application.add_handler(CommandHandler("atalhos", controller.menu))
+    application.add_handler(CommandHandler("config", controller.config))
+    application.add_handler(CommandHandler("painel", controller.config))
     application.add_handler(CommandHandler("defaulthunt", controller.defaulthunt))
     application.add_handler(CommandHandler("settier", controller.settier))
     application.add_handler(CommandHandler("recuperar", controller.recover))

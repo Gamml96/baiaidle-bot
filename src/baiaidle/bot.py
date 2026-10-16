@@ -45,6 +45,7 @@ class GameBot:
         self.session_token = str(uuid.uuid4())[:8]
         self.is_recovering = False
         self.recovery_lock = asyncio.Lock()
+        self.last_activity_time = 0.0
 
         self.running = False
         self.starting = False
@@ -358,12 +359,14 @@ class GameBot:
                     self.hunt_pause_event,
                     self.hunt_stats, # Passa as estatísticas
                     self.on_message,
+                    bot=self,
                 )
             )
             
             # ====================================================
             # RASTREADOR DE SESSÃO & LIMPEZA DE BOAS-VINDAS
             # ====================================================
+            self.touch_activity()
             await init_session_tracker(self.tab, self.session_token)
             await dismiss_welcome_and_popups(self.tab)
 
@@ -585,3 +588,8 @@ class GameBot:
         e fechamento de telas de boas-vindas / comunicados.
         """
         return await ensure_page_session(self, on_message=self.on_message)
+
+    def touch_activity(self):
+        """Atualiza o timestamp de atividade para o Watchdog Antitravamento."""
+        import time
+        self.last_activity_time = time.time()
