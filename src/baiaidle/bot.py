@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 
 from baiaidle.config import (
     BAIAKIDLE_LOGIN,
@@ -14,6 +15,13 @@ from baiaidle.browser import (
 from baiaidle.login import login
 from baiaidle.actions import validate_sale, get_party_info, extract_member_level
 from baiaidle.sell import run_sell, HuntStats
+from baiaidle.recovery import (
+    init_session_tracker,
+    dismiss_welcome_and_popups,
+    monitor_page_recovery,
+    ensure_page_session,
+)
+
 
 
 class GameBot:
@@ -31,6 +39,12 @@ class GameBot:
         
         # Tarefa em segundo plano para vigiar o Cloudflare
         self.cloudflare_monitor_task = None
+
+        # Tarefa em segundo plano para vigiar refresh da página e telas de boas-vindas
+        self.page_monitor_task = None
+        self.session_token = str(uuid.uuid4())[:8]
+        self.is_recovering = False
+        self.recovery_lock = asyncio.Lock()
 
         self.running = False
         self.starting = False
@@ -347,9 +361,20 @@ class GameBot:
                 )
             )
             
+            # ====================================================
+            # RASTREADOR DE SESSÃO & LIMPEZA DE BOAS-VINDAS
+            # ====================================================
+            await init_session_tracker(self.tab, self.session_token)
+            await dismiss_welcome_and_popups(self.tab)
+
             # Inicia o vigia de HP paralelamente
             self.party_monitor_task = asyncio.create_task(
                 self.monitor_party_health()
+            )
+
+            # Inicia o vigia de refresh da página e popups em segundo plano
+            self.page_monitor_task = asyncio.create_task(
+                monitor_page_recovery(self)
             )
 
             print(
@@ -454,6 +479,19 @@ class GameBot:
             self.cloudflare_monitor_task = None
 
         # ========================================================
+        # ENCERRAR VIGIA DE REFRESH / BOAS-VINDAS
+        # ========================================================
+
+        if self.page_monitor_task:
+            if not self.page_monitor_task.done():
+                self.page_monitor_task.cancel()
+                try:
+                    await self.page_monitor_task
+                except asyncio.CancelledError:
+                    pass
+            self.page_monitor_task = None
+
+        # ========================================================
         # ENCERRAR AGENDAMENTO DA DAILY REWARD
         # ========================================================
         try:
@@ -536,3 +574,14 @@ class GameBot:
             self.running
             and self.hunt_pause_event.is_set()
         )
+
+    # ============================================================
+    # RECUPERAÇÃO MANUAL DE SESSÃO / FECHAR POPUPS
+    # ============================================================
+
+    async def trigger_recovery(self) -> tuple[bool, str]:
+        """
+        Dispara manualmente a verificação de refresh, reconexão de sessão
+        e fechamento de telas de boas-vindas / comunicados.
+        """
+        return await ensure_page_session(self, on_message=self.on_message)

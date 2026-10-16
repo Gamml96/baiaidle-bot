@@ -20,6 +20,7 @@ from baiaidle.hunts import get_current_hunt, change_hunt, go_to_training, go_to_
 from baiaidle.guild import get_tracked_task_progress, process_guild_tasks
 from baiaidle.codex import process_codex_routine
 from baiaidle.battlepass import get_tracked_battlepass_progress, process_battlepass
+from baiaidle.recovery import dismiss_welcome_and_popups
 
 # ================================================================
 # CONFIGURAÇÃO
@@ -905,6 +906,14 @@ async def run_sell(
                 
                 continue 
             # ====================================================
+
+            # ====================================================
+            # LIMPEZA PREVENTIVA DE TELAS RESIDUAIS / BOAS-VINDAS
+            # ====================================================
+            try:
+                await dismiss_welcome_and_popups(tab, max_passes=1)
+            except Exception:
+                pass
 
             # ====================================================
             # DETECÇÃO AUTOMÁTICA DE LOCALIZAÇÃO (TREINO / CASA)

@@ -242,6 +242,7 @@ class TelegramController:
             BotCommand("daily", "Tentar coletar a recompensa diária"),
             BotCommand("defaulthunt", "Ver ou definir hunt padrão pós-treino"),
             BotCommand("settier", "Define a raridade para proteger"),
+            BotCommand("recuperar", "Fechar avisos/boas-vindas e recuperar sessão"),
             BotCommand("print", "Tirar um print da tela do jogo"),
             BotCommand("help", "Mostrar ajuda"),
         ]
@@ -1214,6 +1215,30 @@ class TelegramController:
         )
 
     @authorized_only
+    @require_bot_running
+    async def recover(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Verifica e recupera a página, fechando telas de boas-vindas, recompensa offline e reconectando se necessário."""
+        await update.message.reply_text("🔍 *Verificando estado da página, telas de boas-vindas e sessão...*", parse_mode="Markdown")
+
+        async with self.action_lock:
+            try:
+                success, msg = await self.bot.trigger_recovery()
+                if success:
+                    await self.reply_safe(
+                        update,
+                        f"✅ *Rotina de Recuperação Executada!*\n{msg}",
+                        parse_mode="Markdown",
+                    )
+                else:
+                    await self.reply_safe(
+                        update,
+                        f"⚠️ *Aviso na Recuperação:*\n{msg}",
+                        parse_mode="Markdown",
+                    )
+            except Exception as e:
+                await update.message.reply_text(f"❌ Erro ao executar recuperação: {e}")
+
+    @authorized_only
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = """
 🤖 BAIAK IDLE BOT
@@ -1246,6 +1271,8 @@ Hunts e Rotinas:
 Configurações e Manutenção:
 /defaulthunt [nome] - Ver ou definir hunt padrão de retorno pós-treino
 /settier <numero> - Define tier mínimo para proteger item no baú
+/recuperar - Fecha telas de boas-vindas/avisos e recupera sessão pós-refresh
+/fechar - Atalho para fechar telas e avisos em tela
 /reset - Zera o Hunt Analyzer no jogo e estatísticas do bot
 /debughunt - Salva o HTML do modal de Hunts para diagnóstico
 /help - Mostra esta mensagem de ajuda
@@ -1297,6 +1324,8 @@ async def main():
     application.add_handler(CommandHandler("daily", controller.daily))
     application.add_handler(CommandHandler("defaulthunt", controller.defaulthunt))
     application.add_handler(CommandHandler("settier", controller.settier))
+    application.add_handler(CommandHandler("recuperar", controller.recover))
+    application.add_handler(CommandHandler("fechar", controller.recover))
     application.add_handler(CommandHandler("print", controller.print_screen))
     application.add_handler(CommandHandler("help", controller.help))
 

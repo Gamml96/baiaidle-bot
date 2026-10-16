@@ -280,6 +280,11 @@ async def login(tab, login: str, password: str) -> bool:
         print("SESSÃO JÁ AUTENTICADA.")
         print("Não será necessário fazer login novamente.")
         await collect_offline_reward(tab)
+        try:
+            from baiaidle.recovery import dismiss_welcome_and_popups
+            await dismiss_welcome_and_popups(tab)
+        except Exception:
+            pass
         return True
 
     print("Sessão não autenticada.\nAbrindo modal de login...")
@@ -360,6 +365,11 @@ async def login(tab, login: str, password: str) -> bool:
     if login_successful:
         print("\nLOGIN REALIZADO COM SUCESSO!")
         await collect_offline_reward(tab)
+        try:
+            from baiaidle.recovery import dismiss_welcome_and_popups
+            await dismiss_welcome_and_popups(tab)
+        except Exception:
+            pass
         return True
 
     # Se falhou, verifica o estado atual do formulário para debug
