@@ -205,34 +205,16 @@ async def _start_boss_battle(controller, indices: list[int]):
     controller.auto_boss_instance.on_finished = controller.autoboss_finished
 
     try:
-        charges, bosses = await get_boss_list(controller.bot.tab)
-        boss_by_index = {b.index: b for b in bosses}
-
-        # Filtra apenas bosses que estão vivos / disponíveis
-        valid_indices = [idx for idx in indices if idx in boss_by_index]
-        skipped = [idx for idx in indices if idx not in boss_by_index]
-
-        if not valid_indices:
-            msg = f"⚠️ *AutoBoss Noturno:* Nenhum dos bosses da lista predefinida (`{indices}`) está disponível no momento (Cargas: {charges})."
-            controller.bot.resume_hunt()
-            controller.auto_boss_instance = None
-            await controller.send_hunt_msg(msg)
-            return
-
-        if skipped:
-            await controller.send_hunt_msg(
-                f"ℹ️ *Aviso:* Bosses `{skipped}` não estão disponíveis no momento. Executando os disponíveis: `{valid_indices}` (Cargas: {charges})."
-            )
-
-        success, message = await controller.auto_boss_instance.start(valid_indices)
+        success, message = await controller.auto_boss_instance.start(indices)
         if not success:
             controller.bot.resume_hunt()
             controller.auto_boss_instance = None
-            await controller.send_hunt_msg(f"❌ Falha ao iniciar AutoBoss automático: {message}")
+            await controller.send_hunt_msg(f"⚠️ *AutoBoss Noturno:* {message}")
         else:
             preset = load_autoboss_preset()
             preset["last_run_date"] = str(datetime.now().date())
             save_autoboss_preset(preset)
+            await controller.send_hunt_msg(f"{message}\n\n🏹 Hunt pausada.")
 
     except Exception as e:
         controller.bot.resume_hunt()

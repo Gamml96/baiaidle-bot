@@ -34,6 +34,10 @@ class AutoBossState:
         default_factory=list
     )
 
+    skipped: list[int] = field(
+        default_factory=list
+    )
+
     results: dict[int, str] = field(
         default_factory=dict
     )
@@ -511,6 +515,28 @@ async def close_boss_menu(
 
     js = """
     (() => {
+
+        const confirmNo =
+            document.getElementById(
+                "confirm-no"
+            );
+
+        const bdiff =
+            document.querySelector(
+                ".bdiff"
+            );
+
+        if (confirmNo && bdiff) {
+
+            try {
+
+                confirmNo.click();
+
+            } catch (e) {
+
+            }
+
+        }
 
         const button =
             document.getElementById(
@@ -1986,6 +2012,375 @@ async def wait_for_bossbar_name(
 
 
 # ================================================================
+# CONFIRMAR DIFICULDADE DO BOSS ("INICIAR LUTA")
+# ================================================================
+
+async def confirm_boss_difficulty(
+    tab,
+    boss_name: str,
+    timeout: float = 8,
+) -> dict:
+    """
+    Aguarda e confirma a tela de seleção de dificuldade do boss.
+    Após clicar em 'Enfrentar', o jogo exibe um modal de dificuldade:
+      - Container: #confirm-modal-body contendo .bdiff
+      - Botão de confirmação: #confirm-yes (texto 'Iniciar luta')
+
+    Esta função verifica se o modal está presente e aciona o botão
+    'Iniciar luta' (#confirm-yes). Se a Bossbar já tiver aparecido,
+    reconhece que o combate já foi iniciado diretamente.
+    """
+
+    print()
+    print(
+        "Aguardando modal de dificuldade do boss "
+        "ou início da luta..."
+    )
+
+    start = asyncio.get_running_loop().time()
+    safe_name = json.dumps(
+        boss_name,
+        ensure_ascii=False
+    )
+
+    while True:
+
+        js_check = f"""
+        (() => {{
+
+            const expected =
+                {safe_name}
+                    .trim()
+                    .toLowerCase();
+
+            // 1. Verifica se a bossbar já confirmou o boss
+            const bossbarNameEl =
+                document.querySelector(
+                    ".bossbar-name"
+                );
+
+            const actualBossbar =
+                bossbarNameEl
+                    ? (
+                        bossbarNameEl.innerText
+                        ||
+                        bossbarNameEl.textContent
+                        ||
+                        ""
+                    ).trim()
+                    : null;
+
+            if (
+                actualBossbar
+                &&
+                actualBossbar.toLowerCase() === expected
+            ) {{
+
+                return JSON.stringify({{
+                    bossbar_matched: true,
+                    bossbar_name: actualBossbar
+                }});
+
+            }}
+
+            // 2. Verifica se o modal de dificuldade está presente
+            const confirmBody =
+                document.getElementById(
+                    "confirm-modal-body"
+                );
+
+            const bdiff =
+                document.querySelector(
+                    ".bdiff"
+                );
+
+            const confirmYes =
+                document.getElementById(
+                    "confirm-yes"
+                );
+
+            const isVisible = (el) => {{
+
+                if (!el) return false;
+
+                const style =
+                    window.getComputedStyle(el);
+
+                return (
+                    style.display !== "none"
+                    &&
+                    style.visibility !== "hidden"
+                    &&
+                    (
+                        el.offsetWidth > 0
+                        ||
+                        el.offsetHeight > 0
+                        ||
+                        el.getClientRects().length > 0
+                    )
+                );
+
+            }};
+
+            const hasBdiff = !!(
+                bdiff
+                ||
+                (confirmBody && confirmBody.querySelector(".bdiff"))
+            );
+
+            const hasConfirmYes =
+                isVisible(confirmYes);
+
+            let diffVal = null;
+
+            if (hasBdiff) {{
+
+                const valEl =
+                    document.querySelector(
+                        ".bdiff-value"
+                    );
+
+                if (valEl) {{
+
+                    diffVal =
+                        (
+                            valEl.innerText
+                            ||
+                            valEl.textContent
+                            ||
+                            ""
+                        ).trim();
+
+                }}
+
+            }}
+
+            const btnText =
+                confirmYes
+                    ? (
+                        confirmYes.innerText
+                        ||
+                        confirmYes.textContent
+                        ||
+                        ""
+                    ).trim()
+                    : "";
+
+            return JSON.stringify({{
+                bossbar_matched: false,
+                has_bdiff: hasBdiff,
+                confirm_yes_visible: hasConfirmYes,
+                confirm_btn_text: btnText,
+                difficulty_value: diffVal
+            }});
+
+        }})()
+        """
+
+        try:
+
+            result = await tab.execute_script(
+                js_check
+            )
+
+            data = parse_json_result(
+                result
+            )
+
+        except Exception as e:
+
+            print(
+                "Erro ao verificar modal de dificuldade:",
+                repr(e)
+            )
+
+            data = None
+
+        if data:
+
+            if data.get("bossbar_matched"):
+
+                print(
+                    "[OK] Combate já iniciado diretamente "
+                    "(Bossbar ativa)."
+                )
+
+                return {
+                    "success": True,
+                    "action": "already_started"
+                }
+
+            # Modal de dificuldade detectado ou botão Iniciar Luta visível
+            if (
+                data.get("has_bdiff")
+                or
+                data.get("confirm_yes_visible")
+            ):
+
+                diff_val = (
+                    data.get("difficulty_value")
+                    or "padrão"
+                )
+
+                btn_text = (
+                    data.get("confirm_btn_text")
+                    or "Iniciar luta"
+                )
+
+                print(
+                    f"Modal de dificuldade detectado "
+                    f"(dificuldade atual: {diff_val})."
+                )
+
+                print(
+                    f"Clicando em '{btn_text}' "
+                    f"(#confirm-yes)..."
+                )
+
+                # Tentativa 1: JavaScript
+                js_click = """
+                (() => {
+
+                    const btn =
+                        document.getElementById(
+                            "confirm-yes"
+                        );
+
+                    if (!btn) {
+
+                        return JSON.stringify({
+                            success: false,
+                            error: "#confirm-yes não encontrado"
+                        });
+
+                    }
+
+                    try {
+
+                        btn.focus();
+
+                    } catch (e) {
+
+                    }
+
+                    try {
+
+                        btn.dispatchEvent(
+                            new MouseEvent(
+                                "mousedown",
+                                { bubbles: true }
+                            )
+                        );
+
+                        btn.dispatchEvent(
+                            new MouseEvent(
+                                "mouseup",
+                                { bubbles: true }
+                            )
+                        );
+
+                    } catch (e) {
+
+                    }
+
+                    btn.click();
+
+                    return JSON.stringify({
+                        success: true
+                    });
+
+                })()
+                """
+
+                try:
+
+                    res = await tab.execute_script(
+                        js_click
+                    )
+
+                    click_data = parse_json_result(
+                        res
+                    )
+
+                except Exception as e:
+
+                    print(
+                        "Erro no clique JS em #confirm-yes:",
+                        repr(e)
+                    )
+
+                    click_data = None
+
+                if click_data and click_data.get("success"):
+
+                    print(
+                        "Clique JS em #confirm-yes executado."
+                    )
+
+                    await asyncio.sleep(0.3)
+
+                    return {
+                        "success": True,
+                        "action": "clicked_js"
+                    }
+
+                # Tentativa 2: Pydoll
+                print(
+                    "Tentando clique Pydoll em #confirm-yes..."
+                )
+
+                try:
+
+                    btn = await tab.find(
+                        id="confirm-yes"
+                    )
+
+                    if btn:
+
+                        await btn.click(
+                            humanize=True
+                        )
+
+                        print(
+                            "Clique Pydoll em #confirm-yes executado."
+                        )
+
+                        await asyncio.sleep(0.3)
+
+                        return {
+                            "success": True,
+                            "action": "clicked_pydoll"
+                        }
+
+                except Exception as e:
+
+                    print(
+                        "Erro no clique Pydoll em #confirm-yes:",
+                        repr(e)
+                    )
+
+        elapsed = (
+            asyncio.get_running_loop().time()
+            - start
+        )
+
+        if elapsed >= timeout:
+
+            print(
+                "Tempo limite aguardando tela de "
+                "dificuldade ou bossbar."
+            )
+
+            return {
+                "success": False,
+                "error":
+                    "Timeout aguardando tela de dificuldade"
+            }
+
+        await asyncio.sleep(0.2)
+
+
+# ================================================================
 # CLICAR ENFRENTAR
 # ================================================================
 
@@ -2253,6 +2648,12 @@ async def click_fight_button(
             "Clique JavaScript executado."
         )
 
+        await confirm_boss_difficulty(
+            tab,
+            boss_name,
+            timeout=8
+        )
+
         confirmed = await wait_for_bossbar_name(
             tab,
             boss_name,
@@ -2262,7 +2663,7 @@ async def click_fight_button(
         if confirmed:
 
             print(
-                "✅ JAVASCRIPT CONFIRMADO "
+                "[OK] JAVASCRIPT CONFIRMADO "
                 "PELA BOSSBAR."
             )
 
@@ -2274,14 +2675,14 @@ async def click_fight_button(
             }
 
         print(
-            "⚠️ JavaScript executou, "
+            "[AVISO] JavaScript executou, "
             "mas Bossbar não confirmou."
         )
 
     else:
 
         print(
-            "⚠️ JavaScript não conseguiu "
+            "[AVISO] JavaScript não conseguiu "
             "clicar no botão."
         )
 
@@ -2330,7 +2731,7 @@ async def click_fight_button(
     if not button:
 
         print(
-            "❌ Pydoll não encontrou "
+            "[ERRO] Pydoll não encontrou "
             "o botão."
         )
 
@@ -2359,7 +2760,7 @@ async def click_fight_button(
     except Exception as e:
 
         print(
-            "❌ ERRO NO CLIQUE PYDOLL:"
+            "[ERRO] NO CLIQUE PYDOLL:"
         )
 
         return {
@@ -2372,6 +2773,12 @@ async def click_fight_button(
     # CONFIRMAR PYDOLL
     # ============================================================
 
+    await confirm_boss_difficulty(
+        tab,
+        boss_name,
+        timeout=8
+    )
+
     confirmed = await wait_for_bossbar_name(
         tab,
         boss_name,
@@ -2382,7 +2789,7 @@ async def click_fight_button(
 
         print()
         print(
-            "✅ PYDOLL CONFIRMADO "
+            "[OK] PYDOLL CONFIRMADO "
             "PELA BOSSBAR."
         )
 
@@ -2395,7 +2802,7 @@ async def click_fight_button(
 
     print()
     print(
-        "❌ PYDOLL TAMBÉM NÃO "
+        "[ERRO] PYDOLL TAMBÉM NÃO "
         "FOI CONFIRMADO."
     )
 
@@ -2858,31 +3265,48 @@ class AutoBoss:
             for boss in bosses
         }
 
-        invalid = [
+        # Filtra os índices que estão disponíveis vs os indisponíveis/inválidos
+        valid_indices = [
+            index
+            for index in indices
+            if index in boss_by_index
+        ]
+
+        skipped = [
             index
             for index in indices
             if index not in boss_by_index
         ]
 
-        if invalid:
+        if not valid_indices:
+
+            skipped_str = (
+                ", ".join(map(str, skipped))
+                if skipped
+                else "nenhum"
+            )
 
             return (
                 False,
-                "Boss(es) indisponível(is) "
-                "ou índice(s) inválido(s): "
-                + ", ".join(
-                    map(
-                        str,
-                        invalid
-                    )
-                )
+                "Nenhum dos bosses informados está "
+                "disponível no momento.\n"
+                f"⚡ Cargas: {charges} | "
+                f"⏭️ Pulados (indisponíveis): {skipped_str}"
             )
 
         self.state.queue = list(
-            indices
+            valid_indices
+        )
+
+        self.state.skipped = list(
+            skipped
         )
 
         self.state.results.clear()
+
+        # Registra os bosses pulados nos resultados
+        for s_idx in skipped:
+            self.state.results[s_idx] = "⏭️"
 
         self.state.current_position = 0
 
@@ -2904,14 +3328,22 @@ class AutoBoss:
 
         names = [
             boss_by_index[index].name
-            for index in indices
+            for index in valid_indices
         ]
 
         message = (
             "⚔️ *AutoBoss iniciado!*\n"
             f"⚡ Cargas disponíveis: {charges}\n\n"
-            "*Fila:*\n"
         )
+
+        if skipped:
+
+            message += (
+                "⚠️ *Boss(es) indisponível(is) pulado(s):* "
+                f"`{', '.join(map(str, skipped))}`\n\n"
+            )
+
+        message += "*Fila:*\n"
 
         for position, name in enumerate(
             names,
@@ -3041,14 +3473,14 @@ class AutoBoss:
                     or not info.get("found")
                 ):
 
-                    self.state.results[index] = "❌"
+                    self.state.results[index] = "⏭️"
                     await close_boss_menu(
                         self.tab
                     )
 
                     await self.send_message(
-                        f"❌ Boss não encontrado: "
-                        f"{boss.name}"
+                        f"⏭️ Boss não encontrado: *{boss.name}* (índice {index}).\n"
+                        f"Pulando para o próximo boss da lista..."
                     )
 
                     continue
@@ -3089,14 +3521,25 @@ class AutoBoss:
                     ).strip() != ""
                 ):
 
-                    self.state.results[index] = "❌"
+                    status_motivo = (
+                        info.get("status") or ""
+                    ).strip()
+
+                    motivo_str = (
+                        f" ({status_motivo})"
+                        if status_motivo
+                        else " (botão bloqueado)"
+                    )
+
+                    self.state.results[index] = "⏭️"
                     await close_boss_menu(
                         self.tab
                     )
 
                     await self.send_message(
-                        f"❌ Boss indisponível: "
-                        f"*{boss.name}*"
+                        f"⏭️ Boss indisponível: *{boss.name}* "
+                        f"(índice {index}){motivo_str}.\n"
+                        f"Pulando para o próximo boss da lista..."
                     )
 
                     continue
@@ -3123,7 +3566,8 @@ class AutoBoss:
                     await self.send_message(
                         f"❌ Não foi possível "
                         f"abrir o card de "
-                        f"{boss.name}."
+                        f"*{boss.name}* (índice {index}).\n"
+                        f"Pulando para o próximo boss da lista..."
                     )
 
                     continue
@@ -3163,8 +3607,8 @@ class AutoBoss:
                     self.state.results[index] = "❌"
                     await self.send_message(
                         f"❌ Não foi possível "
-                        f"iniciar {boss.name}.\n\n"
-                        f"{error}"
+                        f"iniciar *{boss.name}* ({error}).\n"
+                        f"Pulando para o próximo boss da lista..."
                     )
 
                     await close_boss_menu(
@@ -3254,6 +3698,12 @@ class AutoBoss:
                     b_name = boss_by_index[idx].name
                     res_emoji = self.state.results.get(idx, "➖")
                     summary += f"{res_emoji} {b_name}\n"
+
+                if self.state.skipped:
+                    summary += (
+                        f"\n⏭️ *Pulados no início (indisponíveis):* "
+                        f"`{', '.join(map(str, self.state.skipped))}`\n"
+                    )
 
                 await self.send_message(summary)
 
