@@ -59,6 +59,8 @@ class HuntStats:
     current_xp: int = 0
     min_tier_to_stash: int = 4
     force_action: str | None = None
+    force_sell: bool = False
+    manual_hunt_override: bool = False
     codex_progress: str = "0%"
     last_task_report: float = 0.0
     default_hunt: str = DEFAULT_HUNT
@@ -84,6 +86,8 @@ class HuntStats:
         self.sales = 0
         self.current_xp = 0
         self.force_action = None
+        self.force_sell = False
+        self.manual_hunt_override = False
         self.codex_progress = "0%"
         self.last_task_report = 0.0
         self.last_crystal_coins = 0
@@ -726,11 +730,15 @@ async def execute_sale(
 # GERENCIADOR DE TREINO
 # ================================================================
 
-async def manage_training(tab, stop_event, pause_event, on_message, current_hunt, already_there=False, bot=None):
+async def manage_training(tab, stop_event, pause_event, on_message, current_hunt, already_there=False, bot=None, stats=None):
     """
     Controla o ciclo do bot enquanto a stamina regenera.
     Acorda a cada 60s, mas avisa o Telegram apenas a cada 10 minutos.
+    Retorna imediatamente se o jogador sair do treino (ex: /hunt, inline button ou manual).
     """
+    if not stats and bot and hasattr(bot, "hunt_stats"):
+        stats = bot.hunt_stats
+
     if not already_there:
         success = await go_to_training(tab)
         if not success:
@@ -744,26 +752,49 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
             await on_message(f"🧘‍♂️ *Chegou ao Treino Online!*\n⚡ Stamina atual: `{init_stam}`. Treinando até `{target_ret}%`.")
         
     training = True
-    if bot and hasattr(bot, "hunt_stats"):
-        bot.hunt_stats.is_in_training = True
-        bot.hunt_stats.training_type = "treino"
+    if stats:
+        stats.is_in_training = True
+        stats.training_type = "treino"
     last_report_time = asyncio.get_running_loop().time()
     
     while training and not stop_event.is_set():
         if not pause_event.is_set():
             await pause_event.wait()
-            continue
+            if stop_event.is_set():
+                break
+
+        # Se houve comando externo durante a pausa (/hunt ou força de ação)
+        if stats and (not stats.is_in_training or stats.force_sell or stats.force_action):
+            print("[Treino Online] Treino interrompido externamente (comando /hunt ou ação solicitada).")
+            training = False
+            break
             
         for _ in range(60):
             if stop_event.is_set() or not pause_event.is_set():
                 break
+            if stats and (not stats.is_in_training or stats.force_sell or stats.force_action):
+                print("[Treino Online] Interrupção detectada durante sleep. Saindo do treino imediatamente.")
+                training = False
+                break
             await asyncio.sleep(1)
             
-        if stop_event.is_set() or not pause_event.is_set():
+        if stop_event.is_set() or not pause_event.is_set() or not training:
             continue
 
         if bot and hasattr(bot, "touch_activity"):
             bot.touch_activity()
+
+        # Verifica se o personagem já saiu da sala de treino (ex: /hunt manual ou botão Telegram)
+        current_loc = await get_current_hunt(tab, timeout=0)
+        is_train, _ = is_training_location(current_loc)
+        if not is_train:
+            print(f"[Treino Online] Personagem não está mais no treino (Local atual: {current_loc}). Retornando ao ciclo principal.")
+            if stats:
+                stats.is_in_training = False
+                stats.training_type = ""
+                stats.force_sell = True
+            training = False
+            break
             
         hud_data = await get_hud_data(tab)
         current_stam_str = hud_data.get("stamina_pct", "0%")
@@ -788,9 +819,10 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
                     print(f"⚠️ Falha ao voltar para a Hunt. Tentando novamente em 5s... Erro: {msg_viagem}")
                     await asyncio.sleep(5)
                     
-            if bot and hasattr(bot, "hunt_stats"):
-                bot.hunt_stats.is_in_training = False
-                bot.hunt_stats.training_type = ""
+            if stats:
+                stats.is_in_training = False
+                stats.training_type = ""
+                stats.force_sell = True
             return True
             
         if now - last_report_time >= 600:
@@ -805,13 +837,20 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
             if on_message:
                 await on_message(report_msg)
                 
+    if stats:
+        stats.is_in_training = False
+        stats.training_type = ""
     return True
 
-async def manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=False, already_there=False, bot=None):
+async def manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=False, already_there=False, bot=None, stats=None):
     """
     Controla o ciclo do bot na Casa enquanto a stamina regenera.
     Acorda a cada 60s, mas avisa o Telegram apenas a cada 10 minutos.
+    Retorna imediatamente se o jogador sair da Casa (ex: /hunt, inline button ou manual).
     """
+    if not stats and bot and hasattr(bot, "hunt_stats"):
+        stats = bot.hunt_stats
+
     if not already_there:
         success = await go_to_house(tab)
         if not success:
@@ -825,26 +864,49 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
             await on_message(f"🏠 *Entrou na Casa com sucesso!*\n⚡ Stamina atual: `{init_stam}`. Treinando até `{target_ret}%`.")
         
     training = True
-    if bot and hasattr(bot, "hunt_stats"):
-        bot.hunt_stats.is_in_training = True
-        bot.hunt_stats.training_type = "casa"
+    if stats:
+        stats.is_in_training = True
+        stats.training_type = "casa"
     last_report_time = asyncio.get_running_loop().time()
     
     while training and not stop_event.is_set():
         if not pause_event.is_set():
             await pause_event.wait()
-            continue
+            if stop_event.is_set():
+                break
+
+        # Se houve comando externo durante a pausa (/hunt ou força de ação)
+        if stats and (not stats.is_in_training or stats.force_sell or stats.force_action):
+            print("[Casa Dummies] Treino interrompido externamente (comando /hunt ou ação solicitada).")
+            training = False
+            break
             
         for _ in range(60):
             if stop_event.is_set() or not pause_event.is_set():
                 break
+            if stats and (not stats.is_in_training or stats.force_sell or stats.force_action):
+                print("[Casa Dummies] Interrupção detectada durante sleep. Saindo da casa imediatamente.")
+                training = False
+                break
             await asyncio.sleep(1)
             
-        if stop_event.is_set() or not pause_event.is_set():
+        if stop_event.is_set() or not pause_event.is_set() or not training:
             continue
 
         if bot and hasattr(bot, "touch_activity"):
             bot.touch_activity()
+
+        # Verifica se o personagem já saiu da casa (ex: /hunt manual ou botão Telegram)
+        current_loc = await get_current_hunt(tab, timeout=0)
+        is_train, _ = is_training_location(current_loc)
+        if not is_train:
+            print(f"[Casa Dummies] Personagem não está mais na Casa (Local atual: {current_loc}). Retornando ao ciclo principal.")
+            if stats:
+                stats.is_in_training = False
+                stats.training_type = ""
+                stats.force_sell = True
+            training = False
+            break
             
         hud_data = await get_hud_data(tab)
         current_stam_str = hud_data.get("stamina_pct", "0%")
@@ -869,9 +931,10 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
                     print(f"⚠️ Falha ao voltar para a Hunt. Tentando novamente em 5s... Erro: {msg_viagem}")
                     await asyncio.sleep(5)
 
-            if bot and hasattr(bot, "hunt_stats"):
-                bot.hunt_stats.is_in_training = False
-                bot.hunt_stats.training_type = ""
+            if stats:
+                stats.is_in_training = False
+                stats.training_type = ""
+                stats.force_sell = True
             return True
             
         if now - last_report_time >= 600:
@@ -886,6 +949,9 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
             if on_message:
                 await on_message(report_msg)
                 
+    if stats:
+        stats.is_in_training = False
+        stats.training_type = ""
     return True
 
 # ================================================================
@@ -921,254 +987,279 @@ async def run_sell(
     try:
 
         while not stop_event.is_set():
-
-            # ====================================================
-            # INTERRUPÇÃO MANUAL (VIA TELEGRAM)
-            # ====================================================
-            if stats.force_action:
-                action = stats.force_action
-                stats.force_action = None
-                
-                current_hunt = await resolve_target_hunt(tab, stats)
-                    
-                if action == "casa":
-                    if on_message:
-                        await on_message("🏠 Iniciando ida manual para a Casa...")
-                    
-                    house_success = await manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=True, bot=bot)
-                    if not house_success:
-                        if on_message:
-                            await on_message("❌ Casa indisponível. Redirecionando para o Treino Online padrão...")
-                        await manage_training(tab, stop_event, pause_event, on_message, current_hunt, bot=bot)
-                        
-                elif action == "treino":
-                    if on_message:
-                        await on_message("🧘‍♂️ Iniciando ida manual para o Treino Online...")
-                    await manage_training(tab, stop_event, pause_event, on_message, current_hunt, bot=bot)
-                
-                continue 
-            # ====================================================
-
-            # ====================================================
-            # LIMPEZA PREVENTIVA DE TELAS RESIDUAIS / BOAS-VINDAS
-            # ====================================================
             try:
-                await dismiss_welcome_and_popups(tab, max_passes=1)
-            except Exception:
-                pass
+                # ====================================================
+                # INTERRUPÇÃO MANUAL (VIA TELEGRAM)
+                # ====================================================
+                if stats.force_action:
+                    action = stats.force_action
+                    stats.force_action = None
+                    
+                    current_hunt = await resolve_target_hunt(tab, stats)
+                        
+                    if action == "casa":
+                        if on_message:
+                            await on_message("🏠 Iniciando ida manual para a Casa...")
+                        
+                        house_success = await manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=True, bot=bot, stats=stats)
+                        if not house_success:
+                            if on_message:
+                                await on_message("❌ Casa indisponível. Redirecionando para o Treino Online padrão...")
+                            await manage_training(tab, stop_event, pause_event, on_message, current_hunt, bot=bot, stats=stats)
+                            
+                    elif action == "treino":
+                        if on_message:
+                            await on_message("🧘‍♂️ Iniciando ida manual para o Treino Online...")
+                        await manage_training(tab, stop_event, pause_event, on_message, current_hunt, bot=bot, stats=stats)
+                    
+                    continue 
+                # ====================================================
 
-            # ====================================================
-            # DETECÇÃO AUTOMÁTICA DE LOCALIZAÇÃO (TREINO / CASA)
-            # ====================================================
-            current_loc = await get_current_hunt(tab, timeout=2.0)
-            is_training, train_type = is_training_location(current_loc)
-            if is_training:
-                stats.is_in_training = True
-                stats.training_type = train_type
-                hud_data = await get_hud_data(tab)
-                stam_pct = parse_clean_int(hud_data.get("stamina_pct", "0%"))
-                stam_time = hud_data.get("stamina_time", "00:00")
-                current_minutes = parse_stamina_time_to_minutes(stam_time)
-                
-                target_retorno = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
-                is_full = (stam_pct >= target_retorno) or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES)
-                target_hunt = stats.default_hunt or DEFAULT_HUNT
+                # ====================================================
+                # LIMPEZA PREVENTIVA DE TELAS RESIDUAIS / BOAS-VINDAS
+                # ====================================================
+                try:
+                    await dismiss_welcome_and_popups(tab, max_passes=1)
+                except Exception:
+                    pass
 
-                if is_full:
-                    msg = f"🔋 Personagem detectado no {current_loc} com Stamina cheia ({stam_pct}%). Retornando para a hunt padrão: {target_hunt}."
-                    print(msg)
-                    if on_message:
-                        await on_message(f"✅ {msg}")
-                    await change_hunt(tab, target_hunt)
+                # ====================================================
+                # DETECÇÃO AUTOMÁTICA DE LOCALIZAÇÃO (TREINO / CASA)
+                # ====================================================
+                current_loc = await get_current_hunt(tab, timeout=2.0)
+                is_training, train_type = is_training_location(current_loc)
+                if is_training:
+                    stats.is_in_training = True
+                    stats.training_type = train_type
+                    hud_data = await get_hud_data(tab)
+                    stam_pct = parse_clean_int(hud_data.get("stamina_pct", "0%"))
+                    stam_time = hud_data.get("stamina_time", "00:00")
+                    current_minutes = parse_stamina_time_to_minutes(stam_time)
+                    
+                    target_retorno = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
+                    is_full = (stam_pct >= target_retorno) or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES)
+                    target_hunt = stats.default_hunt or DEFAULT_HUNT
+
+                    if is_full:
+                        msg = f"🔋 Personagem detectado no {current_loc} com Stamina cheia ({stam_pct}%). Retornando para a hunt padrão: {target_hunt}."
+                        print(msg)
+                        if on_message:
+                            await on_message(f"✅ {msg}")
+                        await change_hunt(tab, target_hunt)
+                        stats.is_in_training = False
+                        stats.training_type = ""
+                        stats.force_sell = True
+                    else:
+                        _, time_remaining_str = calculate_remaining_recovery_time(stam_time, stam_pct)
+                        mode_name = "Casa (Dummies)" if train_type == "casa" else "Treino Online"
+                        msg = (
+                            f"🧘‍♂️ *Modo Treino Ativado!*\n"
+                            f"Detectado que o personagem já está em: *{current_loc}* ({mode_name})\n\n"
+                            f"⚡ Stamina atual: {hud_data.get('stamina_pct', f'{stam_pct}%')} ({stam_time})\n"
+                            f"⏳ Restante até {target_retorno}%: ~{time_remaining_str}\n"
+                            f"🎯 Hunt de retorno configurada: *{target_hunt}*"
+                        )
+                        print(msg.replace('*', ''))
+                        if on_message:
+                            await on_message(msg)
+
+                        if train_type == "casa":
+                            await manage_house_training(tab, stop_event, pause_event, on_message, target_hunt, silent_fail=True, already_there=True, bot=bot, stats=stats)
+                        else:
+                            await manage_training(tab, stop_event, pause_event, on_message, target_hunt, already_there=True, bot=bot, stats=stats)
+
+                    continue
+                else:
                     stats.is_in_training = False
                     stats.training_type = ""
+                # ====================================================
+
+                if not pause_event.is_set():
+                    print("\nHunt pausada.")
+                    await pause_event.wait()
+                    if stop_event.is_set():
+                        break
+                    print("\nHunt retomada.")
+                    continue
+
+                if stats.force_sell:
+                    print("⚡ Retorno de modo ou comando de hunt detectado: executando venda prioritária em 3s!")
+                    delay = 3.0
+                    stats.force_sell = False
                 else:
-                    _, time_remaining_str = calculate_remaining_recovery_time(stam_time, stam_pct)
-                    mode_name = "Casa (Dummies)" if train_type == "casa" else "Treino Online"
-                    msg = (
-                        f"🧘‍♂️ *Modo Treino Ativado!*\n"
-                        f"Detectado que o personagem já está em: *{current_loc}* ({mode_name})\n\n"
-                        f"⚡ Stamina atual: {hud_data.get('stamina_pct', f'{stam_pct}%')} ({stam_time})\n"
-                        f"⏳ Restante até {target_retorno}%: ~{time_remaining_str}\n"
-                        f"🎯 Hunt de retorno configurada: *{target_hunt}*"
-                    )
-                    print(msg.replace('*', ''))
-                    if on_message:
-                        await on_message(msg)
-
-                    if train_type == "casa":
-                        await manage_house_training(tab, stop_event, pause_event, on_message, target_hunt, silent_fail=True, already_there=True, bot=bot)
-                    else:
-                        await manage_training(tab, stop_event, pause_event, on_message, target_hunt, already_there=True, bot=bot)
-
-                continue
-            else:
-                stats.is_in_training = False
-                stats.training_type = ""
-            # ====================================================
-
-            if not pause_event.is_set():
-                print("\nHunt pausada.")
-                await pause_event.wait()
-                if stop_event.is_set():
-                    break
-                print("\nHunt retomada.")
-                continue
-
-            delay = random_main_delay()
-            print(f"\nPróxima venda em {delay:.1f}s.")
-            remaining = delay
-
-            while remaining > 0:
-                if stop_event.is_set() or not pause_event.is_set():
-                    break
-                if stats.force_action:
-                    break
-                    
-                # ====================================================
-                # AVISO DE PROGRESSO DE TASK (A CADA 120s)
-                # ====================================================
-                now = asyncio.get_running_loop().time()
-                if now - stats.last_task_report >= 120:
-                    stats.last_task_report = now
-                    
-                    # Checa o progresso na tela silenciosamente
-                    task_data = await get_tracked_task_progress(tab)
-                    if task_data and not task_data.get("finished"):
-                        max_kills = task_data['max']
-                        current_kills = task_data['current']
-                        pct = (current_kills / max_kills * 100) if max_kills > 0 else 0
-                        
-                        prog_msg = f"🎯 *Task em Andamento:* {task_data['name']}\nProgresso: {pct:.1f}% ({current_kills}/{max_kills})"
-                        print(f"\n{prog_msg.replace('*', '')}")
-                        
-                        if on_message and get_setting("notify_tasks", True):
-                            try:
-                                await on_message(prog_msg)
-                            except Exception as e:
-                                print(f"Erro ao enviar aviso de Task: {e}")
-
-                    # Checa o progresso do Passe de Batalha silenciosamente
-                    bp_data = await get_tracked_battlepass_progress(tab)
-                    if bp_data and not bp_data.get("finished"):
-                        max_kills = bp_data['max']
-                        current_kills = bp_data['current']
-                        pct = (current_kills / max_kills * 100) if max_kills > 0 else 0
-
-                        bp_msg = f"🎟️ *Passe de Batalha:* {bp_data['hunt_name']}\nProgresso: {pct:.1f}% ({current_kills}/{max_kills})"
-                        print(f"\n{bp_msg.replace('*', '')}")
-
-                        if on_message and get_setting("notify_tasks", True):
-                            try:
-                                await on_message(bp_msg)
-                            except Exception as e:
-                                print(f"Erro ao enviar aviso de Passe: {e}")
-                # ====================================================
-
-                sleep_time = min(1, remaining)
-                await asyncio.sleep(sleep_time)
-                remaining -= sleep_time
-
-            if stop_event.is_set() or stats.force_action:
-                continue
-
-            if not pause_event.is_set():
-                continue
-
-            # ====================================================
-            # VERIFICAR CODEX ANTES DA VENDA
-            # ====================================================
-            if not stop_event.is_set() and pause_event.is_set() and not stats.force_action:
-                current_hunt = await get_current_hunt(tab)
-                if current_hunt and current_hunt != "Hunt Desconhecida":
-                    delivered, progress = await process_codex_routine(tab, current_hunt, on_message)
-                    stats.codex_progress = progress
-
-            success = await execute_sale(
-                tab,
-                stats,
-                stop_event=stop_event,
-                on_message=on_message,
-                bot=bot,
-            )
-
-            if not success and not stop_event.is_set() and pause_event.is_set() and not stats.force_action:
-                print("\nA venda não foi concluída.")
-                retry_delay = random_retry_delay()
-                print(f"Nova tentativa em {retry_delay:.1f}s.")
-                remaining = retry_delay
+                    delay = random_main_delay()
+                print(f"\nPróxima venda em {delay:.1f}s.")
+                remaining = delay
 
                 while remaining > 0:
                     if stop_event.is_set() or not pause_event.is_set():
                         break
                     if stats.force_action:
                         break
-                    await asyncio.sleep(min(1, remaining))
-                    remaining -= min(1, remaining)
-
-                continue 
-
-            # ====================================================
-            # VERIFICAR STAMINA APÓS A VENDA
-            # ====================================================
-            if not stop_event.is_set() and pause_event.is_set():
-                hud_data = await get_hud_data(tab)
-                stamina_str = hud_data.get("stamina_pct", "0%")
-                stamina_val = parse_clean_int(stamina_str)
-                
-                stamina_limit = get_setting("stamina_treino", IR_PARA_TREINO_ONLINE)
-                if 0 < stamina_val <= stamina_limit:
-                    current_hunt = await resolve_target_hunt(tab, stats)
+                    if stats.force_sell:
+                        stats.force_sell = False
+                        print("⚡ Interrupção para venda imediata recebida!")
+                        break
                         
-                    msg = f"🔋 *Stamina Crítica* ({stamina_val}%).\n\n⏸️ Pausando a hunt atual ({current_hunt}) e tentando ir para a Casa..."
-                    print(msg.replace('*', ''))
-                    if on_message:
-                        await on_message(f"⚠️ {msg}")
+                    # ====================================================
+                    # AVISO DE PROGRESSO DE TASK (A CADA 120s)
+                    # ====================================================
+                    now = asyncio.get_running_loop().time()
+                    if now - stats.last_task_report >= 120:
+                        stats.last_task_report = now
                         
-                    house_success = await manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=True, bot=bot)
+                        # Checa o progresso na tela silenciosamente
+                        task_data = await get_tracked_task_progress(tab)
+                        if task_data and not task_data.get("finished"):
+                            max_kills = task_data['max']
+                            current_kills = task_data['current']
+                            pct = (current_kills / max_kills * 100) if max_kills > 0 else 0
+                            
+                            prog_msg = f"🎯 *Task em Andamento:* {task_data['name']}\nProgresso: {pct:.1f}% ({current_kills}/{max_kills})"
+                            print(f"\n{prog_msg.replace('*', '')}")
+                            
+                            if on_message and get_setting("notify_tasks", True):
+                                try:
+                                    await on_message(prog_msg)
+                                except Exception as e:
+                                    print(f"Erro ao enviar aviso de Task: {e}")
+
+                        # Checa o progresso do Passe de Batalha silenciosamente
+                        bp_data = await get_tracked_battlepass_progress(tab)
+                        if bp_data and not bp_data.get("finished"):
+                            max_kills = bp_data['max']
+                            current_kills = bp_data['current']
+                            pct = (current_kills / max_kills * 100) if max_kills > 0 else 0
+
+                            bp_msg = f"🎟️ *Passe de Batalha:* {bp_data['hunt_name']}\nProgresso: {pct:.1f}% ({current_kills}/{max_kills})"
+                            print(f"\n{bp_msg.replace('*', '')}")
+
+                            if on_message and get_setting("notify_tasks", True):
+                                try:
+                                    await on_message(bp_msg)
+                                except Exception as e:
+                                    print(f"Erro ao enviar aviso de Passe: {e}")
+                    # ====================================================
+
+                    sleep_time = min(1, remaining)
+                    await asyncio.sleep(sleep_time)
+                    remaining -= sleep_time
+
+                if stop_event.is_set() or stats.force_action:
+                    continue
+
+                if not pause_event.is_set():
+                    continue
+
+                # ====================================================
+                # VERIFICAR CODEX ANTES DA VENDA
+                # ====================================================
+                if not stop_event.is_set() and pause_event.is_set() and not stats.force_action:
+                    current_hunt = await get_current_hunt(tab)
+                    if current_hunt and current_hunt != "Hunt Desconhecida":
+                        delivered, progress = await process_codex_routine(tab, current_hunt, on_message)
+                        stats.codex_progress = progress
+
+                success = await execute_sale(
+                    tab,
+                    stats,
+                    stop_event=stop_event,
+                    on_message=on_message,
+                    bot=bot,
+                )
+
+                if not success and not stop_event.is_set() and pause_event.is_set() and not stats.force_action:
+                    print("\nA venda não foi concluída.")
+                    retry_delay = random_retry_delay()
+                    print(f"Nova tentativa em {retry_delay:.1f}s.")
+                    remaining = retry_delay
+
+                    while remaining > 0:
+                        if stop_event.is_set() or not pause_event.is_set():
+                            break
+                        if stats.force_action or stats.force_sell:
+                            break
+                        await asyncio.sleep(min(1, remaining))
+                        remaining -= min(1, remaining)
+
+                    continue 
+
+                # ====================================================
+                # VERIFICAR STAMINA APÓS A VENDA
+                # ====================================================
+                if not stop_event.is_set() and pause_event.is_set():
+                    hud_data = await get_hud_data(tab)
+                    stamina_str = hud_data.get("stamina_pct", "0%")
+                    stamina_val = parse_clean_int(stamina_str)
                     
-                    if not house_success:
-                        if on_message:
-                            await on_message("❌ Casa indisponível. Redirecionando para o Treino Online padrão...")
-                        await manage_training(tab, stop_event, pause_event, on_message, current_hunt, bot=bot)
-
-            # ====================================================
-            # VERIFICAR SE A TASK DA GUILDA FOI FINALIZADA
-            # ====================================================
-            if not stop_event.is_set() and pause_event.is_set():
-                task_data = await get_tracked_task_progress(tab)
-                
-                if task_data and task_data.get("finished"):
-                    msg = f"✅ *Task Finalizada!* ({task_data['name']})\nIndo até a Guilda entregar e buscar uma nova..."
-                    print(msg.replace('*', ''))
-                    
-                    if on_message:
-                        await on_message(msg)
-                        
-                    await process_guild_tasks(tab, on_message)
-
-            # ====================================================
-            # VERIFICAR SE O PASSE DE BATALHA FOI FINALIZADO
-            # ====================================================
-            if not stop_event.is_set() and pause_event.is_set():
-                bp_data = await get_tracked_battlepass_progress(tab)
-
-                if bp_data and bp_data.get("finished"):
-                    msg = f"✅ *Missão do Passe Finalizada!* ({bp_data['hunt_name']})\nIndo até o Passe entregar e verificar as próximas..."
-                    print(msg.replace('*', ''))
-
-                    if on_message:
-                        await on_message(msg)
-
-                    try:
-                        success, bp_msg = await process_battlepass(tab, on_message)
-                        if bp_msg in ["finalizado", "nenhuma_nova"]:
-                            target_hunt = stats.default_hunt or DEFAULT_HUNT
-                            await change_hunt(tab, target_hunt)
+                    stamina_limit = get_setting("stamina_treino", IR_PARA_TREINO_ONLINE)
+                    if 0 < stamina_val <= stamina_limit:
+                        if stats.manual_hunt_override:
+                            print(f"⚠️ [Stamina] Stamina baixa ({stamina_val}%), mas override manual de hunt está ativo. Mantendo na hunt nesta rodada.")
+                            stats.manual_hunt_override = False
+                        else:
+                            current_hunt = await resolve_target_hunt(tab, stats)
+                                
+                            msg = f"🔋 *Stamina Crítica* ({stamina_val}%).\n\n⏸️ Pausando a hunt atual ({current_hunt}) e tentando ir para a Casa..."
+                            print(msg.replace('*', ''))
                             if on_message:
-                                await on_message(f"✅ Missões do Passe de hoje concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
-                    except Exception as e:
-                        print(f"Erro ao processar passe no loop de vendas: {e}")
+                                await on_message(f"⚠️ {msg}")
+                                
+                            house_success = await manage_house_training(tab, stop_event, pause_event, on_message, current_hunt, silent_fail=True, bot=bot, stats=stats)
+                            
+                            if not house_success:
+                                if on_message:
+                                    await on_message("❌ Casa indisponível. Redirecionando para o Treino Online padrão...")
+                                await manage_training(tab, stop_event, pause_event, on_message, current_hunt, bot=bot, stats=stats)
+                    else:
+                        stats.manual_hunt_override = False
+
+                # ====================================================
+                # VERIFICAR SE A TASK DA GUILDA FOI FINALIZADA
+                # ====================================================
+                if not stop_event.is_set() and pause_event.is_set():
+                    task_data = await get_tracked_task_progress(tab)
+                    
+                    if task_data and task_data.get("finished"):
+                        msg = f"✅ *Task Finalizada!* ({task_data['name']})\nIndo até a Guilda entregar e buscar uma nova..."
+                        print(msg.replace('*', ''))
+                        
+                        if on_message:
+                            await on_message(msg)
+                            
+                        await process_guild_tasks(tab, on_message)
+
+                # ====================================================
+                # VERIFICAR SE O PASSE DE BATALHA FOI FINALIZADO
+                # ====================================================
+                if not stop_event.is_set() and pause_event.is_set():
+                    bp_data = await get_tracked_battlepass_progress(tab)
+
+                    if bp_data and bp_data.get("finished"):
+                        msg = f"✅ *Missão do Passe Finalizada!* ({bp_data['hunt_name']})\nIndo até o Passe entregar e verificar as próximas..."
+                        print(msg.replace('*', ''))
+
+                        if on_message:
+                            await on_message(msg)
+
+                        try:
+                            success, bp_msg = await process_battlepass(tab, on_message)
+                            if bp_msg in ["finalizado", "nenhuma_nova"]:
+                                target_hunt = stats.default_hunt or DEFAULT_HUNT
+                                await change_hunt(tab, target_hunt)
+                                stats.force_sell = True
+                                if on_message:
+                                    await on_message(f"✅ Missões do Passe de hoje concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
+                        except Exception as e:
+                            print(f"Erro ao processar passe no loop de vendas: {e}")
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                print(f"❌ [run_sell] Erro inesperado na iteração do loop de vendas: {e}")
+                import traceback
+                traceback.print_exc()
+                await asyncio.sleep(5)
 
     except asyncio.CancelledError:
         print("Task da Hunt cancelada.")

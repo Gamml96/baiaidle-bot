@@ -269,6 +269,11 @@ class TelegramController:
         print("Retomando Hunt automaticamente...")
         print("========================================\n")
 
+        if hasattr(self.bot, "hunt_stats"):
+            self.bot.hunt_stats.is_in_training = False
+            self.bot.hunt_stats.training_type = ""
+            self.bot.hunt_stats.force_sell = True
+
         self.bot.resume_hunt()
 
         if self.auto_boss_instance:
@@ -613,8 +618,14 @@ class TelegramController:
                 success, msg = await change_hunt(self.bot.tab, hunt_identifier)
                 if success:
                     await self._reset_hunt_analyzer()
+                    if hasattr(self.bot, "hunt_stats"):
+                        self.bot.hunt_stats.is_in_training = False
+                        self.bot.hunt_stats.training_type = ""
+                        self.bot.hunt_stats.force_sell = True
+                        self.bot.hunt_stats.force_action = None
+                        self.bot.hunt_stats.manual_hunt_override = True
                     await update.message.reply_text(
-                        f"✅ {msg}\n🔄 Estatísticas e Analyzer resetados automaticamente!"
+                        f"✅ {msg}\n🔄 Estatísticas e Analyzer resetados!\n⚡ Venda automática retomada."
                     )
                 else:
                     await update.message.reply_text(f"❌ {msg}")
@@ -854,6 +865,10 @@ class TelegramController:
         try:
             stopped = await self.auto_boss_instance.stop()
             self.auto_boss_instance = None
+            if hasattr(self.bot, "hunt_stats"):
+                self.bot.hunt_stats.is_in_training = False
+                self.bot.hunt_stats.training_type = ""
+                self.bot.hunt_stats.force_sell = True
             self.bot.resume_hunt()
 
             if stopped:
@@ -861,6 +876,10 @@ class TelegramController:
             else:
                 await update.message.reply_text("⚠️ AutoBoss já estava parado.\n\n🏹 Hunt retomada.")
         except Exception as e:
+            if hasattr(self.bot, "hunt_stats"):
+                self.bot.hunt_stats.is_in_training = False
+                self.bot.hunt_stats.training_type = ""
+                self.bot.hunt_stats.force_sell = True
             self.bot.resume_hunt()
             await update.message.reply_text(f"❌ Erro ao parar AutoBoss:\n{e}")
 
@@ -1002,11 +1021,19 @@ class TelegramController:
                 if msg in ["finalizado", "nenhuma_nova", "aguardando_escolha"]:
                     if msg != "aguardando_escolha":
                         await change_hunt(self.bot.tab, hunt_de_inicio)
-                        await update.message.reply_text(f"✅ Missões do Passe finalizadas!\nRetornando para a hunt: {hunt_de_inicio}")
+                        if hasattr(self.bot, "hunt_stats"):
+                            self.bot.hunt_stats.is_in_training = False
+                            self.bot.hunt_stats.training_type = ""
+                            self.bot.hunt_stats.force_sell = True
+                        await update.message.reply_text(f"✅ Missões do Passe finalizadas!\nRetornando para a hunt: {hunt_de_inicio}\n⚡ Venda automática retomada.")
                 elif success and msg == "recuperada":
                     pass
                 elif success:
-                    await update.message.reply_text(f"✅ {msg}")
+                    if hasattr(self.bot, "hunt_stats"):
+                        self.bot.hunt_stats.is_in_training = False
+                        self.bot.hunt_stats.training_type = ""
+                        self.bot.hunt_stats.force_sell = True
+                    await update.message.reply_text(f"✅ {msg}\n⚡ Venda automática retomada.")
                 else:
                     await update.message.reply_text(f"⚠️ Aviso: {msg}")
             except Exception as e:
@@ -1043,7 +1070,11 @@ class TelegramController:
             try:
                 success, msg = await choose_battlepass_mission(self.bot.tab, dificuldade, on_message=self.bot.on_message)
                 if success:
-                    await update.message.reply_text(f"✅ {msg}")
+                    if hasattr(self.bot, "hunt_stats"):
+                        self.bot.hunt_stats.is_in_training = False
+                        self.bot.hunt_stats.training_type = ""
+                        self.bot.hunt_stats.force_sell = True
+                    await update.message.reply_text(f"✅ {msg}\n⚡ Venda automática retomada.")
                 else:
                     await update.message.reply_text(f"⚠️ {msg}")
             except Exception as e:
@@ -1148,7 +1179,13 @@ class TelegramController:
                     success, msg = await change_hunt(self.bot.tab, target_hunt)
                     if success:
                         await self._reset_hunt_analyzer()
-                        await query.message.reply_text(f"✅ Retornado para *{target_hunt}* com sucesso!", parse_mode="Markdown")
+                        if hasattr(self.bot, "hunt_stats"):
+                            self.bot.hunt_stats.is_in_training = False
+                            self.bot.hunt_stats.training_type = ""
+                            self.bot.hunt_stats.force_sell = True
+                            self.bot.hunt_stats.force_action = None
+                            self.bot.hunt_stats.manual_hunt_override = True
+                        await query.message.reply_text(f"✅ Retornado para *{target_hunt}* com sucesso!\n⚡ Venda automática retomada.", parse_mode="Markdown")
                     else:
                         await query.message.reply_text(f"❌ Falha ao ir para hunt: {msg}")
                 except Exception as e:
@@ -1184,11 +1221,19 @@ class TelegramController:
                     if msg in ["finalizado", "nenhuma_nova", "aguardando_escolha"]:
                         if msg != "aguardando_escolha":
                             await change_hunt(self.bot.tab, hunt_de_inicio)
-                            await query.message.reply_text(f"✅ Missões do Passe finalizadas!\nRetornando para a hunt: {hunt_de_inicio}")
+                            if hasattr(self.bot, "hunt_stats"):
+                                self.bot.hunt_stats.is_in_training = False
+                                self.bot.hunt_stats.training_type = ""
+                                self.bot.hunt_stats.force_sell = True
+                            await query.message.reply_text(f"✅ Missões do Passe finalizadas!\nRetornando para a hunt: {hunt_de_inicio}\n⚡ Venda automática retomada.")
                     elif success and msg == "recuperada":
                         pass
                     elif success:
-                        await query.message.reply_text(f"✅ {msg}")
+                        if hasattr(self.bot, "hunt_stats"):
+                            self.bot.hunt_stats.is_in_training = False
+                            self.bot.hunt_stats.training_type = ""
+                            self.bot.hunt_stats.force_sell = True
+                        await query.message.reply_text(f"✅ {msg}\n⚡ Venda automática retomada.")
                     else:
                         await query.message.reply_text(f"⚠️ Aviso: {msg}")
                 except Exception as e:
@@ -2212,6 +2257,7 @@ async def main():
     application.add_handler(CommandHandler("party", controller.party))
     application.add_handler(CommandHandler("hunts", controller.hunts))
     application.add_handler(CommandHandler("hunt", controller.hunt))
+    application.add_handler(CommandHandler("ir", controller.hunt))
     application.add_handler(CommandHandler("debughunt", controller.debughunt))
     application.add_handler(CommandHandler("bosses", controller.bosses))
     application.add_handler(CommandHandler("autoboss", controller.autoboss))

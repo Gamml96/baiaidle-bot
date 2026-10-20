@@ -554,12 +554,34 @@ class GameBot:
         self.hunt_pause_event.clear()
 
     # ============================================================
-    # RETOMAR HUNT
-    # ============================================================
-
     def resume_hunt(self):
 
         self.hunt_pause_event.set()
+        self.ensure_hunt_running()
+
+    def ensure_hunt_running(self):
+        if not self.running or not self.tab:
+            return
+        if self.hunt_task is None or self.hunt_task.done():
+            if self.hunt_task and self.hunt_task.done() and not self.hunt_task.cancelled():
+                try:
+                    exc = self.hunt_task.exception()
+                    if exc:
+                        print(f"[Bot] Exceção anterior na hunt_task: {exc}")
+                except Exception:
+                    pass
+            print("[Bot] Reiniciando task de vendas/hunt (hunt_task estava inativa)...")
+            self.hunt_pause_event.set()
+            self.hunt_task = asyncio.create_task(
+                run_sell(
+                    self.tab,
+                    self.stop_event,
+                    self.hunt_pause_event,
+                    self.hunt_stats,
+                    self.on_message,
+                    bot=self,
+                )
+            )
 
     # ============================================================
     # ESTADO
@@ -574,6 +596,8 @@ class GameBot:
         return (
             self.running
             and self.hunt_pause_event.is_set()
+            and self.hunt_task is not None
+            and not self.hunt_task.done()
         )
 
     # ============================================================
