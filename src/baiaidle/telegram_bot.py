@@ -1084,6 +1084,8 @@ class TelegramController:
                         await query.message.reply_text(f"⚠️ {msg}")
                 except Exception as e:
                     await query.message.reply_text(f"❌ Erro ao aceitar missão do Passe: {e}")
+                finally:
+                    self.bot.resume_hunt()
         elif data == "btn_menu":
             text = (
                 "🎮 *PAINEL DE ATALHOS RÁPIDOS*\n\n"

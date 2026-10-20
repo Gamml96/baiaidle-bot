@@ -51,6 +51,10 @@ async def close_battlepass(tab):
             || document.getElementById('passe-modal-close')
             || document.querySelector('.bp-close')
             || document.querySelector('#battlepass-modal .close')
+            || document.querySelector('#battlepass-modal .btn-close')
+            || document.querySelector('#battlepass-modal [data-dismiss="modal"]')
+            || document.querySelector('#battlepass-modal [data-bs-dismiss="modal"]')
+            || document.querySelector('#battlepass-modal-body')?.closest('.modal')?.querySelector('.close, .btn-close, [data-dismiss="modal"], .gw-x, .modal-close')
             || document.querySelector('.modal-close')
             || document.querySelector('.im-close')
             || document.querySelector('.gw-x');
@@ -310,6 +314,8 @@ async def choose_battlepass_mission(tab, difficulty_choice: str, mode: str = "No
     # Se o botão 'ir para cacada' não disparou, usa o change_hunt como garantia
     if not went_to_hunt and target_name:
         await change_hunt(tab, target_name)
+        await asyncio.sleep(0.5)
+        await close_battlepass(tab)
 
     msg = f"Iniciando missão do Passe: {target_name} ({clean_diff.capitalize()})"
     if on_message:

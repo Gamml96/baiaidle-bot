@@ -1126,7 +1126,15 @@ async def run_sell(
                     if on_message:
                         await on_message(msg)
 
-                    await process_battlepass(tab, on_message)
+                    try:
+                        success, bp_msg = await process_battlepass(tab, on_message)
+                        if bp_msg in ["finalizado", "nenhuma_nova"]:
+                            target_hunt = stats.default_hunt or DEFAULT_HUNT
+                            await change_hunt(tab, target_hunt)
+                            if on_message:
+                                await on_message(f"✅ Missões do Passe de hoje concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
+                    except Exception as e:
+                        print(f"Erro ao processar passe no loop de vendas: {e}")
 
     except asyncio.CancelledError:
         print("Task da Hunt cancelada.")
