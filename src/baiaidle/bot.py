@@ -14,7 +14,8 @@ from baiaidle.browser import (
 )
 from baiaidle.login import login
 from baiaidle.actions import validate_sale, get_party_info, extract_member_level
-from baiaidle.sell import run_sell, HuntStats
+from baiaidle.hunts import get_current_hunt
+from baiaidle.sell import run_sell, HuntStats, is_training_location
 from baiaidle.recovery import (
     init_session_tracker,
     dismiss_welcome_and_popups,
@@ -314,44 +315,40 @@ class GameBot:
             )
 
             # ====================================================
-            # VALIDAÇÃO
+            # DETECÇÃO INICIAL DE LOCALIZAÇÃO (TREINO / HUNT)
             # ====================================================
+            current_loc = await get_current_hunt(self.tab, timeout=3.0)
+            is_training, train_type = is_training_location(current_loc)
 
-            print(
-                "Validando sessão..."
-            )
-
-            validated = await validate_sale(
-                self.tab
-            )
-
-            if not validated:
-
-                raise RuntimeError(
-                    "Validação da sessão falhou."
-                )
-
-            print(
-                "Sessão validada."
-            )
+            if is_training:
+                mode_desc = "Casa (Dummies)" if train_type == "casa" else "Treino Online"
+                print(f"🧘‍♂️ Personagem detectado já em Treino: {current_loc} ({mode_desc}). Pulando validação de venda...")
+            else:
+                # ====================================================
+                # VALIDAÇÃO DE SESSÃO COM VENDA DE ITENS
+                # ====================================================
+                print("Validando sessão...")
+                validated = await validate_sale(self.tab)
+                if not validated:
+                    raise RuntimeError("Validação da sessão falhou.")
+                print("Sessão validada.")
 
             # ====================================================
             # ESTADO
             # ====================================================
-
             self.stop_event.clear()
-
             self.hunt_pause_event.set()
-
             self.running = True
 
-            # Zera as estatísticas ao iniciar a hunt
+            # Zera as estatísticas ao iniciar
             self.hunt_stats.reset()
+            if is_training:
+                self.hunt_stats.is_in_training = True
+                self.hunt_stats.training_type = train_type
 
             # ====================================================
             # TASKS DE BACKGROUND (HUNT & MONITORES)
             # ====================================================
-
             self.hunt_task = asyncio.create_task(
                 run_sell(
                     self.tab,
@@ -380,20 +377,21 @@ class GameBot:
                 monitor_page_recovery(self)
             )
 
-            print(
-                "Hunt iniciada."
-            )
-
             # ====================================================
             # REGISTRO DE NÍVEIS INICIAIS DA PARTY
             # ====================================================
             await self.record_initial_party()
 
-            print(
-                "BOT ONLINE."
-            )
+            if is_training:
+                mode_desc = "Casa (Dummies)" if train_type == "casa" else "Treino Online"
+                msg_start = f"Modo Treino detectado! Personagem já está em: *{current_loc}* ({mode_desc})."
+                print(f"🧘‍♂️ {msg_start.replace('*', '')}")
+                print("BOT ONLINE.")
+                return True, msg_start
 
-            return True, "Bot iniciado com sucesso."
+            print("Hunt iniciada.")
+            print("BOT ONLINE.")
+            return True, "Hunt iniciada com sucesso."
 
         except Exception:
 

@@ -10,6 +10,8 @@ from telegram import (
     BotCommandScopeAllPrivateChats,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
 )
 
 # pyrefly: ignore [missing-import]
@@ -18,7 +20,11 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     CallbackQueryHandler,
+    MessageHandler,
+    filters,
 )
+from telegram.request import HTTPXRequest
+from telegram.error import RetryAfter, TimedOut, NetworkError
 
 from baiaidle.autoboss import (
     AutoBoss,
@@ -45,11 +51,17 @@ from baiaidle.hunts import (
     change_hunt,
     debug_hunts_dom,
 )
-from baiaidle.guild import process_guild_tasks, accept_specific_task
-from baiaidle.battlepass import process_battlepass, choose_battlepass_mission
+from baiaidle.guild import process_guild_tasks, accept_specific_task, get_tracked_task_progress
+from baiaidle.battlepass import process_battlepass, choose_battlepass_mission, get_tracked_battlepass_progress
+from baiaidle.codex import process_codex_routine
 from baiaidle.daily import collect_daily_reward, cancel_daily_schedule
-from baiaidle.actions import get_party_info, extract_member_level, get_loot_analyzer_coins
-from baiaidle.sell import format_number, format_duration
+from baiaidle.actions import (
+    get_party_info,
+    extract_member_level,
+    get_loot_analyzer_coins,
+    get_hud_data,
+)
+from baiaidle.sell import format_number, format_duration, is_training_location
 
 
 
@@ -219,39 +231,33 @@ class TelegramController:
 
     async def setup_commands(self):
         commands = [
-            BotCommand("start", "Iniciar o bot"),
-            BotCommand("stop", "Parar o bot"),
-            BotCommand("status", "Mostrar status"),
-            BotCommand("party", "Ver status da equipe"),
-            BotCommand("hunts", "Listar hunts disponíveis"),
-            BotCommand("hunt", "Mudar de hunt"),
-            BotCommand("bosses", "Listar bosses disponíveis"),
-            BotCommand("autoboss", "Iniciar AutoBoss"),
-            BotCommand("stopautoboss", "Parar AutoBoss"),
-            BotCommand("setautoboss", "Definir lista padrão de bosses"),
-            BotCommand("autoboss_on", "Ligar AutoBoss automático às 00h"),
-            BotCommand("autoboss_off", "Desligar AutoBoss automático às 00h"),
-            BotCommand("autoboss_status", "Ver status do AutoBoss e agendamento"),
-            BotCommand("treino", "Forçar ida para o Treino Online"),
-            BotCommand("casa", "Forçar ida para o Dummie da Casa"),
-            BotCommand("guildtask", "Iniciar/Entregar Task da Guild"),
-            BotCommand("task", "Aceitar task específica"),
-            BotCommand("passe", "Iniciar/Entregar missões do Passe"),
-            BotCommand("passetask", "Aceitar missão específica do Passe"),
-            BotCommand("reset", "Zerar estatísticas e Analyzer"),
-            BotCommand("daily", "Tentar coletar a recompensa diária"),
-            BotCommand("defaulthunt", "Ver ou definir hunt padrão pós-treino"),
-            BotCommand("settier", "Define a raridade para proteger"),
-            BotCommand("menu", "Menu de atalhos rápidos interativos"),
-            BotCommand("config", "Painel de configurações via chat"),
-            BotCommand("recuperar", "Fechar avisos/boas-vindas e recuperar sessão"),
-            BotCommand("print", "Tirar um print da tela do jogo"),
-            BotCommand("help", "Mostrar ajuda"),
+            BotCommand("menu", "🎛️ Painel Principal do Sistema"),
+            BotCommand("status", "📊 Status do bot e da sessão"),
+            BotCommand("start", "🟢 Iniciar o bot e abrir painel"),
+            BotCommand("stop", "🔴 Parar o bot"),
+            BotCommand("config", "⚙️ Painel de configurações rápidas"),
+            BotCommand("party", "👥 Ver status da equipe"),
+            BotCommand("hunts", "🗺️ Listar hunts disponíveis"),
+            BotCommand("hunt", "🏹 Mudar de hunt"),
+            BotCommand("bosses", "⚔️ Listar bosses e cargas"),
+            BotCommand("autoboss", "🚀 Iniciar AutoBoss"),
+            BotCommand("stopautoboss", "⏹️ Parar AutoBoss"),
+            BotCommand("treino", "🧘‍♂️ Forçar ida para Treino Online"),
+            BotCommand("casa", "🏠 Forçar ida para Dummie da Casa"),
+            BotCommand("guildtask", "🎯 Gerenciar tasks da Guilda"),
+            BotCommand("passe", "🎟️ Gerenciar missões do Passe"),
+            BotCommand("daily", "🎁 Coletar recompensa diária"),
+            BotCommand("print", "🖥️ Tirar print da tela do jogo"),
+            BotCommand("recuperar", "🛠️ Fechar avisos e recuperar sessão"),
+            BotCommand("reset", "🧹 Zerar estatísticas e Analyzer"),
+            BotCommand("help", "❓ Mostrar lista de ajuda"),
         ]
 
-        await self.application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
-        await self.application.bot.set_my_commands(commands, scope=BotCommandScopeAllPrivateChats())
-        print("Menu de comandos do Telegram configurado com sucesso (Default e AllPrivateChats).")
+        try:
+            await self.application.bot.set_my_commands(commands, scope=BotCommandScopeDefault())
+            print("Menu de comandos do Telegram configurado com sucesso.")
+        except Exception as e:
+            print(f"[Aviso] Não foi possível atualizar a lista de comandos no Telegram: {e}")
 
     # ============================================================
     # CALLBACK: AUTOBOSS CONCLUÍDO
@@ -276,7 +282,11 @@ class TelegramController:
     @authorized_only
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if self.bot.is_running():
-            await update.message.reply_text("🟢 O bot já está rodando.")
+            await update.message.reply_text(
+                "🟢 O bot já está rodando.",
+                reply_markup=self.get_persistent_reply_keyboard(),
+            )
+            await self.show_main_menu(update, context)
             return
 
         await update.message.reply_text(
@@ -289,7 +299,11 @@ class TelegramController:
         try:
             success, message = await self.bot.start()
             if success:
-                await update.message.reply_text(f"🟢 {message}")
+                await update.message.reply_text(
+                    f"🟢 {message}",
+                    reply_markup=self.get_persistent_reply_keyboard(),
+                )
+                await self.show_main_menu(update, context)
                 # Inicia rotina da Daily de forma segura (com lock e pausa de hunt)
                 asyncio.create_task(self._start_daily_routine())
             else:
@@ -454,10 +468,16 @@ class TelegramController:
             except Exception:
                 current_hunt = "Desconhecida"
 
+        is_train, train_type = is_training_location(current_hunt)
+        if getattr(self.bot.hunt_stats, "is_in_training", False) or is_train:
+            activity_str = "🏠 CASA (DUMMIES)" if train_type == "casa" else "🧘‍♂️ TREINO ONLINE"
+        else:
+            activity_str = "🏹 HUNT"
+
         lines = [
             "🟢 BOT ONLINE",
             "",
-            "Atividade: 🏹 HUNT",
+            f"Atividade: {activity_str}",
             f"Local atual: {current_hunt}",
             "",
             "AutoBoss: inativo.",
@@ -1087,14 +1107,220 @@ class TelegramController:
                 finally:
                     self.bot.resume_hunt()
         elif data == "btn_menu":
-            text = (
-                "🎮 *PAINEL DE ATALHOS RÁPIDOS*\n\n"
-                "Escolha uma ação para executar imediatamente no jogo:"
-            )
-            try:
-                await query.edit_message_text(text, reply_markup=self.get_quick_action_keyboard(), parse_mode="Markdown")
-            except Exception:
-                await query.message.reply_text(text, reply_markup=self.get_quick_action_keyboard(), parse_mode="Markdown")
+            await self.show_main_menu(update, context)
+
+        elif data == "sub_hunts":
+            await self.show_hunts_menu(update, context)
+
+        elif data == "sub_missoes":
+            await self.show_missoes_menu(update, context)
+
+        elif data == "sub_treino":
+            await self.show_treino_menu(update, context)
+
+        elif data == "sub_party":
+            await self.show_party_menu(update, context)
+
+        elif data == "sub_autoboss":
+            await self.show_autoboss_menu(update, context)
+
+        elif data == "sub_acoes":
+            await self.show_acoes_menu(update, context)
+
+        elif data == "sub_defaulthunt":
+            await self.show_defaulthunt_menu(update, context)
+
+        elif data == "btn_pause_toggle":
+            if self.bot.is_hunt_running():
+                self.bot.pause_hunt()
+                await query.answer("⏸️ Hunt pausada! Vendas automáticas suspensas.", show_alert=True)
+            else:
+                self.bot.resume_hunt()
+                await query.answer("▶️ Hunt retomada! Vendas automáticas ativas.", show_alert=True)
+            await self.show_main_menu(update, context)
+
+        elif data == "btn_retornar_hunt":
+            target_hunt = getattr(self.bot.hunt_stats, "default_hunt", None) or "Infernal Demon"
+            await query.answer(f"🏹 Retornando para {target_hunt}...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    success, msg = await change_hunt(self.bot.tab, target_hunt)
+                    if success:
+                        await self._reset_hunt_analyzer()
+                        await query.message.reply_text(f"✅ Retornado para *{target_hunt}* com sucesso!", parse_mode="Markdown")
+                    else:
+                        await query.message.reply_text(f"❌ Falha ao ir para hunt: {msg}")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao mudar de hunt: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif data == "set_defhunt_current":
+            current = await get_current_hunt(self.bot.tab) if self.bot.tab else ""
+            if current and current.lower() not in ["hunt desconhecida", "treino online", "casa"]:
+                self.bot.hunt_stats.default_hunt = current
+                await query.answer(f"✅ Hunt padrão definida: {current}", show_alert=True)
+            else:
+                await query.answer("⚠️ Local atual inválido para hunt padrão.", show_alert=True)
+            await self.show_hunts_menu(update, context)
+
+        elif data.startswith("set_defhunt_"):
+            chosen = data.replace("set_defhunt_", "").strip()
+            self.bot.hunt_stats.default_hunt = chosen
+            await query.answer(f"✅ Hunt padrão definida: {chosen}", show_alert=True)
+            await self.show_hunts_menu(update, context)
+
+        elif data == "btn_action_passe":
+            if self.action_lock.locked():
+                await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            await query.answer("⏳ Processando missões do Passe...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    hunt_de_inicio = await get_current_hunt(self.bot.tab)
+                    success, msg = await process_battlepass(self.bot.tab, self.bot.on_message)
+                    if msg in ["finalizado", "nenhuma_nova", "aguardando_escolha"]:
+                        if msg != "aguardando_escolha":
+                            await change_hunt(self.bot.tab, hunt_de_inicio)
+                            await query.message.reply_text(f"✅ Missões do Passe finalizadas!\nRetornando para a hunt: {hunt_de_inicio}")
+                    elif success and msg == "recuperada":
+                        pass
+                    elif success:
+                        await query.message.reply_text(f"✅ {msg}")
+                    else:
+                        await query.message.reply_text(f"⚠️ Aviso: {msg}")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao processar passe: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif data == "btn_action_guild":
+            if self.action_lock.locked():
+                await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            await query.answer("⏳ Processando tasks da Guilda...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    success, msg = await process_guild_tasks(self.bot.tab, self.bot.on_message)
+                    if msg == "aguardando_escolha":
+                        pass
+                    elif msg in ["limite_atingido", "nenhuma_nova"]:
+                        await query.message.reply_text("✅ Nenhuma task nova disponível na Guilda.")
+                    elif success and msg == "recuperada":
+                        pass
+                    elif success:
+                        await query.message.reply_text(f"✅ {msg}")
+                    else:
+                        await query.message.reply_text(f"⚠️ Aviso: {msg}")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao processar task da guild: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif data == "btn_action_daily":
+            if self.action_lock.locked():
+                await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            await query.answer("⏳ Verificando Daily Reward...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    claimed = await collect_daily_reward(
+                        self.bot.tab,
+                        self.bot.on_message,
+                        bot=self.bot,
+                        action_lock=self.action_lock,
+                    )
+                    if not claimed:
+                        await query.message.reply_text("⏳ A recompensa diária ainda não está disponível.")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao coletar a daily: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif data == "btn_action_codex":
+            if self.action_lock.locked():
+                await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            await query.answer("⏳ Verificando Codex...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    current_hunt = await get_current_hunt(self.bot.tab)
+                    if current_hunt and current_hunt != "Hunt Desconhecida":
+                        delivered, progress = await process_codex_routine(self.bot.tab, current_hunt, self.bot.on_message)
+                        self.bot.hunt_stats.codex_progress = progress
+                        if delivered:
+                            await query.message.reply_text(f"📖 *Codex Entregue!* Recompensas coletadas em {current_hunt}.", parse_mode="Markdown")
+                        elif progress:
+                            await query.message.reply_text(f"📖 *Progresso do Codex ({current_hunt}):* {progress}", parse_mode="Markdown")
+                        else:
+                            await query.message.reply_text(f"ℹ️ Nenhum drop pendente de Codex para entregar em {current_hunt}.")
+                    else:
+                        await query.message.reply_text("⚠️ Não foi possível identificar a hunt atual para o Codex.")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao processar Codex: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif data == "btn_status_detail":
+            await query.answer()
+            await self.status(update, context)
+
+        elif data == "btn_reset_stats":
+            await self._reset_hunt_analyzer()
+            self.bot.hunt_stats.reset()
+            await query.answer("🧹 Estatísticas e Analyzer resetados com sucesso!", show_alert=True)
+            await self.show_party_menu(update, context)
+
+        elif data == "btn_autoboss_stop":
+            if not self.auto_boss_instance or not self.auto_boss_instance.state.running:
+                await query.answer("ℹ️ AutoBoss não está em execução.", show_alert=True)
+                return
+            await self.auto_boss_instance.stop()
+            self.auto_boss_instance = None
+            self.bot.resume_hunt()
+            await query.answer("⏹️ AutoBoss interrompido! Hunt retomada.", show_alert=True)
+            await self.show_autoboss_menu(update, context)
+
+        elif data == "btn_autoboss_on":
+            set_preset_enabled(True)
+            start_autoboss_scheduler(self)
+            await query.answer("🟢 AutoBoss às 00h ativado!", show_alert=True)
+            await self.show_autoboss_menu(update, context)
+
+        elif data == "btn_autoboss_off":
+            set_preset_enabled(False)
+            stop_autoboss_scheduler()
+            await query.answer("🔴 AutoBoss às 00h desativado!", show_alert=True)
+            await self.show_autoboss_menu(update, context)
+
+        elif data == "btn_bosses_list":
+            if self.action_lock.locked():
+                await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            await query.answer("⏳ Carregando bosses...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    boss_items = await get_boss_list(self.bot.tab)
+                    if not boss_items:
+                        await query.message.reply_text("❌ Nenhum boss encontrado ou falha ao abrir o menu.")
+                    else:
+                        lines = format_boss_list(boss_items)
+                        msg = "\n".join(lines)
+                        kb = InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🚀 Iniciar AutoBoss", callback_data="btn_autoboss")],
+                            [InlineKeyboardButton("🔙 Menu AutoBoss", callback_data="sub_autoboss")],
+                        ])
+                        await self._send_safe_message(self.chat_id, msg, reply_markup=kb, parse_mode="Markdown")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao listar bosses: {e}")
+                finally:
+                    self.bot.resume_hunt()
 
         elif data == "btn_treino":
             self.bot.hunt_stats.force_action = "treino"
@@ -1490,27 +1716,369 @@ class TelegramController:
     # MÉTODOS AUXILIARES: TECLADOS INLINE & CONFIGURAÇÕES
     # ============================================================
 
+    def get_persistent_reply_keyboard(self) -> ReplyKeyboardMarkup:
+        """Retorna o teclado fixo na barra inferior do Telegram para navegação rápida."""
+        keyboard = [
+            ["🎛️ Menu Principal", "📊 Status"],
+            ["🗺️ Hunts", "🎯 Missões"],
+            ["🧘‍♂️ Treino / Casa", "⚙️ Configurações"],
+        ]
+        return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+    async def get_system_overview(self) -> dict:
+        """Captura os dados consolidados do bot, personagem e jogo em tempo real."""
+        current_hunt = "Desconhecida"
+        stamina_pct = "N/D"
+        stamina_time = ""
+        gold_hud = "0"
+        if self.bot.tab:
+            try:
+                current_hunt = await get_current_hunt(self.bot.tab)
+                hud = await get_hud_data(self.bot.tab)
+                stamina_pct = hud.get("stamina_pct", "") or "N/D"
+                stamina_time = hud.get("stamina_time", "")
+                gold_hud = hud.get("gold", "0")
+            except Exception:
+                pass
+
+        default_hunt = getattr(self.bot.hunt_stats, "default_hunt", None) or "Infernal Demon"
+
+        is_train, train_type = is_training_location(current_hunt)
+        is_in_training = getattr(self.bot.hunt_stats, "is_in_training", False) or is_train
+
+        if not self.bot.is_running():
+            status_bot = "🔴 Parado"
+            mode_str = "Offline"
+        elif self.auto_boss_instance and self.auto_boss_instance.state.running:
+            status_bot = "⚔️ AutoBoss"
+            mode_str = f"Boss #{self.auto_boss_instance.state.current_index}"
+        elif not self.bot.is_hunt_running():
+            status_bot = "⏸️ Pausado"
+            mode_str = "Vendas em pausa"
+        elif is_in_training:
+            if train_type == "casa":
+                status_bot = "🏠 Casa"
+                mode_str = "Treinando em Casa"
+            else:
+                status_bot = "🧘‍♂️ Treino"
+                mode_str = "Treino Online"
+        else:
+            status_bot = "🟢 Ativo"
+            mode_str = "🏹 Caçando"
+
+        total_gold = self.bot.hunt_stats.total_gold
+        sales = self.bot.hunt_stats.sales
+        gold_ph = int(self.bot.hunt_stats.gold_per_hour())
+
+        return {
+            "status_bot": status_bot,
+            "mode_str": mode_str,
+            "current_hunt": current_hunt,
+            "default_hunt": default_hunt,
+            "stamina_pct": stamina_pct,
+            "stamina_time": stamina_time,
+            "gold_hud": gold_hud,
+            "total_gold": total_gold,
+            "sales": sales,
+            "gold_ph": gold_ph,
+        }
+
+    async def show_or_edit_menu(self, update: Update, text: str, reply_markup: InlineKeyboardMarkup):
+        """Transição fluida entre telas: edita mensagem inline se callback, ou envia mensagem nova."""
+        query = update.callback_query
+        if query:
+            try:
+                await query.answer()
+            except Exception:
+                pass
+            try:
+                await query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+                return
+            except Exception:
+                pass
+            if query.message:
+                try:
+                    await query.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+                    return
+                except Exception:
+                    await query.message.reply_text(text, reply_markup=reply_markup)
+                    return
+
+        if update.message:
+            try:
+                await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+            except Exception:
+                await update.message.reply_text(text, reply_markup=reply_markup)
+
     def get_quick_action_keyboard(self) -> InlineKeyboardMarkup:
-        """Retorna o teclado inline com os atalhos rápidos das rotinas do bot."""
+        """Retorna o teclado inline do Painel Principal com os módulos do sistema."""
         keyboard = [
             [
-                InlineKeyboardButton("🗺️ Hunts", callback_data="btn_hunts"),
-                InlineKeyboardButton("⚔️ AutoBoss", callback_data="btn_autoboss"),
+                InlineKeyboardButton("🗺️ Hunts & Caça", callback_data="sub_hunts"),
+                InlineKeyboardButton("🎯 Missões & Passe", callback_data="sub_missoes"),
+            ],
+            [
+                InlineKeyboardButton("🧘‍♂️ Treino & Stamina", callback_data="sub_treino"),
+                InlineKeyboardButton("👥 Party & Status", callback_data="sub_party"),
+            ],
+            [
+                InlineKeyboardButton("⚔️ AutoBoss", callback_data="sub_autoboss"),
+                InlineKeyboardButton("⚙️ Configurações", callback_data="btn_config"),
+            ],
+            [
+                InlineKeyboardButton("⚡ Ações Rápidas", callback_data="sub_acoes"),
+                InlineKeyboardButton("🔄 Atualizar Painel", callback_data="btn_menu"),
+            ],
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Renderiza o Painel Principal com visual de Sistema Operacional."""
+        info = await self.get_system_overview()
+        stam_desc = f"{info['stamina_pct']}" + (f" ({info['stamina_time']})" if info['stamina_time'] else "")
+        text = (
+            "🎛️ *BAIAK IDLE OS • PAINEL PRINCIPAL*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🤖 *Status:* {info['status_bot']} ({info['mode_str']})\n"
+            f"📍 *Local:* `{info['current_hunt']}`\n"
+            f"⚡ *Stamina:* `{stam_desc}`\n"
+            f"💰 *Sessão:* `{format_number(info['total_gold'])} gold` ({info['sales']} vendas · {format_number(info['gold_ph'])}/h)\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_Selecione um módulo do sistema abaixo:_"
+        )
+        await self.show_or_edit_menu(update, text, self.get_quick_action_keyboard())
+
+    async def show_hunts_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Hunts, Combate e Mudança de Destino."""
+        info = await self.get_system_overview()
+        is_hunting = self.bot.is_hunt_running()
+        pause_label = "⏸️ Pausar Hunt" if is_hunting else "▶️ Retomar Hunt"
+
+        text = (
+            "🗺️ *SISTEMA • HUNTS & COMBATE*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📍 *Hunt Atual:* `{info['current_hunt']}`\n"
+            f"🎯 *Hunt Padrão (Pós-Treino):* `{info['default_hunt']}`\n"
+            f"⚔️ *AutoBoss:* {'Em andamento' if self.auto_boss_instance and self.auto_boss_instance.state.running else 'Inativo'}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_Gerencie mapas de caça e combate:_"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 Ver Hunts Disponíveis", callback_data="btn_hunts"),
+                InlineKeyboardButton("📌 Mudar Hunt Padrão", callback_data="sub_defaulthunt"),
+            ],
+            [
+                InlineKeyboardButton("⚔️ Painel AutoBoss", callback_data="sub_autoboss"),
+                InlineKeyboardButton(pause_label, callback_data="btn_pause_toggle"),
+            ],
+            [
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+                InlineKeyboardButton("🔄 Atualizar", callback_data="sub_hunts"),
+            ],
+        ]
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def show_missoes_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Missões, Passe de Batalha e Tasks."""
+        bp_data = await get_tracked_battlepass_progress(self.bot.tab) if self.bot.tab else None
+        task_data = await get_tracked_task_progress(self.bot.tab) if self.bot.tab else None
+
+        bp_str = f"{bp_data['hunt_name']} ({bp_data['current']}/{bp_data['max']})" if bp_data else "Nenhum no HUD"
+        task_str = f"{task_data['name']} ({task_data['current']}/{task_data['max']})" if task_data else "Nenhuma no HUD"
+
+        text = (
+            "🎯 *SISTEMA • MISSÕES, PASSE & TASKS*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎟️ *Passe no HUD:* `{bp_str}`\n"
+            f"🛡️ *Task da Guilda:* `{task_str}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_Selecione uma rotina de tarefas:_"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("🎟️ Gerenciar Passe", callback_data="btn_action_passe"),
+                InlineKeyboardButton("🛡️ Tasks da Guilda", callback_data="btn_action_guild"),
+            ],
+            [
+                InlineKeyboardButton("🎁 Coletar Daily", callback_data="btn_action_daily"),
+                InlineKeyboardButton("📖 Processar Codex", callback_data="btn_action_codex"),
+            ],
+            [
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+                InlineKeyboardButton("🔄 Atualizar", callback_data="sub_missoes"),
+            ],
+        ]
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def show_treino_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Treino Online, Dummies e Stamina."""
+        info = await self.get_system_overview()
+        stam_desc = f"{info['stamina_pct']}" + (f" ({info['stamina_time']})" if info['stamina_time'] else "")
+        text = (
+            "🧘‍♂️ *SISTEMA • TREINO & RECUPERAÇÃO*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚡ *Stamina Atual:* `{stam_desc}`\n"
+            f"📍 *Local Atual:* `{info['current_hunt']}`\n"
+            f"🎯 *Retorno Configurado:* `{info['default_hunt']}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_Comandos rápidos de regeneração de stamina:_"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("🧘‍♂️ Ir p/ Treino Online", callback_data="btn_treino"),
+                InlineKeyboardButton("🏠 Ir p/ Dummies (Casa)", callback_data="btn_casa"),
+            ],
+            [
+                InlineKeyboardButton("🏹 Forçar Retorno à Hunt", callback_data="btn_retornar_hunt"),
+                InlineKeyboardButton("⚡ Configurar Limites", callback_data="cfg_menu_treino"),
+            ],
+            [
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+                InlineKeyboardButton("🔄 Atualizar", callback_data="sub_treino"),
+            ],
+        ]
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def show_party_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Party, Health, Prints e Diagnóstico."""
+        info = await self.get_system_overview()
+        text = (
+            "👥 *SISTEMA • PARTY & DIAGNÓSTICO*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📍 *Local:* `{info['current_hunt']}`\n"
+            f"💰 *Gold Acumulado:* `{format_number(info['total_gold'])} gold`\n"
+            f"⚖️ *Rendimento:* `{format_number(info['gold_ph'])} gold/h`\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_Ferramentas de inspeção e sessão:_"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("👥 Ver Membros da Party", callback_data="btn_party"),
+                InlineKeyboardButton("📊 Relatório de Status", callback_data="btn_status_detail"),
+            ],
+            [
+                InlineKeyboardButton("📸 Print da Tela (Screenshot)", callback_data="btn_print"),
+                InlineKeyboardButton("🔄 Recuperar / Limpar Popups", callback_data="btn_recuperar"),
+            ],
+            [
+                InlineKeyboardButton("🧹 Resetar Stats & Analyzer", callback_data="btn_reset_stats"),
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+            ],
+        ]
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def show_autoboss_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Painel Completo de AutoBoss."""
+        preset = load_autoboss_preset()
+        indices = preset.get("boss_indices", [])
+        enabled = preset.get("enabled", False)
+        status_auto = "🟢 Ativado (00h)" if enabled else "🔴 Desativado"
+        indices_str = ", ".join(map(str, indices)) if indices else "Nenhum configurado"
+        is_running = self.auto_boss_instance and self.auto_boss_instance.state.running
+
+        text = (
+            "⚔️ *SISTEMA • PAINEL AUTOBOSS*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🤖 *Status:* {'⚔️ Em Execução' if is_running else 'Inativo'}\n"
+            f"📋 *Preset Salvo:* `{indices_str}`\n"
+            f"⏰ *Agendamento 00h:* {status_auto}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_Controle de caça a bosses:_"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("🚀 Iniciar AutoBoss", callback_data="btn_autoboss"),
+                InlineKeyboardButton("⏹️ Parar AutoBoss", callback_data="btn_autoboss_stop"),
+            ],
+            [
+                InlineKeyboardButton("⏰ Ligar às 00h (ON)", callback_data="btn_autoboss_on"),
+                InlineKeyboardButton("🔕 Desligar 00h (OFF)", callback_data="btn_autoboss_off"),
+            ],
+            [
+                InlineKeyboardButton("📋 Ver Bosses Disponíveis", callback_data="btn_bosses_list"),
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+            ],
+        ]
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def show_acoes_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Ações Rápidas de 1-Toque."""
+        is_hunting = self.bot.is_hunt_running()
+        pause_label = "⏸️ Pausar" if is_hunting else "▶️ Retomar"
+        text = (
+            "⚡ *SISTEMA • AÇÕES RÁPIDAS (1-TOQUE)*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_Dispare comandos no jogo com 1 clique:_"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("📸 Print", callback_data="btn_print"),
+                InlineKeyboardButton("🔄 Recuperar", callback_data="btn_recuperar"),
             ],
             [
                 InlineKeyboardButton("🧘‍♂️ Treino", callback_data="btn_treino"),
                 InlineKeyboardButton("🏠 Casa", callback_data="btn_casa"),
             ],
             [
-                InlineKeyboardButton("📸 Print", callback_data="btn_print"),
-                InlineKeyboardButton("🔄 Recuperar", callback_data="btn_recuperar"),
+                InlineKeyboardButton("🎁 Daily", callback_data="btn_action_daily"),
+                InlineKeyboardButton(pause_label, callback_data="btn_pause_toggle"),
             ],
             [
-                InlineKeyboardButton("👥 Party", callback_data="btn_party"),
-                InlineKeyboardButton("⚙️ Configurações", callback_data="btn_config"),
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
             ],
         ]
-        return InlineKeyboardMarkup(keyboard)
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def show_defaulthunt_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Seleção de Hunt Padrão pós-treino."""
+        info = await self.get_system_overview()
+        text = (
+            "📌 *SISTEMA • SELEÇÃO DE HUNT PADRÃO*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 *Hunt Padrão Atual:* `{info['default_hunt']}`\n"
+            f"📍 *Hunt Atual do Personagem:* `{info['current_hunt']}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_O bot retornará automaticamente para esta hunt pós-treino:_"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("📍 Usar Hunt Atual como Padrão", callback_data="set_defhunt_current"),
+            ],
+            [
+                InlineKeyboardButton("Infernal Demon", callback_data="set_defhunt_Infernal Demon"),
+                InlineKeyboardButton("Amazon Camp", callback_data="set_defhunt_Amazon Camp"),
+            ],
+            [
+                InlineKeyboardButton("Hydra", callback_data="set_defhunt_Hydra"),
+                InlineKeyboardButton("Dragon Lord", callback_data="set_defhunt_Dragon Lord"),
+            ],
+            [
+                InlineKeyboardButton("🔙 Voltar p/ Hunts", callback_data="sub_hunts"),
+                InlineKeyboardButton("🏠 Menu Principal", callback_data="btn_menu"),
+            ],
+        ]
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    @authorized_only
+    async def text_menu_router(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Roteador para a barra de botões persistente inferior (Dock)."""
+        if not update.message or not update.message.text:
+            return
+
+        text = update.message.text.strip()
+        if text in ["🎛️ Menu Principal", "Menu Principal", "menu", "Menu"]:
+            await self.show_main_menu(update, context)
+        elif text in ["📊 Status", "Status", "status"]:
+            await self.status(update, context)
+        elif text in ["🗺️ Hunts", "Hunts", "hunts"]:
+            await self.show_hunts_menu(update, context)
+        elif text in ["🎯 Missões", "Missões", "Missoes", "missoes"]:
+            await self.show_missoes_menu(update, context)
+        elif text in ["🧘‍♂️ Treino / Casa", "Treino", "Casa"]:
+            await self.show_treino_menu(update, context)
+        elif text in ["⚙️ Configurações", "Configurações", "Configs", "config"]:
+            await self.config(update, context)
 
     def format_config_message(self, settings: dict) -> str:
         """Formata o texto de apresentação do Painel de Configurações."""
@@ -1554,14 +2122,9 @@ class TelegramController:
         return InlineKeyboardMarkup(keyboard)
 
     @authorized_only
-    @require_bot_running
     async def menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Exibe o menu de atalhos rápidos com botões inline."""
-        text = (
-            "🎮 *PAINEL DE ATALHOS RÁPIDOS*\n\n"
-            "Escolha uma ação para executar imediatamente no jogo:"
-        )
-        await self.reply_safe(update, text, reply_markup=self.get_quick_action_keyboard(), parse_mode="Markdown")
+        """Exibe o Painel Principal do Sistema."""
+        await self.show_main_menu(update, context)
 
     @authorized_only
     async def config(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1569,7 +2132,7 @@ class TelegramController:
         from baiaidle.settings import load_settings
         settings = load_settings()
         text = self.format_config_message(settings)
-        await self.reply_safe(update, text, reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
+        await self.show_or_edit_menu(update, text, self.get_config_keyboard(settings))
 
     @authorized_only
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1625,9 +2188,18 @@ async def main():
 
     controller = TelegramController()
 
+    request = HTTPXRequest(
+        connection_pool_size=8,
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
+    )
+
     application = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
+        .request(request)
         .build()
     )
 
@@ -1671,17 +2243,40 @@ async def main():
     # Registro do Ouvinte de Botões Inline
     application.add_handler(CallbackQueryHandler(controller.inline_button_handler))
 
+    # Registro de Cliques nos Botões do Teclado Persistente (Dock Inferior)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, controller.text_menu_router))
+
+    print("Conectando ao Telegram...")
+
+    # Inicialização resiliente com retries para lidar com flutuações de rede e rate limits
+    max_init_retries = 5
+    for attempt in range(1, max_init_retries + 1):
+        try:
+            await application.initialize()
+            break
+        except RetryAfter as e:
+            wait_time = int(e.retry_after) + 1
+            print(f"⚠️ Telegram Flood Control: aguardando {wait_time}s antes de tentar novamente (tentativa {attempt}/{max_init_retries})...")
+            await asyncio.sleep(wait_time)
+        except (TimedOut, NetworkError) as e:
+            print(f"⚠️ Falha de rede ao conectar no Telegram ({e}). Tentando novamente em 3s (tentativa {attempt}/{max_init_retries})...")
+            await asyncio.sleep(3)
+        except Exception as e:
+            if attempt == max_init_retries:
+                raise
+            print(f"⚠️ Erro ao inicializar Telegram ({e}). Tentando novamente em 3s...")
+            await asyncio.sleep(3)
+
+    await controller.setup_commands()
+    await application.start()
+    await application.updater.start_polling(drop_pending_updates=True)
+
     print("\n" + "=" * 40)
     print("TELEGRAM CONTROLLER")
     print("=" * 40)
     print("Telegram online.")
     print("Use /start para iniciar o bot.")
     print("=" * 40 + "\n")
-
-    await application.initialize()
-    await controller.setup_commands()
-    await application.start()
-    await application.updater.start_polling()
 
     try:
         await asyncio.Event().wait()

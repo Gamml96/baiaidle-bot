@@ -70,6 +70,8 @@ class HuntStats:
     session_platinum_coins: int = 0
     session_gold_coins: int = 0
     total_coin_gold: int = 0
+    is_in_training: bool = False
+    training_type: str = ""
 
     def reset(self):
         """Zera todos os dados da sessão."""
@@ -92,6 +94,8 @@ class HuntStats:
         self.session_platinum_coins = 0
         self.session_gold_coins = 0
         self.total_coin_gold = 0
+        self.is_in_training = False
+        self.training_type = ""
         if not getattr(self, "default_hunt", None):
             self.default_hunt = DEFAULT_HUNT
 
@@ -733,8 +737,16 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
             if on_message:
                 await on_message("❌ Falha ao tentar ir para o Treino Online. O bot tentará continuar as vendas.")
             return False
+        if on_message:
+            hud_init = await get_hud_data(tab)
+            init_stam = hud_init.get("stamina_pct", "0%")
+            target_ret = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
+            await on_message(f"🧘‍♂️ *Chegou ao Treino Online!*\n⚡ Stamina atual: `{init_stam}`. Treinando até `{target_ret}%`.")
         
     training = True
+    if bot and hasattr(bot, "hunt_stats"):
+        bot.hunt_stats.is_in_training = True
+        bot.hunt_stats.training_type = "treino"
     last_report_time = asyncio.get_running_loop().time()
     
     while training and not stop_event.is_set():
@@ -776,6 +788,9 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
                     print(f"⚠️ Falha ao voltar para a Hunt. Tentando novamente em 5s... Erro: {msg_viagem}")
                     await asyncio.sleep(5)
                     
+            if bot and hasattr(bot, "hunt_stats"):
+                bot.hunt_stats.is_in_training = False
+                bot.hunt_stats.training_type = ""
             return True
             
         if now - last_report_time >= 600:
@@ -803,8 +818,16 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
             if on_message and not silent_fail:
                 await on_message("❌ Nenhuma Casa com dummy ativo encontrada no momento.")
             return False
+        if on_message:
+            hud_init = await get_hud_data(tab)
+            init_stam = hud_init.get("stamina_pct", "0%")
+            target_ret = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
+            await on_message(f"🏠 *Entrou na Casa com sucesso!*\n⚡ Stamina atual: `{init_stam}`. Treinando até `{target_ret}%`.")
         
     training = True
+    if bot and hasattr(bot, "hunt_stats"):
+        bot.hunt_stats.is_in_training = True
+        bot.hunt_stats.training_type = "casa"
     last_report_time = asyncio.get_running_loop().time()
     
     while training and not stop_event.is_set():
@@ -846,6 +869,9 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
                     print(f"⚠️ Falha ao voltar para a Hunt. Tentando novamente em 5s... Erro: {msg_viagem}")
                     await asyncio.sleep(5)
 
+            if bot and hasattr(bot, "hunt_stats"):
+                bot.hunt_stats.is_in_training = False
+                bot.hunt_stats.training_type = ""
             return True
             
         if now - last_report_time >= 600:
@@ -934,15 +960,18 @@ async def run_sell(
             # ====================================================
             # DETECÇÃO AUTOMÁTICA DE LOCALIZAÇÃO (TREINO / CASA)
             # ====================================================
-            current_loc = await get_current_hunt(tab)
+            current_loc = await get_current_hunt(tab, timeout=2.0)
             is_training, train_type = is_training_location(current_loc)
             if is_training:
+                stats.is_in_training = True
+                stats.training_type = train_type
                 hud_data = await get_hud_data(tab)
                 stam_pct = parse_clean_int(hud_data.get("stamina_pct", "0%"))
                 stam_time = hud_data.get("stamina_time", "00:00")
                 current_minutes = parse_stamina_time_to_minutes(stam_time)
                 
-                is_full = (stam_pct >= VOLTAR_PARA_HUNT) or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES)
+                target_retorno = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
+                is_full = (stam_pct >= target_retorno) or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES)
                 target_hunt = stats.default_hunt or DEFAULT_HUNT
 
                 if is_full:
@@ -951,6 +980,8 @@ async def run_sell(
                     if on_message:
                         await on_message(f"✅ {msg}")
                     await change_hunt(tab, target_hunt)
+                    stats.is_in_training = False
+                    stats.training_type = ""
                 else:
                     _, time_remaining_str = calculate_remaining_recovery_time(stam_time, stam_pct)
                     mode_name = "Casa (Dummies)" if train_type == "casa" else "Treino Online"
@@ -958,7 +989,7 @@ async def run_sell(
                         f"🧘‍♂️ *Modo Treino Ativado!*\n"
                         f"Detectado que o personagem já está em: *{current_loc}* ({mode_name})\n\n"
                         f"⚡ Stamina atual: {hud_data.get('stamina_pct', f'{stam_pct}%')} ({stam_time})\n"
-                        f"⏳ Restante até 100%: ~{time_remaining_str}\n"
+                        f"⏳ Restante até {target_retorno}%: ~{time_remaining_str}\n"
                         f"🎯 Hunt de retorno configurada: *{target_hunt}*"
                     )
                     print(msg.replace('*', ''))
@@ -971,6 +1002,9 @@ async def run_sell(
                         await manage_training(tab, stop_event, pause_event, on_message, target_hunt, already_there=True, bot=bot)
 
                 continue
+            else:
+                stats.is_in_training = False
+                stats.training_type = ""
             # ====================================================
 
             if not pause_event.is_set():
