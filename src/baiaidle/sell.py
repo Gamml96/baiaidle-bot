@@ -16,7 +16,13 @@ from baiaidle.actions import (
 )
 
 # === IMPORTANDO FUNÇÕES DE HUNT E TREINO ===
-from baiaidle.hunts import get_current_hunt, change_hunt, go_to_training, go_to_house
+from baiaidle.hunts import (
+    get_current_hunt,
+    change_hunt,
+    go_to_training,
+    go_to_house,
+    repair_house_dummy,
+)
 from baiaidle.guild import get_tracked_task_progress, process_guild_tasks
 from baiaidle.codex import process_codex_routine
 from baiaidle.battlepass import get_tracked_battlepass_progress, process_battlepass
@@ -863,6 +869,9 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
             target_ret = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
             await on_message(f"🏠 *Entrou na Casa com sucesso!*\n⚡ Stamina atual: `{init_stam}`. Treinando até `{target_ret}%`.")
         
+    # Repara o Dummy logo no início do treino
+    await repair_house_dummy(tab, on_message=on_message)
+
     training = True
     if stats:
         stats.is_in_training = True
@@ -918,8 +927,11 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
         
         target_retorno = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
         if current_stam_val >= target_retorno or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES):
+            # Repara o Dummy antes de terminar o treino e voltar para a hunt
+            await repair_house_dummy(tab, on_message=on_message)
+
             msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Saindo da Casa e retornando para: {current_hunt}."
-            print(msg_done)
+            print(f"[Casa Dummies] Stamina recuperada ({current_stam_val}%). Saindo da Casa e retornando para: {current_hunt}.")
             if on_message:
                 await on_message(f"✅ {msg_done}")
             

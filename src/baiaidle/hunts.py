@@ -344,3 +344,90 @@ async def go_to_house(tab):
 
     print("Falha ao entrar na Casa (nenhuma casa liberada com botão Entrar encontrada).")
     return False
+
+
+async def repair_house_dummy(tab, on_message=None):
+    """
+    Localiza o Dummy na casa através do centro do canvas (#arena canvas),
+    verifica se há desgaste e executa o reparo clicando no botão.
+    Retorna True se reparou ou se já estava sem desgaste, e False caso contrário.
+    """
+    print("Verificando se o Dummy da Casa necessita de reparos...")
+    js_repair = """
+    (() => {
+        const canvas = document.querySelector('#arena canvas');
+        if (!canvas) return { success: false, reason: 'Canvas #arena não encontrado' };
+        
+        const rect = canvas.getBoundingClientRect();
+        
+        // No mapa da casa, a câmera é fixa (camX=0, camY=0) e o dummy fica centralizado
+        const offsets = [
+            [0.5, 0.5],
+            [0.5, 0.45],
+            [0.5, 0.55],
+            [0.45, 0.5],
+            [0.55, 0.5]
+        ];
+        
+        for (const [ox, oy] of offsets) {
+            const cx = rect.left + rect.width * ox;
+            const cy = rect.top + rect.height * oy;
+            
+            canvas.dispatchEvent(new PointerEvent('pointermove', {
+                clientX: cx,
+                clientY: cy,
+                pointerType: 'mouse',
+                bubbles: true
+            }));
+            
+            const tip = document.getElementById('house-dummy-tip');
+            if (tip) {
+                const btn = tip.querySelector('button');
+                if (btn && btn.innerText.includes('Reparar') && !btn.disabled) {
+                    const costText = btn.innerText.trim();
+                    btn.click();
+                    return { success: true, repaired: true, text: costText };
+                }
+                if (tip.innerText.includes('Sem desgaste')) {
+                    return { success: true, repaired: false, reason: 'Sem desgaste' };
+                }
+            }
+        }
+        
+        // Checagem caso o botão já estivesse aberto/montado previamente
+        const tip = document.getElementById('house-dummy-tip');
+        if (tip) {
+            const btn = tip.querySelector('button');
+            if (btn && btn.innerText.includes('Reparar') && !btn.disabled) {
+                const costText = btn.innerText.trim();
+                btn.click();
+                return { success: true, repaired: true, text: costText };
+            }
+            if (tip.innerText.includes('Sem desgaste')) {
+                return { success: true, repaired: false, reason: 'Sem desgaste' };
+            }
+        }
+        
+        return { success: false, reason: 'Dummy ou botão de reparo não localizado' };
+    })()
+    """
+    try:
+        res = await tab.execute_script(js_repair)
+        data = extract_execute_result(res) or {}
+        
+        if data.get("repaired"):
+            cost_info = data.get("text", "Reparar")
+            print(f"[Casa Dummies] Dummy reparado com sucesso! ({cost_info})")
+            if on_message:
+                await on_message(f"🔨 *Dummy reparado com sucesso!* ({cost_info})")
+            await asyncio.sleep(0.5)
+            return True
+        elif data.get("reason") == "Sem desgaste":
+            print("[Casa Dummies] Dummy verificado: Sem desgaste (100% de uso).")
+            return True
+        else:
+            print(f"[Casa Dummies] Reparo do Dummy não realizado: {data.get('reason', 'desconhecido')}")
+            return False
+    except Exception as e:
+        print(f"[Casa Dummies] Erro ao tentar reparar o Dummy da Casa: {e}")
+        return False
