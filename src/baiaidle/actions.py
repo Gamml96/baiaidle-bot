@@ -431,25 +431,57 @@ async def get_sale_value(
     js = """
     (() => {
 
-        const element =
-            document.evaluate(
-                '//*[@id="confirm-modal-body"]/div/div[4]/span[2]',
-                document,
-                null,
-                XPathResult.FIRST_ORDERED_NODE_TYPE,
-                null
-            ).singleNodeValue;
-
-        if (!element) {
-
+        const modal = document.getElementById("confirm-modal-body");
+        if (!modal) {
             return null;
         }
 
-        return (
-            element.innerText ||
-            element.textContent ||
-            ''
-        ).trim();
+        // 1. Prioridade máxima: valor de gold no Total Estimado (.sell-sum-total .ssr-gold)
+        const totalGold = modal.querySelector(".sell-sum-total .ssr-gold");
+        if (totalGold) {
+            const txt = (totalGold.innerText || totalGold.textContent || "").trim();
+            if (txt) return txt;
+        }
+
+        // 2. Linha do Total Estimado (.sell-sum-total)
+        const totalRow = modal.querySelector(".sell-sum-total");
+        if (totalRow) {
+            const txt = (totalRow.innerText || totalRow.textContent || "").trim();
+            if (txt) return txt;
+        }
+
+        // 3. Fallback: procurar elemento contendo texto 'Total estimado'
+        const allElements = Array.from(modal.querySelectorAll("div, p, span, li"));
+        for (const el of allElements) {
+            if (/total\\s*estimado/i.test(el.textContent || "")) {
+                const gold = el.querySelector(".ssr-gold") || el;
+                const txt = (gold.innerText || gold.textContent || "").trim();
+                if (txt) return txt;
+            }
+        }
+
+        // 4. Fallback: último .ssr-gold encontrado no modal
+        const goldSpans = modal.querySelectorAll(".ssr-gold");
+        if (goldSpans.length > 0) {
+            const lastSpan = goldSpans[goldSpans.length - 1];
+            const txt = (lastSpan.innerText || lastSpan.textContent || "").trim();
+            if (txt) return txt;
+        }
+
+        // 5. Fallback legado pelo XPath
+        const legacyElem = document.evaluate(
+            '//*[@id="confirm-modal-body"]/div/div[4]/span[2]',
+            document,
+            null,
+            XPathResult.FIRST_ORDERED_NODE_TYPE,
+            null
+        ).singleNodeValue;
+
+        if (legacyElem) {
+            return (legacyElem.innerText || legacyElem.textContent || "").trim();
+        }
+
+        return null;
 
     })()
     """
