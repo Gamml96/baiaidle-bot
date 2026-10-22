@@ -1,5 +1,73 @@
 import asyncio
 import json
+from pathlib import Path
+from baiaidle.config import PROJECT_ROOT
+
+HUNTS_CACHE_FILE = PROJECT_ROOT / "hunts_cache.json"
+_cached_hunts = None
+
+
+def load_hunts_cache() -> list[dict]:
+    """Carrega as hunts do cache JSON em disco ou retorna a lista em memória."""
+    global _cached_hunts
+    if _cached_hunts is not None:
+        return _cached_hunts
+
+    if HUNTS_CACHE_FILE.exists():
+        try:
+            with open(HUNTS_CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list) and data:
+                    _cached_hunts = data
+                    return _cached_hunts
+        except Exception as e:
+            print(f"[Hunts Cache] Aviso ao carregar {HUNTS_CACHE_FILE}: {e}")
+
+    return []
+
+
+def save_hunts_cache(hunts: list[dict]) -> bool:
+    """Salva a lista de hunts no cache JSON em disco e atualiza a memória."""
+    global _cached_hunts
+    try:
+        with open(HUNTS_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(hunts, f, indent=2, ensure_ascii=False)
+        _cached_hunts = list(hunts)
+        return True
+    except Exception as e:
+        print(f"[Hunts Cache] Erro ao salvar {HUNTS_CACHE_FILE}: {e}")
+        return False
+
+
+def get_hunt_info(hunt_name: str) -> dict | None:
+    """Busca os dados de uma hunt (índice, level, tipo) a partir do nome no cache."""
+    if not hunt_name:
+        return None
+    hunts = load_hunts_cache()
+    target = hunt_name.strip().lower()
+    for h in hunts:
+        if h.get("name", "").strip().lower() == target:
+            return h
+    return None
+
+
+def get_hunt_level(hunt_name: str) -> int | None:
+    """Retorna o level requerido de uma hunt pelo nome, ou None se não encontrada."""
+    info = get_hunt_info(hunt_name)
+    return info.get("level") if info else None
+
+
+def is_hunt_level_safe(hunt_name: str, char_level: int, margin: int = 0) -> bool:
+    """
+    Verifica se o level da hunt é compatível com o level do personagem.
+    Retorna True se hunt_level <= char_level + margin.
+    Se o level da hunt for desconhecido, retorna True para não bloquear rotinas indevidamente.
+    """
+    lvl = get_hunt_level(hunt_name)
+    if lvl is None:
+        return True
+    return lvl <= (char_level + margin)
+
 
 def extract_execute_result(result):
     """Extrai o valor do Pydoll."""
@@ -78,10 +146,19 @@ async def open_hunts_menu(tab):
     print("Falha ao abrir menu de Hunts.")
     return False
 
-async def get_hunts_list(tab):
-    """Extrai todas as hunts disponíveis na .hunt-grid."""
+async def get_hunts_list(tab, force_refresh: bool = False):
+    """
+    Retorna todas as hunts disponíveis.
+    Se force_refresh=False e houver cache em disco, retorna o cache sem abrir modal.
+    Se force_refresh=True ou o cache estiver vazio, abre o modal, extrai e atualiza o cache.
+    """
+    if not force_refresh:
+        cached = load_hunts_cache()
+        if cached:
+            return cached
+
     if not await open_hunts_menu(tab):
-        return []
+        return load_hunts_cache()
 
     js = """
     (() => {
@@ -93,10 +170,20 @@ async def get_hunts_list(tab):
         
         cards.forEach((card, index) => {
             const b = card.querySelector('b'); 
+            const lvlSpan = card.querySelector('.stage-lvl');
+            let level = null;
+            if (lvlSpan) {
+                const match = lvlSpan.innerText.match(/\\d+/);
+                if (match) level = parseInt(match[0], 10);
+            }
+            const lean = card.querySelector('.stage-lean');
             if (b) {
                 hunts.push({
                     index: index + 1,
-                    name: b.innerText.trim()
+                    name: b.innerText.trim(),
+                    level: level,
+                    raw_level: lvlSpan ? lvlSpan.innerText.trim() : null,
+                    type: lean ? lean.innerText.trim() : null
                 });
             }
         });
@@ -110,7 +197,11 @@ async def get_hunts_list(tab):
     js_close = "(() => { const btn = document.getElementById('picker-modal-close'); if(btn) btn.click(); })()"
     await tab.execute_script(js_close)
     
-    return data if data else []
+    if data:
+        save_hunts_cache(data)
+        return data
+
+    return load_hunts_cache()
 
 async def change_hunt(tab, hunt_identifier):
     """Procura a hunt pelo nome ou índice, clica nela e clica em Caçar."""

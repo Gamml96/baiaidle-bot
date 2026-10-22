@@ -577,14 +577,15 @@ class TelegramController:
             self.bot.pause_hunt()
             try:
                 current = await get_current_hunt(self.bot.tab)
-                hunts_data = await get_hunts_list(self.bot.tab)
+                hunts_data = await get_hunts_list(self.bot.tab, force_refresh=True)
 
                 if not hunts_data:
                     await update.message.reply_text("❌ Nenhuma hunt encontrada ou ocorreu falha ao abrir o menu.")
                 else:
-                    lines = [f"🗺️ HUNTS DISPONÍVEIS\n\n📍 Atual: {current}\n"]
+                    lines = [f"🗺️ HUNTS DISPONÍVEIS (Atualizadas)\n\n📍 Atual: {current}\n"]
                     for h in hunts_data:
-                        lines.append(f"{h['index']} - {h['name']}")
+                        lvl_str = f" [lvl {h['level']}]" if h.get("level") is not None else ""
+                        lines.append(f"{h['index']} - {h['name']}{lvl_str}")
                     lines.append("\nPara mudar digite: /hunt <numero> ou /hunt <nome da hunt>")
 
                     msg = "\n".join(lines)
@@ -1417,13 +1418,14 @@ class TelegramController:
                 self.bot.pause_hunt()
                 try:
                     current = await get_current_hunt(self.bot.tab)
-                    hunts_data = await get_hunts_list(self.bot.tab)
+                    hunts_data = await get_hunts_list(self.bot.tab, force_refresh=True)
                     if not hunts_data:
                         await query.message.reply_text("❌ Nenhuma hunt encontrada.")
                     else:
-                        lines = [f"🗺️ *HUNTS DISPONÍVEIS*\n\n📍 Atual: *{current}*\n"]
+                        lines = [f"🗺️ *HUNTS DISPONÍVEIS (Atualizadas)*\n\n📍 Atual: *{current}*\n"]
                         for h in hunts_data:
-                            lines.append(f"`{h['index']}` - {h['name']}")
+                            lvl_str = f" `[lvl {h['level']}]`" if h.get("level") is not None else ""
+                            lines.append(f"`{h['index']}` - {h['name']}{lvl_str}")
                         lines.append("\nPara mudar digite: `/hunt <numero>` ou `/hunt <nome>`")
                         msg = "\n".join(lines)
                         for chunk in [msg[i:i + 4000] for i in range(0, len(msg), 4000)]:

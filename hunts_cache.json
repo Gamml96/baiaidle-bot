@@ -1,0 +1,611 @@
+[
+  {
+    "index": 1,
+    "name": "Troll Cave",
+    "level": 1,
+    "raw_level": "lvl 1",
+    "type": "LOOT"
+  },
+  {
+    "index": 2,
+    "name": "Elf",
+    "level": 8,
+    "raw_level": "lvl 8",
+    "type": "LOOT"
+  },
+  {
+    "index": 3,
+    "name": "Amazon",
+    "level": 9,
+    "raw_level": "lvl 9",
+    "type": "LOOT"
+  },
+  {
+    "index": 4,
+    "name": "Minotaur",
+    "level": 10,
+    "raw_level": "lvl 10",
+    "type": "LOOT"
+  },
+  {
+    "index": 5,
+    "name": "Kongra",
+    "level": 10,
+    "raw_level": "lvl 10",
+    "type": "EXP"
+  },
+  {
+    "index": 6,
+    "name": "Cyclopolis",
+    "level": 15,
+    "raw_level": "lvl 15",
+    "type": "EXP"
+  },
+  {
+    "index": 7,
+    "name": "Corym Skirmisher",
+    "level": 30,
+    "raw_level": "lvl 30",
+    "type": "EXP"
+  },
+  {
+    "index": 8,
+    "name": "Stone Refiner",
+    "level": 30,
+    "raw_level": "lvl 30",
+    "type": "LOOT"
+  },
+  {
+    "index": 9,
+    "name": "Giant Spider",
+    "level": 50,
+    "raw_level": "lvl 50",
+    "type": "EXP"
+  },
+  {
+    "index": 10,
+    "name": "Crawler",
+    "level": 50,
+    "raw_level": "lvl 50",
+    "type": "EXP"
+  },
+  {
+    "index": 11,
+    "name": "Glooth Bandit",
+    "level": 60,
+    "raw_level": "lvl 60",
+    "type": "LOOT"
+  },
+  {
+    "index": 12,
+    "name": "Hero",
+    "level": 60,
+    "raw_level": "lvl 60",
+    "type": "EXP"
+  },
+  {
+    "index": 13,
+    "name": "Cult",
+    "level": 80,
+    "raw_level": "lvl 80",
+    "type": "EXP"
+  },
+  {
+    "index": 14,
+    "name": "Dragon Lair",
+    "level": 80,
+    "raw_level": "lvl 80",
+    "type": "EXP"
+  },
+  {
+    "index": 15,
+    "name": "Werebadge",
+    "level": 90,
+    "raw_level": "lvl 90",
+    "type": "EXP"
+  },
+  {
+    "index": 16,
+    "name": "Hydra",
+    "level": 100,
+    "raw_level": "lvl 100",
+    "type": "EXP"
+  },
+  {
+    "index": 17,
+    "name": "Behemoth",
+    "level": 100,
+    "raw_level": "lvl 100",
+    "type": "EXP"
+  },
+  {
+    "index": 18,
+    "name": "Orclops",
+    "level": 100,
+    "raw_level": "lvl 100",
+    "type": "LOOT"
+  },
+  {
+    "index": 19,
+    "name": "Crumbling Caverns",
+    "level": 130,
+    "raw_level": "lvl 130",
+    "type": "EXP"
+  },
+  {
+    "index": 20,
+    "name": "Grim Reaper",
+    "level": 130,
+    "raw_level": "lvl 130",
+    "type": "EXP"
+  },
+  {
+    "index": 21,
+    "name": "Wyrm",
+    "level": 130,
+    "raw_level": "lvl 130",
+    "type": "LOOT"
+  },
+  {
+    "index": 22,
+    "name": "Candia",
+    "level": 140,
+    "raw_level": "lvl 140",
+    "type": "EXP"
+  },
+  {
+    "index": 23,
+    "name": "Werehyaena",
+    "level": 140,
+    "raw_level": "lvl 140",
+    "type": "LOOT"
+  },
+  {
+    "index": 24,
+    "name": "Asuras",
+    "level": 150,
+    "raw_level": "lvl 150",
+    "type": "EXP"
+  },
+  {
+    "index": 25,
+    "name": "Dark Torturer",
+    "level": 150,
+    "raw_level": "lvl 150",
+    "type": "LOOT"
+  },
+  {
+    "index": 26,
+    "name": "Wereliones",
+    "level": 170,
+    "raw_level": "lvl 170",
+    "type": "LOOT"
+  },
+  {
+    "index": 27,
+    "name": "Draken",
+    "level": 180,
+    "raw_level": "lvl 180",
+    "type": "LOOT"
+  },
+  {
+    "index": 28,
+    "name": "Mitmah Seer",
+    "level": 180,
+    "raw_level": "lvl 180",
+    "type": "LOOT"
+  },
+  {
+    "index": 29,
+    "name": "Cobras",
+    "level": 190,
+    "raw_level": "lvl 190",
+    "type": "EXP"
+  },
+  {
+    "index": 30,
+    "name": "Undead Dragon",
+    "level": 200,
+    "raw_level": "lvl 200",
+    "type": "LOOT"
+  },
+  {
+    "index": 31,
+    "name": "Cliff Strider",
+    "level": 200,
+    "raw_level": "lvl 200",
+    "type": "LOOT"
+  },
+  {
+    "index": 32,
+    "name": "Hideous Fungus",
+    "level": 200,
+    "raw_level": "lvl 200",
+    "type": "LOOT"
+  },
+  {
+    "index": 33,
+    "name": "Magma Crawler",
+    "level": 200,
+    "raw_level": "lvl 200",
+    "type": "EXP"
+  },
+  {
+    "index": 34,
+    "name": "Dread Intruder",
+    "level": 200,
+    "raw_level": "lvl 200",
+    "type": "LOOT"
+  },
+  {
+    "index": 35,
+    "name": "Falcon",
+    "level": 210,
+    "raw_level": "lvl 210",
+    "type": "LOOT"
+  },
+  {
+    "index": 36,
+    "name": "Vexclaw",
+    "level": 210,
+    "raw_level": "lvl 210",
+    "type": "LOOT"
+  },
+  {
+    "index": 37,
+    "name": "Grimeleech",
+    "level": 220,
+    "raw_level": "lvl 220",
+    "type": "LOOT"
+  },
+  {
+    "index": 38,
+    "name": "Choking Fear",
+    "level": 240,
+    "raw_level": "lvl 240",
+    "type": "LOOT"
+  },
+  {
+    "index": 39,
+    "name": "Crazed Elf's",
+    "level": 240,
+    "raw_level": "lvl 240",
+    "type": "EXP"
+  },
+  {
+    "index": 40,
+    "name": "Guzzlemaw",
+    "level": 250,
+    "raw_level": "lvl 250",
+    "type": "LOOT"
+  },
+  {
+    "index": 41,
+    "name": "Raubritter",
+    "level": 250,
+    "raw_level": "lvl 250",
+    "type": "EXP"
+  },
+  {
+    "index": 42,
+    "name": "Catacomb",
+    "level": 250,
+    "raw_level": "lvl 250",
+    "type": "LOOT"
+  },
+  {
+    "index": 43,
+    "name": "Prison",
+    "level": 250,
+    "raw_level": "lvl 250",
+    "type": "LOOT"
+  },
+  {
+    "index": 44,
+    "name": "Lion Knight",
+    "level": 270,
+    "raw_level": "lvl 270",
+    "type": "EXP"
+  },
+  {
+    "index": 45,
+    "name": "Mega Dragon",
+    "level": 290,
+    "raw_level": "lvl 290",
+    "type": "LOOT"
+  },
+  {
+    "index": 46,
+    "name": "Naga Lair",
+    "level": 300,
+    "raw_level": "lvl 300",
+    "type": "EXP"
+  },
+  {
+    "index": 47,
+    "name": "True Azura",
+    "level": 300,
+    "raw_level": "lvl 300",
+    "type": "EXP"
+  },
+  {
+    "index": 48,
+    "name": "Freakish Lost Soul",
+    "level": 300,
+    "raw_level": "lvl 300",
+    "type": "EXP"
+  },
+  {
+    "index": 49,
+    "name": "Moonstone Crater",
+    "level": 310,
+    "raw_level": "lvl 310",
+    "type": "EXP"
+  },
+  {
+    "index": 50,
+    "name": "Weretiger",
+    "level": 330,
+    "raw_level": "lvl 330",
+    "type": "LOOT"
+  },
+  {
+    "index": 51,
+    "name": "Feral Werecrocodile",
+    "level": 340,
+    "raw_level": "lvl 340",
+    "type": "LOOT"
+  },
+  {
+    "index": 52,
+    "name": "Bulltaur",
+    "level": 350,
+    "raw_level": "lvl 350",
+    "type": "LOOT"
+  },
+  {
+    "index": 53,
+    "name": "Gazer",
+    "level": 350,
+    "raw_level": "lvl 350",
+    "type": "LOOT"
+  },
+  {
+    "index": 54,
+    "name": "Skeleton Elite Warrior",
+    "level": 350,
+    "raw_level": "lvl 350",
+    "type": "EXP"
+  },
+  {
+    "index": 55,
+    "name": "Bashmu",
+    "level": 350,
+    "raw_level": "lvl 350",
+    "type": "LOOT"
+  },
+  {
+    "index": 56,
+    "name": "Forbidden Gardens",
+    "level": 370,
+    "raw_level": "lvl 370",
+    "type": "EXP"
+  },
+  {
+    "index": 57,
+    "name": "Asura Citadel",
+    "level": 420,
+    "raw_level": "lvl 420",
+    "type": "EXP"
+  },
+  {
+    "index": 58,
+    "name": "Dark Carnisylvan",
+    "level": 430,
+    "raw_level": "lvl 430",
+    "type": "LOOT"
+  },
+  {
+    "index": 59,
+    "name": "Inferniarch",
+    "level": 450,
+    "raw_level": "lvl 450",
+    "type": "EXP"
+  },
+  {
+    "index": 60,
+    "name": "girtablilu warrior",
+    "level": 460,
+    "raw_level": "lvl 460",
+    "type": "LOOT"
+  },
+  {
+    "index": 61,
+    "name": "Livraria ICE",
+    "level": 500,
+    "raw_level": "lvl 500",
+    "type": "LOOT"
+  },
+  {
+    "index": 62,
+    "name": "Livraria FIRE",
+    "level": 500,
+    "raw_level": "lvl 500",
+    "type": "EXP"
+  },
+  {
+    "index": 63,
+    "name": "Livraria EARTH",
+    "level": 500,
+    "raw_level": "lvl 500",
+    "type": "EXP"
+  },
+  {
+    "index": 64,
+    "name": "Livraria ENERGY",
+    "level": 500,
+    "raw_level": "lvl 500",
+    "type": "EXP"
+  },
+  {
+    "index": 65,
+    "name": "Thalassara Surroundings",
+    "level": 510,
+    "raw_level": "lvl 510",
+    "type": "EXP"
+  },
+  {
+    "index": 66,
+    "name": "Quara Raider",
+    "level": 600,
+    "raw_level": "lvl 600",
+    "type": "EXP"
+  },
+  {
+    "index": 67,
+    "name": "Norcferatu Nightweaver",
+    "level": 600,
+    "raw_level": "lvl 600",
+    "type": "EXP"
+  },
+  {
+    "index": 68,
+    "name": "Lavafungos",
+    "level": 610,
+    "raw_level": "lvl 610",
+    "type": "LOOT"
+  },
+  {
+    "index": 69,
+    "name": "Afflicted Strider",
+    "level": 610,
+    "raw_level": "lvl 610",
+    "type": "LOOT"
+  },
+  {
+    "index": 70,
+    "name": "Varnished Diremaw",
+    "level": 610,
+    "raw_level": "lvl 610",
+    "type": "LOOT"
+  },
+  {
+    "index": 71,
+    "name": "Crypt Construct",
+    "level": 700,
+    "raw_level": "lvl 700",
+    "type": "EXP"
+  },
+  {
+    "index": 72,
+    "name": "Crystal Enigma",
+    "level": 800,
+    "raw_level": "lvl 800",
+    "type": "LOOT"
+  },
+  {
+    "index": 73,
+    "name": "Rotten Golem",
+    "level": 800,
+    "raw_level": "lvl 800",
+    "type": "LOOT"
+  },
+  {
+    "index": 74,
+    "name": "Cloak Of Terror",
+    "level": 800,
+    "raw_level": "lvl 800",
+    "type": "LOOT"
+  },
+  {
+    "index": 75,
+    "name": "Monster Graveyard",
+    "level": 800,
+    "raw_level": "lvl 800",
+    "type": "LOOT"
+  },
+  {
+    "index": 76,
+    "name": "Sparkling Pools",
+    "level": 800,
+    "raw_level": "lvl 800",
+    "type": "LOOT"
+  },
+  {
+    "index": 77,
+    "name": "Infernal Demon",
+    "level": 800,
+    "raw_level": "lvl 800",
+    "type": "LOOT"
+  },
+  {
+    "index": 78,
+    "name": "Bony Sea Devil",
+    "level": 800,
+    "raw_level": "lvl 800",
+    "type": "LOOT"
+  },
+  {
+    "index": 79,
+    "name": "Dark Thais",
+    "level": 800,
+    "raw_level": "lvl 800",
+    "type": "LOOT"
+  },
+  {
+    "index": 80,
+    "name": "bloated man-maggot",
+    "level": 1500,
+    "raw_level": "lvl 1500",
+    "type": "EXP"
+  },
+  {
+    "index": 81,
+    "name": "Rotten man-maggot",
+    "level": 1500,
+    "raw_level": "lvl 1500",
+    "type": "EXP"
+  },
+  {
+    "index": 82,
+    "name": "Darklight Source",
+    "level": 1500,
+    "raw_level": "lvl 1500",
+    "type": "LOOT"
+  },
+  {
+    "index": 83,
+    "name": "Wandering Pillar",
+    "level": 1500,
+    "raw_level": "lvl 1500",
+    "type": "EXP"
+  },
+  {
+    "index": 84,
+    "name": "Radiant Skyhold",
+    "level": 2000,
+    "raw_level": "lvl 2000",
+    "type": "EXP"
+  },
+  {
+    "index": 85,
+    "name": "Radiant Ascendancy",
+    "level": 2000,
+    "raw_level": "lvl 2000",
+    "type": "EXP"
+  },
+  {
+    "index": 86,
+    "name": "Devoted Radiant Skyhold",
+    "level": 2500,
+    "raw_level": "lvl 2500",
+    "type": "EXP"
+  },
+  {
+    "index": 87,
+    "name": "Devoted Radiant Ascendancy",
+    "level": 2500,
+    "raw_level": "lvl 2500",
+    "type": "EXP"
+  }
+]
