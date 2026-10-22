@@ -23,7 +23,9 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+# pyrefly: ignore[missing-import]
 from telegram.request import HTTPXRequest
+# pyrefly: ignore[missing-import]
 from telegram.error import RetryAfter, TimedOut, NetworkError
 
 from baiaidle.autoboss import (

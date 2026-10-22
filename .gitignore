@@ -27,3 +27,10 @@ Thumbs.db
 # VS Code
 .vscode/
 src/*.egg-info/
+
+# graphify
+graphify-out/
+
+#agents
+.agents/
+.graphify/
