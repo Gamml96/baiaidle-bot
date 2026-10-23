@@ -26,7 +26,7 @@ from baiaidle.hunts import (
 )
 from baiaidle.actions import get_party_average_level
 from baiaidle.guild import get_tracked_task_progress, process_guild_tasks, auto_select_best_guild_task
-from baiaidle.codex import process_codex_routine
+from baiaidle.codex import process_codex_routine, check_and_advance_codex_focus
 from baiaidle.battlepass import get_tracked_battlepass_progress, process_battlepass, auto_select_best_battlepass
 from baiaidle.tree import run_auto_tree
 from baiaidle.recovery import dismiss_welcome_and_popups
@@ -384,6 +384,10 @@ async def resolve_target_hunt(tab, stats: HuntStats | None = None) -> str:
     retorna a hunt padrão configurada (Infernal Demon por padrão).
     """
     fallback = (stats.default_hunt if stats and stats.default_hunt else DEFAULT_HUNT)
+    if get_setting("codex_focus_enabled", False):
+        codex_hunt = get_setting("codex_focus_hunt")
+        if codex_hunt:
+            fallback = codex_hunt
     current = await get_current_hunt(tab)
     if not current or not isinstance(current, str):
         return fallback
@@ -815,7 +819,8 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
         
         target_retorno = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
         if current_stam_val >= target_retorno or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES):
-            msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Retornando para a hunt: {current_hunt}."
+            target_destination = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else current_hunt)
+            msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Retornando para a hunt: {target_destination}."
             print(msg_done)
             if on_message:
                 await on_message(f"✅ {msg_done}")
@@ -823,7 +828,7 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
             # Tenta voltar para a hunt repetidamente até conseguir
             viagem_sucesso = False
             while not viagem_sucesso and not stop_event.is_set():
-                viagem_sucesso, msg_viagem = await change_hunt(tab, current_hunt)
+                viagem_sucesso, msg_viagem = await change_hunt(tab, target_destination)
                 if not viagem_sucesso:
                     print(f"⚠️ Falha ao voltar para a Hunt. Tentando novamente em 5s... Erro: {msg_viagem}")
                     await asyncio.sleep(5)
@@ -937,15 +942,16 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
             # Repara o Dummy antes de terminar o treino e voltar para a hunt
             await repair_house_dummy(tab, on_message=on_message)
 
-            msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Saindo da Casa e retornando para: {current_hunt}."
-            print(f"[Casa Dummies] Stamina recuperada ({current_stam_val}%). Saindo da Casa e retornando para: {current_hunt}.")
+            target_destination = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else current_hunt)
+            msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Saindo da Casa e retornando para: {target_destination}."
+            print(f"[Casa Dummies] Stamina recuperada ({current_stam_val}%). Saindo da Casa e retornando para: {target_destination}.")
             if on_message:
                 await on_message(f"✅ {msg_done}")
             
             # Tenta voltar para a hunt repetidamente até conseguir
             viagem_sucesso = False
             while not viagem_sucesso and not stop_event.is_set():
-                viagem_sucesso, msg_viagem = await change_hunt(tab, current_hunt)
+                viagem_sucesso, msg_viagem = await change_hunt(tab, target_destination)
                 if not viagem_sucesso:
                     print(f"⚠️ Falha ao voltar para a Hunt. Tentando novamente em 5s... Erro: {msg_viagem}")
                     await asyncio.sleep(5)
@@ -1179,6 +1185,8 @@ async def run_sell(
                     if current_hunt and current_hunt != "Hunt Desconhecida":
                         delivered, progress = await process_codex_routine(tab, current_hunt, on_message)
                         stats.codex_progress = progress
+                        if get_setting("codex_focus_enabled", False):
+                            await check_and_advance_codex_focus(tab, on_message)
 
                 success = await execute_sale(
                     tab,
@@ -1252,11 +1260,11 @@ async def run_sell(
                             avg_lvl = await get_party_average_level(tab)
                             success, g_msg = await auto_select_best_guild_task(tab, avg_lvl, on_message)
                             if g_msg in ["finalizado", "nenhuma_compativel"]:
-                                target_hunt = stats.default_hunt or DEFAULT_HUNT
+                                target_hunt = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else (stats.default_hunt or DEFAULT_HUNT))
                                 await change_hunt(tab, target_hunt)
                                 stats.force_sell = True
                                 if on_message:
-                                    await on_message(f"✅ Tasks da Guilda concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
+                                    await on_message(f"✅ Tasks da Guilda concluídas!\nRetornando para a hunt: *{target_hunt}*")
                         else:
                             await process_guild_tasks(tab, on_message)
 
@@ -1281,20 +1289,20 @@ async def run_sell(
                                 # Passe concluído! Tenta passar para tasks da Guilda se disponíveis
                                 g_success, g_msg = await auto_select_best_guild_task(tab, avg_lvl, on_message)
                                 if g_msg in ["finalizado", "nenhuma_compativel"]:
-                                    target_hunt = stats.default_hunt or DEFAULT_HUNT
+                                    target_hunt = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else (stats.default_hunt or DEFAULT_HUNT))
                                     await change_hunt(tab, target_hunt)
                                     stats.force_sell = True
                                     if on_message:
-                                        await on_message(f"✅ Missões e Tasks concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
+                                        await on_message(f"✅ Missões e Tasks concluídas!\nRetornando para a hunt: *{target_hunt}*")
                         else:
                             try:
                                 success, bp_msg = await process_battlepass(tab, on_message)
                                 if bp_msg in ["finalizado", "nenhuma_nova"]:
-                                    target_hunt = stats.default_hunt or DEFAULT_HUNT
+                                    target_hunt = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else (stats.default_hunt or DEFAULT_HUNT))
                                     await change_hunt(tab, target_hunt)
                                     stats.force_sell = True
                                     if on_message:
-                                        await on_message(f"✅ Missões do Passe de hoje concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
+                                        await on_message(f"✅ Missões do Passe de hoje concluídas!\nRetornando para a hunt: *{target_hunt}*")
                             except Exception as e:
                                 print(f"Erro ao processar passe no loop de vendas: {e}")
 

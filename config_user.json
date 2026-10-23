@@ -5,5 +5,10 @@
   "watchdog_minutes": 10,
   "notify_sales": true,
   "notify_tasks": true,
-  "auto_missions_after_boss": true
+  "auto_missions_after_boss": true,
+  "auto_tree_enabled": true,
+  "codex_focus_enabled": true,
+  "codex_focus_attribute": "critDmg",
+  "codex_focus_hunt": null,
+  "default_hunt": "Infernal Demon"
 }

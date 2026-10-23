@@ -55,8 +55,12 @@ from baiaidle.hunts import (
 )
 from baiaidle.settings import get_setting, set_setting, load_settings
 from baiaidle.guild import process_guild_tasks, accept_specific_task, get_tracked_task_progress, auto_select_best_guild_task
-from baiaidle.battlepass import process_battlepass, choose_battlepass_mission, get_tracked_battlepass_progress, auto_select_best_battlepass
-from baiaidle.codex import process_codex_routine
+from baiaidle.codex import (
+    process_codex_routine,
+    get_codex_attribute_queue,
+    check_and_advance_codex_focus,
+    CODEX_ATTRIBUTES,
+)
 from baiaidle.daily import collect_daily_reward, cancel_daily_schedule
 from baiaidle.tree import get_tree_status, run_auto_tree
 from baiaidle.actions import (
@@ -253,6 +257,7 @@ class TelegramController:
             BotCommand("passe", "🎟️ Gerenciar missões do Passe"),
             BotCommand("automissoes", "⚙️ Missões automáticas pós-boss"),
             BotCommand("arvore", "🌳 Gerenciar Árvore de Habilidades"),
+            BotCommand("codex", "📖 Gerenciar auto-completar do Codex"),
             BotCommand("daily", "🎁 Coletar recompensa diária"),
             BotCommand("print", "🖥️ Tirar print da tela do jogo"),
             BotCommand("recuperar", "🛠️ Fechar avisos e recuperar sessão"),
@@ -1330,6 +1335,159 @@ class TelegramController:
 
     @authorized_only
     @require_bot_running
+    async def codex(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Comando /codex [on|off|foco <attr>|fila|entregar]"""
+        args = context.args or []
+        if not args:
+            await self.show_codex_menu(update, context)
+            return
+
+        cmd = args[0].lower()
+        if cmd == "on":
+            set_setting("codex_focus_enabled", True)
+            attr = get_setting("codex_focus_attribute", "critDmg")
+            attr_label = CODEX_ATTRIBUTES.get(attr, attr)
+            await update.message.reply_text(
+                f"🟢 *Modo Foco no Codex Ativado!*\n"
+                f"🎯 Atributo: *{attr_label}*\n"
+                f"🔍 Buscando a hunt mais próxima de completar...",
+                parse_mode="Markdown"
+            )
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    res = await check_and_advance_codex_focus(self.bot.tab, on_message=self.bot.on_message)
+                    if res.get("target"):
+                        t = res["target"]
+                        await update.message.reply_text(
+                            f"📍 *Alvo Definido:* `{t['hunt_name']}` ({t['pct_str']} concluído)\n"
+                            f"🎁 Recompensa: {t['bonus']}",
+                            parse_mode="Markdown"
+                        )
+                except Exception as e:
+                    await update.message.reply_text(f"❌ Erro ao alinhar alvo do Codex: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif cmd == "off":
+            set_setting("codex_focus_enabled", False)
+            set_setting("codex_focus_hunt", None)
+            await update.message.reply_text("🔴 *Modo Foco no Codex Desativado.*", parse_mode="Markdown")
+
+        elif cmd in ["foco", "set", "atributo"]:
+            if len(args) < 2:
+                attrs_list = "\n".join([f"• `{k}`: {v}" for k, v in CODEX_ATTRIBUTES.items()])
+                await update.message.reply_text(
+                    f"⚠️ Especifique o atributo desejado.\n\n*Atributos disponíveis:*\n{attrs_list}\n\nExemplo: `/codex foco critDmg`",
+                    parse_mode="Markdown"
+                )
+                return
+            new_attr = args[1]
+            if new_attr not in CODEX_ATTRIBUTES:
+                match = next((k for k in CODEX_ATTRIBUTES if k.lower() == new_attr.lower()), None)
+                if not match:
+                    await update.message.reply_text(f"❌ Atributo `{new_attr}` não reconhecido. Use `/codex foco` para ver a lista.", parse_mode="Markdown")
+                    return
+                new_attr = match
+
+            set_setting("codex_focus_attribute", new_attr)
+            set_setting("codex_focus_enabled", True)
+            set_setting("codex_focus_hunt", None)
+            attr_label = CODEX_ATTRIBUTES.get(new_attr, new_attr)
+            await update.message.reply_text(
+                f"🎯 *Atributo do Codex alterado para:* *{attr_label}* (`{new_attr}`)\n"
+                f"🟢 Foco automático ativado! Calculando prioridade...",
+                parse_mode="Markdown"
+            )
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    res = await check_and_advance_codex_focus(self.bot.tab, on_message=self.bot.on_message)
+                    if res.get("target"):
+                        t = res["target"]
+                        await update.message.reply_text(
+                            f"📍 *Primeiro Alvo:* `{t['hunt_name']}` ({t['pct_str']} concluído)\n"
+                            f"🎁 Bônus: {t['bonus']}",
+                            parse_mode="Markdown"
+                        )
+                except Exception as e:
+                    await update.message.reply_text(f"❌ Erro ao alinhar alvo: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif cmd in ["fila", "queue", "lista"]:
+            attr = get_setting("codex_focus_attribute", "critDmg")
+            attr_label = CODEX_ATTRIBUTES.get(attr, attr)
+            await update.message.reply_text(f"⏳ Consultando Codex para *{attr_label}*...", parse_mode="Markdown")
+            avg_party_lvl = 0
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    avg_party_lvl = await get_party_average_level(self.bot.tab)
+                    queue = await get_codex_attribute_queue(self.bot.tab, attribute=attr, max_party_level=avg_party_lvl if avg_party_lvl > 0 else None)
+                except Exception as e:
+                    queue = None
+                    await update.message.reply_text(f"❌ Erro ao ler fila do Codex: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+            if queue is None:
+                return
+
+            if not queue:
+                await update.message.reply_text(f"🏆 Todas as entradas do atributo *{attr_label}* estão concluídas a 100%!", parse_mode="Markdown")
+                return
+
+            safe_count = sum(1 for item in queue if item.get("is_safe", True))
+            lines = [
+                f"📋 *FILA DE PRIORIDADE • CODEX*",
+                f"🎯 Atributo: *{attr_label}*",
+                f"🛡️ Nível Médio da Party: *Lv. {avg_party_lvl}*",
+                f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            ]
+            for idx, item in enumerate(queue[:12], 1):
+                h_name = item.get("hunt_name", item.get("entry_name"))
+                pct = item.get("pct_str", "0%")
+                bonus = item.get("bonus", "")
+                lvl = item.get("hunt_level")
+                is_safe = item.get("is_safe", True)
+                if lvl:
+                    status_lvl = f" · Lv. {lvl}+ ✅" if is_safe else f" · 🔒 Lv. {lvl}+ (Alto)"
+                else:
+                    status_lvl = ""
+
+                lines.append(f"{idx}. *{h_name}* — `{pct}`{status_lvl}")
+                if bonus:
+                    lines.append(f"   🎁 {bonus}")
+
+            if len(queue) > 12:
+                lines.append(f"\n_... e mais {len(queue) - 12} hunts restantes._")
+
+            lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+            lines.append(f"📊 Seguras para caçar: *{safe_count}* de *{len(queue)}* pendentes.")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+        elif cmd in ["entregar", "entrega", "drop"]:
+            await update.message.reply_text("⏳ Verificando entregas pendentes no Codex...")
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    current_hunt = await get_current_hunt(self.bot.tab)
+                    delivered, progress = await process_codex_routine(self.bot.tab, current_hunt, self.bot.on_message)
+                    self.bot.hunt_stats.codex_progress = progress
+                    if delivered:
+                        await update.message.reply_text(f"📖 *Codex Entregue!* Recompensas coletadas.", parse_mode="Markdown")
+                    else:
+                        await update.message.reply_text(f"ℹ️ Nenhum item elegível para entrega no momento.")
+                except Exception as e:
+                    await update.message.reply_text(f"❌ Erro ao entregar itens: {e}")
+                finally:
+                    self.bot.resume_hunt()
+        else:
+            await self.show_codex_menu(update, context)
+
+    @authorized_only
+    @require_bot_running
     async def inline_button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
@@ -1443,6 +1601,7 @@ class TelegramController:
             current = await get_current_hunt(self.bot.tab) if self.bot.tab else ""
             if current and current.lower() not in ["hunt desconhecida", "treino online", "casa"]:
                 self.bot.hunt_stats.default_hunt = current
+                set_setting("default_hunt", current)
                 await query.answer(f"✅ Hunt padrão definida: {current}", show_alert=True)
             else:
                 await query.answer("⚠️ Local atual inválido para hunt padrão.", show_alert=True)
@@ -1451,6 +1610,7 @@ class TelegramController:
         elif data.startswith("set_defhunt_"):
             chosen = data.replace("set_defhunt_", "").strip()
             self.bot.hunt_stats.default_hunt = chosen
+            set_setting("default_hunt", chosen)
             await query.answer(f"✅ Hunt padrão definida: {chosen}", show_alert=True)
             await self.show_hunts_menu(update, context)
 
@@ -1555,11 +1715,102 @@ class TelegramController:
                 finally:
                     self.bot.resume_hunt()
 
-        elif data == "btn_action_codex":
+        elif data == "sub_codex":
+            await self.show_codex_menu(update, context)
+
+        elif data == "btn_codex_toggle":
+            curr = get_setting("codex_focus_enabled", False)
+            set_setting("codex_focus_enabled", not curr)
+            if not curr:
+                await query.answer("🟢 Foco no Codex ativado!")
+                async with self.action_lock:
+                    self.bot.pause_hunt()
+                    try:
+                        await check_and_advance_codex_focus(self.bot.tab, on_message=self.bot.on_message)
+                    except Exception as e:
+                        print(f"Erro ao avançar foco do Codex: {e}")
+                    finally:
+                        self.bot.resume_hunt()
+            else:
+                await query.answer("🔴 Foco no Codex desativado.")
+                set_setting("codex_focus_hunt", None)
+            await self.show_codex_menu(update, context)
+
+        elif data.startswith("btn_codex_set_"):
+            attr = data.replace("btn_codex_set_", "")
+            if attr in CODEX_ATTRIBUTES:
+                set_setting("codex_focus_attribute", attr)
+                set_setting("codex_focus_enabled", True)
+                set_setting("codex_focus_hunt", None)
+                await query.answer(f"🎯 Foco: {CODEX_ATTRIBUTES.get(attr, attr)}!", show_alert=False)
+                async with self.action_lock:
+                    self.bot.pause_hunt()
+                    try:
+                        await check_and_advance_codex_focus(self.bot.tab, on_message=self.bot.on_message)
+                    except Exception as e:
+                        print(f"Erro ao alinhar foco após clique: {e}")
+                    finally:
+                        self.bot.resume_hunt()
+                await self.show_codex_menu(update, context)
+
+        elif data == "btn_codex_queue":
+            attr = get_setting("codex_focus_attribute", "critDmg")
+            attr_label = CODEX_ATTRIBUTES.get(attr, attr)
+            await query.answer("⏳ Carregando fila...")
+            avg_party_lvl = 0
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    avg_party_lvl = await get_party_average_level(self.bot.tab)
+                    queue = await get_codex_attribute_queue(self.bot.tab, attribute=attr, max_party_level=avg_party_lvl if avg_party_lvl > 0 else None)
+                except Exception as e:
+                    queue = None
+                    await query.message.reply_text(f"❌ Erro ao ler fila: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+            if queue is not None:
+                if not queue:
+                    text_q = f"🏆 Todas as entradas de *{attr_label}* estão concluídas a 100%!"
+                else:
+                    safe_count = sum(1 for item in queue if item.get("is_safe", True))
+                    lines = [
+                        f"📋 *FILA DE PRIORIDADE • CODEX*",
+                        f"🎯 Atributo: *{attr_label}*",
+                        f"🛡️ Nível Médio da Party: *Lv. {avg_party_lvl}*",
+                        f"━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                    ]
+                    for idx, item in enumerate(queue[:10], 1):
+                        h_name = item.get("hunt_name", item.get("entry_name"))
+                        pct = item.get("pct_str", "0%")
+                        bonus = item.get("bonus", "")
+                        lvl = item.get("hunt_level")
+                        is_safe = item.get("is_safe", True)
+                        if lvl:
+                            status_lvl = f" · Lv. {lvl}+ ✅" if is_safe else f" · 🔒 Lv. {lvl}+ (Alto)"
+                        else:
+                            status_lvl = ""
+
+                        lines.append(f"{idx}. *{h_name}* — `{pct}`{status_lvl}")
+                        if bonus:
+                            lines.append(f"   🎁 {bonus}")
+                    if len(queue) > 10:
+                        lines.append(f"\n_... e mais {len(queue) - 10} hunts restantes._")
+                    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━")
+                    lines.append(f"📊 Seguras para caçar: *{safe_count}* de *{len(queue)}* pendentes.")
+                    text_q = "\n".join(lines)
+
+                kb = [
+                    [InlineKeyboardButton("🔙 Voltar ao Codex", callback_data="sub_codex")],
+                    [InlineKeyboardButton("🏠 Menu Principal", callback_data="btn_menu")]
+                ]
+                await self.show_or_edit_menu(update, text_q, InlineKeyboardMarkup(kb))
+
+        elif data in ["btn_action_codex", "btn_codex_deliver"]:
             if self.action_lock.locked():
                 await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
                 return
-            await query.answer("⏳ Verificando Codex...", show_alert=False)
+            await query.answer("⏳ Verificando entregas no Codex...", show_alert=False)
             async with self.action_lock:
                 self.bot.pause_hunt()
                 try:
@@ -1860,6 +2111,23 @@ class TelegramController:
             settings = load_settings()
             await query.edit_message_text(self.format_config_message(settings), reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
 
+        elif data == "cfg_toggle_codex":
+            cur = get_setting("codex_focus_enabled", False)
+            set_setting("codex_focus_enabled", not cur)
+            if not cur:
+                async with self.action_lock:
+                    self.bot.pause_hunt()
+                    try:
+                        await check_and_advance_codex_focus(self.bot.tab, on_message=self.bot.on_message)
+                    except Exception as e:
+                        print(f"Erro ao avançar foco do Codex no cfg: {e}")
+                    finally:
+                        self.bot.resume_hunt()
+            else:
+                set_setting("codex_focus_hunt", None)
+            settings = load_settings()
+            await query.edit_message_text(self.format_config_message(settings), reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
+
         elif data == "cfg_menu_treino":
             keyboard = [
                 [
@@ -2100,9 +2368,10 @@ class TelegramController:
 
         new_hunt = " ".join(context.args).strip()
         self.bot.hunt_stats.default_hunt = new_hunt
+        set_setting("default_hunt", new_hunt)
         await update.message.reply_text(
             f"✅ *Hunt padrão alterada!*\n"
-            f"O bot retornará para *{new_hunt}* após concluir o treino.",
+            f"O bot retornará para *{new_hunt}* após concluir o treino ou o Codex.",
             parse_mode="Markdown"
         )
 
@@ -2236,15 +2505,18 @@ class TelegramController:
                 InlineKeyboardButton("🎯 Missões & Passe", callback_data="sub_missoes"),
             ],
             [
-                InlineKeyboardButton("🧘‍♂️ Treino & Stamina", callback_data="sub_treino"),
+                InlineKeyboardButton("📖 Auto Codex", callback_data="sub_codex"),
                 InlineKeyboardButton("👥 Party & Status", callback_data="sub_party"),
             ],
             [
                 InlineKeyboardButton("⚔️ AutoBoss", callback_data="sub_autoboss"),
-                InlineKeyboardButton("⚙️ Configurações", callback_data="btn_config"),
+                InlineKeyboardButton("🧘‍♂️ Treino & Stamina", callback_data="sub_treino"),
             ],
             [
+                InlineKeyboardButton("⚙️ Configurações", callback_data="btn_config"),
                 InlineKeyboardButton("⚡ Ações Rápidas", callback_data="sub_acoes"),
+            ],
+            [
                 InlineKeyboardButton("🔄 Atualizar Painel", callback_data="btn_menu"),
             ],
         ]
@@ -2329,7 +2601,7 @@ class TelegramController:
             ],
             [
                 InlineKeyboardButton("🎁 Coletar Daily", callback_data="btn_action_daily"),
-                InlineKeyboardButton("📖 Processar Codex", callback_data="btn_action_codex"),
+                InlineKeyboardButton("📖 Painel do Codex", callback_data="sub_codex"),
             ],
             [
                 InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
@@ -2337,6 +2609,89 @@ class TelegramController:
             ],
         ]
         await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    def format_codex_message(self, settings: dict) -> str:
+        focus_enabled = settings.get("codex_focus_enabled", False)
+        focus_attr = settings.get("codex_focus_attribute", "critDmg")
+        attr_label = CODEX_ATTRIBUTES.get(focus_attr, focus_attr)
+        current_focus_hunt = settings.get("codex_focus_hunt")
+        status_icon = "🟢 Ativado" if focus_enabled else "🔴 Desativado"
+        hunt_str = f"`{current_focus_hunt}`" if current_focus_hunt else "_Nenhum (selecionado automaticamente na fila)_"
+
+        lines = [
+            "📖 *SISTEMA • AUTO-COMPLETAR CODEX*",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            f"⚙️ *Modo Foco:* {status_icon}",
+            f"🎯 *Atributo Alvo:* *{attr_label}* (`{focus_attr}`)",
+            f"📍 *Hunt em Foco:* {hunt_str}",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            "_Priorização: o bot caça sempre a hunt mais próxima de completar (100%)._",
+            "_Rotinas mantidas: pausa para AutoBoss, Treino, Tasks e Missões, retornando ao alvo em seguida._",
+            "",
+            "Comandos de texto:",
+            "• `/codex on` - Ativa o foco automático",
+            "• `/codex off` - Desativa o foco",
+            "• `/codex foco <attr>` - Define atributo alvo (ex: critDmg, atkPct)",
+            "• `/codex fila` - Lista as hunts na ordem de prioridade",
+            "• `/codex entregar` - Entrega itens de drop pendentes",
+        ]
+        return "\n".join(lines)
+
+    def get_codex_keyboard(self, settings: dict) -> InlineKeyboardMarkup:
+        focus_enabled = settings.get("codex_focus_enabled", False)
+        focus_attr = settings.get("codex_focus_attribute", "critDmg")
+        toggle_label = "🔴 Desativar Foco" if focus_enabled else "🟢 Ativar Foco"
+
+        attr_buttons_map = {
+            "critDmg": "💥 Dano Crítico",
+            "critChance": "🎯 Chance Crítica",
+            "atkPct": "⚔️ Ataque %",
+            "spellDmgPct": "✨ Dano Magia %",
+            "spellHealPct": "🌿 Cura Magia %",
+            "hpPct": "❤️ Vida %",
+            "manaPct": "🧪 Mana %",
+            "armorFlat": "🛡️ Armadura",
+            "defFlat": "🥋 Defesa",
+            "lifeLeech": "🩸 Roubo Vida",
+            "manaLeech": "🔮 Roubo Mana",
+            "absorbPct": "🔰 Resist. Elem",
+            "elementDmgPct": "🔥 Dano Elem",
+            "moveSpeed": "👟 Velocidade",
+            "onslaught": "⚡ Onslaught",
+        }
+
+        keyboard = [
+            [
+                InlineKeyboardButton(toggle_label, callback_data="btn_codex_toggle"),
+                InlineKeyboardButton("📋 Ver Fila & Progresso", callback_data="btn_codex_queue"),
+            ],
+        ]
+
+        # Gera botões organizados de 2 em 2 com indicador ✅ no atributo ativo
+        items = list(attr_buttons_map.items())
+        for i in range(0, len(items), 2):
+            row = []
+            for k, label in items[i:i + 2]:
+                btn_label = f"✅ {label}" if k == focus_attr else label
+                row.append(InlineKeyboardButton(btn_label, callback_data=f"btn_codex_set_{k}"))
+            keyboard.append(row)
+
+        keyboard.extend([
+            [
+                InlineKeyboardButton("🎁 Entregar Itens Agora", callback_data="btn_codex_deliver"),
+                InlineKeyboardButton("🔄 Atualizar", callback_data="sub_codex"),
+            ],
+            [
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+            ],
+        ])
+        return InlineKeyboardMarkup(keyboard)
+
+    async def show_codex_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Exibe o Painel Interativo de Auto-Completar do Codex."""
+        settings = load_settings()
+        text = self.format_codex_message(settings)
+        await self.show_or_edit_menu(update, text, self.get_codex_keyboard(settings))
 
     async def show_treino_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
         """Submenu: Treino Online, Dummies e Stamina."""
@@ -2509,6 +2864,8 @@ class TelegramController:
             await self.show_treino_menu(update, context)
         elif text in ["⚙️ Configurações", "Configurações", "Configs", "config"]:
             await self.config(update, context)
+        elif text in ["📖 Codex", "Codex", "codex"]:
+            await self.show_codex_menu(update, context)
 
     def format_config_message(self, settings: dict) -> str:
         """Formata o texto de apresentação do Painel de Configurações."""
@@ -2516,6 +2873,7 @@ class TelegramController:
         tasks_icon = "🟢 Ativado" if settings.get("notify_tasks", True) else "🔴 Desativado"
         auto_m_icon = "🟢 Ativado" if settings.get("auto_missions_after_boss", True) else "🔴 Desativado"
         arvore_icon = "🟢 Ativado" if settings.get("auto_tree_enabled", True) else "🔴 Desativado"
+        codex_icon = "🟢 Ativado" if settings.get("codex_focus_enabled", False) else "🔴 Desativado"
 
         return (
             "⚙️ *PAINEL DE CONFIGURAÇÕES RÁPIDAS*\n\n"
@@ -2523,6 +2881,7 @@ class TelegramController:
             f"🔋 *Stamina de Retorno:* `{settings.get('stamina_retorno', 100)}%` (volta à hunt pós-treino)\n"
             f"📦 *Guardar no Baú:* `Tier {settings.get('min_tier_stash', 4)}+`\n"
             f"⏱️ *Watchdog Antitravamento:* `{settings.get('watchdog_minutes', 10)} min`\n"
+            f"📖 *Auto Foco no Codex:* {codex_icon}\n"
             f"🌳 *Auto Árvore de Habilidades:* {arvore_icon}\n"
             f"🚀 *Auto Missões (Pós-Boss):* {auto_m_icon}\n"
             f"🔔 *Notificar Vendas:* {vendas_icon}\n"
@@ -2536,6 +2895,7 @@ class TelegramController:
         tasks_label = "🎯 Tasks: ON" if settings.get("notify_tasks", True) else "🎯 Tasks: OFF"
         auto_m_label = "🚀 Auto Missões: ON" if settings.get("auto_missions_after_boss", True) else "🚀 Auto Missões: OFF"
         arvore_label = "🌳 Árvore: ON" if settings.get("auto_tree_enabled", True) else "🌳 Árvore: OFF"
+        codex_label = "📖 Codex: ON" if settings.get("codex_focus_enabled", False) else "📖 Codex: OFF"
 
         keyboard = [
             [
@@ -2547,15 +2907,18 @@ class TelegramController:
                 InlineKeyboardButton(f"⏱️ Watchdog ({settings.get('watchdog_minutes', 10)}m)", callback_data="cfg_menu_wd"),
             ],
             [
+                InlineKeyboardButton(codex_label, callback_data="cfg_toggle_codex"),
                 InlineKeyboardButton(arvore_label, callback_data="cfg_toggle_arvore"),
+            ],
+            [
                 InlineKeyboardButton(auto_m_label, callback_data="cfg_toggle_auto_missions"),
-            ],
-            [
                 InlineKeyboardButton(vendas_label, callback_data="cfg_toggle_sales"),
-                InlineKeyboardButton(tasks_label, callback_data="cfg_toggle_tasks"),
             ],
             [
+                InlineKeyboardButton(tasks_label, callback_data="cfg_toggle_tasks"),
                 InlineKeyboardButton("🔄 Atualizar", callback_data="cfg_refresh"),
+            ],
+            [
                 InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
             ],
         ]
@@ -2602,6 +2965,7 @@ Hunts e Rotinas:
 /passetask <dificuldade> - Aceita missão do Passe (facil, media, dificil)
 /automissoes [on|off] - Liga/desliga missões automáticas pós-boss
 /arvore [on|off|run] - Gerencia e aloca pontos da Árvore de Habilidades
+/codex [on|off|foco|fila|entregar] - Gerencia o auto-completar do Codex
 /treino - Força ida para o Treino Online
 /casa - Força ida para o Dummie da Casa
 
@@ -2671,6 +3035,7 @@ async def main():
     application.add_handler(CommandHandler("passetask", controller.passetask))
     application.add_handler(CommandHandler("automissoes", controller.automissoes))
     application.add_handler(CommandHandler("arvore", controller.arvore))
+    application.add_handler(CommandHandler("codex", controller.codex))
     application.add_handler(CommandHandler("reset", controller.reset))
     application.add_handler(CommandHandler("daily", controller.daily))
     application.add_handler(CommandHandler("menu", controller.menu))

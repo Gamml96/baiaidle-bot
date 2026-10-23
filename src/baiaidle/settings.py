@@ -13,6 +13,10 @@ DEFAULT_SETTINGS = {
     "notify_tasks": True,       # Notificar progresso de tasks a cada 120s
     "auto_missions_after_boss": True,  # Executar Passe e Tasks da Guilda automaticamente após AutoBoss
     "auto_tree_enabled": True,         # Distribuir pontos da árvore automaticamente ao subir de nível
+    "codex_focus_enabled": False,      # Focar automaticamente nas hunts do atributo selecionado no Codex
+    "codex_focus_attribute": "critDmg",# Atributo alvo do Codex (ex: critDmg, atkPct, spellDmgPct)
+    "codex_focus_hunt": None,          # Hunt atual sendo focada pelo Codex
+    "default_hunt": "Infernal Demon",  # Hunt padrão de segurança pós-treino e término do Codex
 }
 
 _cached_settings = None

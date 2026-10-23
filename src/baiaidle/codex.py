@@ -1,5 +1,28 @@
 import asyncio
 import json
+import re
+
+from baiaidle.settings import get_setting, set_setting
+from baiaidle.hunts import get_current_hunt, change_hunt, get_hunt_info
+from baiaidle.actions import get_party_average_level
+
+CODEX_ATTRIBUTES = {
+    "critDmg": "Dano Crítico",
+    "critChance": "Chance de Crítico",
+    "atkPct": "Ataque",
+    "spellDmgPct": "Dano de Magia",
+    "spellHealPct": "Cura de Magia",
+    "hpPct": "Vida",
+    "manaPct": "Mana",
+    "armorFlat": "Armadura",
+    "defFlat": "Defesa",
+    "lifeLeech": "Roubo de Vida",
+    "manaLeech": "Roubo de Mana",
+    "absorbPct": "Resistência Elemental",
+    "elementDmgPct": "Dano Elemental",
+    "moveSpeed": "Velocidade",
+    "onslaught": "Onslaught (Fatal)",
+}
 
 def extract_execute_result(result):
     try:
@@ -45,55 +68,71 @@ async def close_codex_menu(tab):
     await tab.execute_script(js)
     await asyncio.sleep(1)
 
-async def process_codex_routine(tab, current_hunt, on_message=None):
+async def reset_codex_filters_to_default(tab):
     """
-    Fase 1: Aplica filtros globais e entrega todos os itens possíveis no jogo.
-    Fase 2: Filtra pela hunt atual e lê a porcentagem de progresso.
+    Restaura os filtros do Codex para o padrão de entrega global:
+    - Barra de pesquisa limpa ('')
+    - Atributo: Todos os Atributos (selectedIndex = 0)
+    - Checkboxes: Entregáveis (true), Esconder concluídos (true), Esconder bloqueadas (true)
+    - Ordenação: Mais completo primeiro (fill-desc)
     """
-    print("\nVerificando entregas globais no Codex...")
-    await open_codex_menu(tab)
-    
-    # ==========================================================
-    # FASE 1: FILTROS GLOBAIS E ENTREGA
-    # ==========================================================
-    js_global_filter = """
+    js_reset = """
     (() => {
-        // 1. Limpa a barra de pesquisa para busca global
+        // 1. Limpa a barra de pesquisa
         const searchInput = document.querySelector('.cx-search');
-        if(searchInput && searchInput.value !== '') {
+        if (searchInput && searchInput.value !== '') {
             searchInput.value = '';
-            searchInput.dispatchEvent(new Event('input', {bubbles: true}));
+            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
-        // 2. Manipulador de Checkboxes
+        // 2. Reseta o select de atributo para Todos (índice 0)
+        const attrSelect = document.querySelector('.cx-attr');
+        if (attrSelect && attrSelect.selectedIndex !== 0) {
+            attrSelect.selectedIndex = 0;
+            attrSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        // 3. Checkboxes padrão de entrega
         const checks = Array.from(document.querySelectorAll('.cx-check'));
         const setCheck = (text, state) => {
             const label = checks.find(l => l.innerText.includes(text));
-            if(label) {
+            if (label) {
                 const input = label.querySelector('input');
-                if(input && input.checked !== state) {
+                if (input && input.checked !== state) {
                     input.checked = state;
-                    input.dispatchEvent(new Event('change', {bubbles: true}));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             }
         };
-
-        // Ativa os 3 filtros principais
         setCheck('Entregáveis', true);
         setCheck('Esconder concluídos', true);
         setCheck('Esconder bloqueadas', true);
 
-        // 3. Ordena para 'Mais completo primeiro' (fill-desc)
+        // 4. Ordenação por mais completo primeiro
         const sortSelect = document.querySelector('.cx-sort');
-        if(sortSelect && sortSelect.value !== 'fill-desc') {
+        if (sortSelect && sortSelect.value !== 'fill-desc') {
             sortSelect.value = 'fill-desc';
-            sortSelect.dispatchEvent(new Event('change', {bubbles: true}));
+            sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
         return true;
     })()
     """
-    await tab.execute_script(js_global_filter)
-    await asyncio.sleep(2) 
+    await tab.execute_script(js_reset)
+    await asyncio.sleep(1.0)
+
+
+async def process_codex_routine(tab, current_hunt, on_message=None):
+    """
+    Fase 1: Aplica filtros globais (todos os atributos, entregáveis, fill-desc) e entrega todos os itens possíveis no jogo.
+    Fase 2: Filtra pela hunt atual e lê a porcentagem de progresso, restaurando os filtros ao terminar.
+    """
+    print("\nVerificando entregas globais no Codex (todos os atributos)...")
+    await open_codex_menu(tab)
+    
+    # ==========================================================
+    # FASE 1: FILTROS GLOBAIS E ENTREGA (TODOS OS ATRIBUTOS)
+    # ==========================================================
+    await reset_codex_filters_to_default(tab) 
     
     delivered_entries = [] # Lista para acumular as entregas
     skipped_entries = []   # Lista para acumular codex pulados que requerem confirmação manual
@@ -362,6 +401,239 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
     if not progress_val:
         progress_val = "0%"
             
+    # Restaura os filtros para o padrão (limpa pesquisa de hunt e marca entregáveis) antes de fechar
+    await reset_codex_filters_to_default(tab)
+
     # FECHAR MODAL
     await close_codex_menu(tab)
     return (len(delivered_entries) > 0), progress_val
+
+
+def extract_hunt_from_codex_name(name: str) -> str:
+    """Extrai o nome da hunt a partir de uma entrada de Codex como 'Domínio: Wereliones I'."""
+    clean = re.sub(r"^dom[ií]nio:\s*", "", name.strip(), flags=re.IGNORECASE).strip()
+    clean = re.sub(r"\s+[IVXLCDM]+\b$", "", clean, flags=re.IGNORECASE).strip()
+    return clean
+
+
+async def get_codex_attribute_queue(tab, attribute: str = "critDmg", max_party_level: int = None) -> list[dict]:
+    """
+    Lê a lista de entradas pendentes do Codex filtradas pelo atributo selecionado.
+    Retorna uma lista de dicionários ordenados da mais próxima de 100% até a menor.
+    Se max_party_level for informado, marca 'is_safe' de acordo com o nível da hunt.
+    """
+    await open_codex_menu(tab)
+    
+    safe_attr = json.dumps(attribute)
+    js_filter = f"""
+    (() => {{
+        // 1. Limpa pesquisa
+        const searchInput = document.querySelector('.cx-search');
+        if (searchInput && searchInput.value !== '') {{
+            searchInput.value = '';
+            searchInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
+        }}
+
+        // 2. Seleciona o atributo
+        const attrSelect = document.querySelector('.cx-attr');
+        if (attrSelect) {{
+            attrSelect.value = {safe_attr};
+            attrSelect.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        }}
+
+        // 3. Checkboxes: esconder concluídos e bloqueadas, desmarcar entregáveis para ver todas
+        const checks = Array.from(document.querySelectorAll('.cx-check'));
+        const setCheck = (text, state) => {{
+            const label = checks.find(l => l.innerText.includes(text));
+            if (label) {{
+                const input = label.querySelector('input');
+                if (input && input.checked !== state) {{
+                    input.checked = state;
+                    input.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                }}
+            }}
+        }};
+        setCheck('Esconder concluídos', true);
+        setCheck('Esconder bloqueadas', true);
+        setCheck('Entregáveis', false);
+
+        // 4. Ordenar por mais completo primeiro
+        const sortSelect = document.querySelector('.cx-sort');
+        if (sortSelect && sortSelect.value !== 'fill-desc') {{
+            sortSelect.value = 'fill-desc';
+            sortSelect.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        }}
+        return true;
+    }})()
+    """
+    await tab.execute_script(js_filter)
+    await asyncio.sleep(1.5)
+
+    js_extract = """
+    (() => {
+        const entries = Array.from(document.querySelectorAll('.cx-list .cx-entry'));
+        const results = [];
+        for (const e of entries) {
+            if (e.classList.contains('done')) continue;
+            const nameEl = e.querySelector('.cx-entry-name');
+            if (!nameEl) continue;
+            const entryName = nameEl.innerText.trim();
+            const bonusEl = e.querySelector('.cx-entry-bonus, .cx-entry-stat, .cx-bonus');
+            const bonus = bonusEl ? bonusEl.innerText.trim() : '';
+            const barEl = e.querySelector('.cx-bar-fill');
+            const widthStr = barEl ? (barEl.style.width || '0%') : '0%';
+            const m = widthStr.match(/([0-9]+(?:\\.[0-9]+)?)/);
+            const pctVal = m ? parseFloat(m[1]) : 0.0;
+
+            results.push({
+                entry_name: entryName,
+                bonus: bonus,
+                pct_str: widthStr,
+                pct_val: pctVal
+            });
+        }
+        return JSON.stringify(results);
+    })()
+    """
+    res = await tab.execute_script(js_extract)
+    val = extract_execute_result(res)
+    raw_list = []
+    if isinstance(val, str):
+        try:
+            raw_list = json.loads(val)
+        except Exception:
+            raw_list = []
+    elif isinstance(val, list):
+        raw_list = val
+
+    # Restaura imediatamente os filtros do Codex para o padrão global de entrega
+    await reset_codex_filters_to_default(tab)
+
+    await close_codex_menu(tab)
+
+    # Processa e valida cada entrada com o nome da hunt
+    queue = []
+    for item in raw_list:
+        entry_name = item.get("entry_name", "")
+        hunt_name = extract_hunt_from_codex_name(entry_name)
+        item["hunt_name"] = hunt_name
+        info = get_hunt_info(hunt_name)
+        if info:
+            item["hunt_level"] = info.get("level")
+            item["hunt_type"] = info.get("type")
+
+        # Validação de segurança: hunt é segura se não tiver level cadastrado ou level <= nível médio da party
+        if max_party_level is not None and item.get("hunt_level") is not None:
+            item["is_safe"] = (item["hunt_level"] <= max_party_level)
+        else:
+            item["is_safe"] = True
+
+        queue.append(item)
+
+    # Ordena da mais próxima de 100% (maior pct_val) para a menor
+    queue.sort(key=lambda x: x.get("pct_val", 0), reverse=True)
+    return queue
+
+
+async def check_and_advance_codex_focus(tab, on_message=None) -> dict:
+    """
+    Verifica a fila de progresso do atributo de Codex ativo.
+    Garante segurança da party comparando o level da hunt contra o nível médio dos personagens.
+    Retorna para a hunt padrão caso termine as hunts disponíveis ou todas excedam o level seguro.
+    """
+    if not get_setting("codex_focus_enabled", False):
+        return {"enabled": False}
+
+    attribute = get_setting("codex_focus_attribute", "critDmg")
+    attr_label = CODEX_ATTRIBUTES.get(attribute, attribute)
+    default_hunt = get_setting("default_hunt") or "Infernal Demon"
+
+    # 1. Obtém o nível médio da equipe para verificação de segurança
+    avg_party_lvl = 0
+    try:
+        avg_party_lvl = await get_party_average_level(tab)
+    except Exception as e:
+        safe_print(f"[Codex Foco] Erro ao obter level médio da party: {e}")
+
+    # 2. Obtém a fila atualizada do Codex com marcação de nível seguro
+    queue = await get_codex_attribute_queue(tab, attribute=attribute, max_party_level=avg_party_lvl if avg_party_lvl > 0 else None)
+
+    # Caso A: Fila vazia = todas as entradas do atributo foram concluídas a 100%!
+    if not queue:
+        set_setting("codex_focus_enabled", False)
+        set_setting("codex_focus_hunt", None)
+        safe_print(f"[Codex Foco] Todos os codex de {attr_label} concluídos. Retornando para hunt padrão: {default_hunt}")
+        await change_hunt(tab, default_hunt)
+        msg_done = (
+            f"🏆 *PARABÉNS! TODOS OS CODEX CONCLUÍDOS!*\n\n"
+            f"Todos os domínios do atributo *{attr_label}* foram 100% completados!\n"
+            f"🛡️ Retornando com segurança para a hunt padrão: *{default_hunt}*."
+        )
+        safe_print(msg_done.replace('*', ''))
+        if on_message:
+            await on_message(msg_done)
+        return {"enabled": False, "completed_all": True}
+
+    # Caso B: Existem hunts do atributo, mas todas excedem o level seguro da equipe
+    safe_queue = [item for item in queue if item.get("is_safe", True)]
+    if not safe_queue:
+        set_setting("codex_focus_enabled", False)
+        set_setting("codex_focus_hunt", None)
+        safe_print(f"[Codex Foco] Nenhuma hunt segura para o level médio {avg_party_lvl}. Retornando para: {default_hunt}")
+        await change_hunt(tab, default_hunt)
+        msg_unsafe = (
+            f"⚠️ *MODO CODEX EM PAUSA POR SEGURANÇA!*\n\n"
+            f"Todas as hunts restantes de *{attr_label}* requerem nível superior à sua equipe (Média da party: Lv. {avg_party_lvl}).\n"
+            f"🛡️ Retornando com segurança para a hunt padrão: *{default_hunt}* para evitar mortes."
+        )
+        safe_print(msg_unsafe.replace('*', ''))
+        if on_message:
+            await on_message(msg_unsafe)
+        return {"enabled": False, "level_blocked": True}
+
+    # Seleciona a hunt mais próxima de 100% que seja segura para a party
+    top_target = safe_queue[0]
+    target_hunt = top_target["hunt_name"]
+    saved_hunt = get_setting("codex_focus_hunt")
+    current_game_hunt = await get_current_hunt(tab)
+    lvl_info = f" · Lv. {top_target.get('hunt_level')}+" if top_target.get('hunt_level') else ""
+
+    # Caso C: A hunt anterior atingiu 100% (sumiu da lista ou mudou de alvo)
+    if saved_hunt and saved_hunt != target_hunt:
+        msg_levelup = (
+            f"🎉 *CODEX CONCLUÍDO!*\n\n"
+            f"✅ Domínio de *{saved_hunt}* foi finalizado a 100%!\n"
+            f"✨ Bônus permanente de *{attr_label}* ativado!\n\n"
+            f"➡️ *Próximo Alvo Seguro:* `{target_hunt}` ({top_target['pct_str']} concluído{lvl_info})\n"
+            f"🎁 Alvo: {top_target['bonus']}"
+        )
+        safe_print(msg_levelup.replace('*', ''))
+        if on_message:
+            await on_message(msg_levelup)
+
+    # Caso D: Se ainda não estamos na hunt do topo seguro, muda para ela
+    if current_game_hunt != target_hunt:
+        safe_print(f"[Codex Foco] Redirecionando party para a hunt segura do Codex: {target_hunt}{lvl_info}")
+        success, msg_change = await change_hunt(tab, target_hunt)
+        if success:
+            set_setting("codex_focus_hunt", target_hunt)
+            if not saved_hunt and on_message:
+                msg_start = (
+                    f"🎯 *Modo Foco em Codex Ativado!*\n\n"
+                    f"📊 Atributo: *{attr_label}*\n"
+                    f"📍 Caçando em: *{target_hunt}*{lvl_info} (Média Party: Lv. {avg_party_lvl})\n"
+                    f"📈 Progresso Atual: *{top_target['pct_str']}*\n"
+                    f"🎁 Bônus Alvo: *{top_target['bonus']}*"
+                )
+                await on_message(msg_start)
+        else:
+            safe_print(f"[Codex Foco] Aviso ao trocar para hunt {target_hunt}: {msg_change}")
+
+    return {
+        "enabled": True,
+        "attribute": attribute,
+        "attr_label": attr_label,
+        "target": top_target,
+        "remaining_count": len(safe_queue),
+        "total_count": len(queue),
+    }
