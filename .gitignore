@@ -34,3 +34,6 @@ graphify-out/
 #agents
 .agents/
 .graphify/
+
+#scratch dumps
+/scratch_*
