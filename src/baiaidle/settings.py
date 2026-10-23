@@ -12,6 +12,7 @@ DEFAULT_SETTINGS = {
     "notify_sales": True,       # Notificar cada venda no Telegram
     "notify_tasks": True,       # Notificar progresso de tasks a cada 120s
     "auto_missions_after_boss": True,  # Executar Passe e Tasks da Guilda automaticamente após AutoBoss
+    "auto_tree_enabled": True,         # Distribuir pontos da árvore automaticamente ao subir de nível
 }
 
 _cached_settings = None

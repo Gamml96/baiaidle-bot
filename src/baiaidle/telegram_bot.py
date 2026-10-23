@@ -53,11 +53,12 @@ from baiaidle.hunts import (
     change_hunt,
     debug_hunts_dom,
 )
-from baiaidle.settings import get_setting, set_setting
+from baiaidle.settings import get_setting, set_setting, load_settings
 from baiaidle.guild import process_guild_tasks, accept_specific_task, get_tracked_task_progress, auto_select_best_guild_task
 from baiaidle.battlepass import process_battlepass, choose_battlepass_mission, get_tracked_battlepass_progress, auto_select_best_battlepass
 from baiaidle.codex import process_codex_routine
 from baiaidle.daily import collect_daily_reward, cancel_daily_schedule
+from baiaidle.tree import get_tree_status, run_auto_tree
 from baiaidle.actions import (
     get_party_info,
     extract_member_level,
@@ -251,6 +252,7 @@ class TelegramController:
             BotCommand("guildtask", "🎯 Gerenciar tasks da Guilda"),
             BotCommand("passe", "🎟️ Gerenciar missões do Passe"),
             BotCommand("automissoes", "⚙️ Missões automáticas pós-boss"),
+            BotCommand("arvore", "🌳 Gerenciar Árvore de Habilidades"),
             BotCommand("daily", "🎁 Coletar recompensa diária"),
             BotCommand("print", "🖥️ Tirar print da tela do jogo"),
             BotCommand("recuperar", "🛠️ Fechar avisos e recuperar sessão"),
@@ -1220,6 +1222,114 @@ class TelegramController:
 
     @authorized_only
     @require_bot_running
+    async def arvore(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if context.args:
+            arg = context.args[0].lower()
+            if arg in ["on", "1", "true", "ativar", "ligar"]:
+                set_setting("auto_tree_enabled", True)
+                await update.message.reply_text(
+                    "✅ *Auto Árvore de Habilidades ATIVADA!*\n"
+                    "O bot distribuirá pontos pendentes automaticamente seguindo a prioridade:\n"
+                    "• *MS*: Dano Mágico & Crítico ➔ Avatar of Storm\n"
+                    "• *Eir (ED)*: Cura & Dano Mágico ➔ Avatar of Nature\n"
+                    "• *Tyr (EK)*: Defesa, Armadura & HP ➔ Avatar of Steel",
+                    parse_mode="Markdown"
+                )
+                return
+            elif arg in ["off", "0", "false", "desativar", "desligar"]:
+                set_setting("auto_tree_enabled", False)
+                await update.message.reply_text("🛑 *Auto Árvore de Habilidades DESATIVADA!*", parse_mode="Markdown")
+                return
+            elif arg in ["run", "agora", "iniciar", "start", "alocar"]:
+                if self.action_lock.locked():
+                    await update.message.reply_text("⏳ Há outra ação em andamento no jogo. Aguarde um instante.")
+                    return
+                await update.message.reply_text("⏳ Verificando e alocando pontos da Árvore de Habilidades...")
+                async with self.action_lock:
+                    self.bot.pause_hunt()
+                    try:
+                        res = await run_auto_tree(self.bot.tab, force=True)
+                        if res.get("allocated_total", 0) > 0:
+                            lines = []
+                            for d in res.get("details", []):
+                                lines.append(f"• *{d['title']}*: +{d['spent']} pts ➔ {', '.join(d['nodes'])}")
+                            msg = "🌳 *Árvore de Habilidades Atualizada com Sucesso!*\n\n" + "\n".join(lines)
+                            await update.message.reply_text(msg, parse_mode="Markdown")
+                        else:
+                            await update.message.reply_text("ℹ️ Nenhum personagem possuía pontos disponíveis para alocar no momento.")
+                    except Exception as e:
+                        await update.message.reply_text(f"❌ Erro ao alocar pontos da árvore: {e}")
+                    finally:
+                        self.bot.resume_hunt()
+                return
+
+        # Sem argumentos: consulta status atual e exibe painel interativo
+        if self.action_lock.locked():
+            await update.message.reply_text("⏳ Há outra ação em andamento no jogo. Aguarde um instante.")
+            return
+
+        await update.message.reply_text("⏳ Consultando status da Árvore de Habilidades...")
+        async with self.action_lock:
+            self.bot.pause_hunt()
+            try:
+                status_list = await get_tree_status(self.bot.tab)
+            except Exception as e:
+                status_list = []
+                await update.message.reply_text(f"❌ Erro ao consultar status da árvore: {e}")
+            finally:
+                self.bot.resume_hunt()
+
+        auto_on = get_setting("auto_tree_enabled", True)
+        st_icon = "🟢 Ativado" if auto_on else "🔴 Desativado"
+        lines = [
+            "🌳 *SISTEMA • ÁRVORE DE HABILIDADES*",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            f"⚙️ *Alocação Automática:* {st_icon}",
+            "",
+            "👥 *Status dos Personagens:*",
+        ]
+        has_pending = False
+        if status_list:
+            for s in status_list:
+                pts = s.get("points", 0)
+                spent = s.get("spent", 0)
+                title = s.get("title", f"Personagem {s.get('index')}")
+                if pts > 0:
+                    has_pending = True
+                    lines.append(f"• *{title}*: `{pts} pts disponíveis` (Gastos: {spent}) ⚠️")
+                else:
+                    lines.append(f"• *{title}*: `0 pts disponíveis` (Gastos: {spent}) ✅")
+        else:
+            lines.append("⚠️ Não foi possível ler as informações da árvore.")
+
+        lines.extend([
+            "",
+            "🎯 *Prioridades Configuradas:*",
+            "• *Royal MS*: Dano Mágico & Crítico ➔ Avatar of Storm (T11)",
+            "• *Royal Eir*: Cura & Dano Mágico ➔ Avatar of Nature (T11)",
+            "• *Royal Tyr*: Defesa, Armadura & HP ➔ Avatar of Steel (T11)",
+            "",
+            "Comandos:",
+            "• `/arvore on` - Ativa alocação automática periódica",
+            "• `/arvore off` - Desativa alocação automática",
+            "• `/arvore run` - Força alocação imediata de pontos",
+        ])
+
+        keyboard = [
+            [
+                InlineKeyboardButton("🚀 Alocar Pontos Agora", callback_data="btn_arvore_run"),
+                InlineKeyboardButton("⚙️ " + ("Desativar" if auto_on else "Ativar"), callback_data="btn_arvore_toggle"),
+            ],
+            [
+                InlineKeyboardButton("🔄 Atualizar Status", callback_data="btn_arvore_status"),
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+            ],
+        ]
+
+        await update.message.reply_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+    @authorized_only
+    @require_bot_running
     async def inline_button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
         await query.answer()
@@ -1565,6 +1675,105 @@ class TelegramController:
         elif data == "btn_party":
             await self._reply_party_details(query.message)
 
+        elif data == "btn_arvore_status":
+            await query.answer("⏳ Atualizando status da árvore...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    status_list = await get_tree_status(self.bot.tab)
+                except Exception:
+                    status_list = []
+                finally:
+                    self.bot.resume_hunt()
+
+            auto_on = get_setting("auto_tree_enabled", True)
+            st_icon = "🟢 Ativado" if auto_on else "🔴 Desativado"
+            lines = [
+                "🌳 *SISTEMA • ÁRVORE DE HABILIDADES*",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                f"⚙️ *Alocação Automática:* {st_icon}",
+                "",
+                "👥 *Status dos Personagens:*",
+            ]
+            if status_list:
+                for s in status_list:
+                    pts = s.get("points", 0)
+                    spent = s.get("spent", 0)
+                    title = s.get("title", f"Personagem {s.get('index')}")
+                    if pts > 0:
+                        lines.append(f"• *{title}*: `{pts} pts disponíveis` (Gastos: {spent}) ⚠️")
+                    else:
+                        lines.append(f"• *{title}*: `0 pts disponíveis` (Gastos: {spent}) ✅")
+            else:
+                lines.append("⚠️ Não foi possível ler as informações da árvore.")
+
+            lines.extend([
+                "",
+                "🎯 *Prioridades Configuradas:*",
+                "• *Royal MS*: Dano Mágico & Crítico ➔ Avatar of Storm",
+                "• *Royal Eir*: Cura & Dano Mágico ➔ Avatar of Nature",
+                "• *Royal Tyr*: Defesa, Armadura & HP ➔ Avatar of Steel",
+            ])
+            keyboard = [
+                [
+                    InlineKeyboardButton("🚀 Alocar Pontos Agora", callback_data="btn_arvore_run"),
+                    InlineKeyboardButton("⚙️ " + ("Desativar" if auto_on else "Ativar"), callback_data="btn_arvore_toggle"),
+                ],
+                [
+                    InlineKeyboardButton("🔄 Atualizar Status", callback_data="btn_arvore_status"),
+                    InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+                ],
+            ]
+            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+        elif data == "btn_arvore_toggle":
+            cur = get_setting("auto_tree_enabled", True)
+            set_setting("auto_tree_enabled", not cur)
+            new_st = "🟢 Ativado" if not cur else "🔴 Desativado"
+            await query.answer(f"Auto Árvore: {new_st}", show_alert=True)
+            auto_on = not cur
+            st_icon = "🟢 Ativado" if auto_on else "🔴 Desativado"
+            lines = [
+                "🌳 *SISTEMA • ÁRVORE DE HABILIDADES*",
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+                f"⚙️ *Alocação Automática:* {st_icon}",
+                "",
+                "🎯 *Prioridades Configuradas:*",
+                "• *Royal MS*: Dano Mágico & Crítico ➔ Avatar of Storm",
+                "• *Royal Eir*: Cura & Dano Mágico ➔ Avatar of Nature",
+                "• *Royal Tyr*: Defesa, Armadura & HP ➔ Avatar of Steel",
+            ]
+            keyboard = [
+                [
+                    InlineKeyboardButton("🚀 Alocar Pontos Agora", callback_data="btn_arvore_run"),
+                    InlineKeyboardButton("⚙️ " + ("Desativar" if auto_on else "Ativar"), callback_data="btn_arvore_toggle"),
+                ],
+                [
+                    InlineKeyboardButton("🔄 Atualizar Status", callback_data="btn_arvore_status"),
+                    InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+                ],
+            ]
+            await query.edit_message_text("\n".join(lines), reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+        elif data == "btn_arvore_run":
+            await query.answer("⏳ Alocando pontos da árvore...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    res = await run_auto_tree(self.bot.tab, force=True)
+                    if res.get("allocated_total", 0) > 0:
+                        lines = []
+                        for d in res.get("details", []):
+                            lines.append(f"• *{d['title']}*: +{d['spent']} pts ➔ {', '.join(d['nodes'])}")
+                        msg = "🌳 *Árvore de Habilidades Atualizada!*\n\n" + "\n".join(lines)
+                        await query.message.reply_text(msg, parse_mode="Markdown")
+                    else:
+                        await query.message.reply_text("ℹ️ Nenhum personagem possuía pontos disponíveis para alocar no momento.")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao alocar pontos: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
         elif data == "btn_hunts":
             if self.action_lock.locked():
                 await query.answer("⏳ Há outra ação em andamento. Aguarde.", show_alert=True)
@@ -1620,7 +1829,6 @@ class TelegramController:
 
         # === PAINEL DE CONFIGURAÇÕES (CFG) ===
         elif data in ["btn_config", "cfg_menu", "cfg_refresh"]:
-            from baiaidle.settings import load_settings
             settings = load_settings()
             text = self.format_config_message(settings)
             try:
@@ -1629,23 +1837,26 @@ class TelegramController:
                 await query.message.reply_text(text, reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
 
         elif data == "cfg_toggle_sales":
-            from baiaidle.settings import get_setting, set_setting, load_settings
             cur = get_setting("notify_sales", True)
             set_setting("notify_sales", not cur)
             settings = load_settings()
             await query.edit_message_text(self.format_config_message(settings), reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
 
         elif data == "cfg_toggle_tasks":
-            from baiaidle.settings import get_setting, set_setting, load_settings
             cur = get_setting("notify_tasks", True)
             set_setting("notify_tasks", not cur)
             settings = load_settings()
             await query.edit_message_text(self.format_config_message(settings), reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
 
         elif data == "cfg_toggle_auto_missions":
-            from baiaidle.settings import get_setting, set_setting, load_settings
             cur = get_setting("auto_missions_after_boss", True)
             set_setting("auto_missions_after_boss", not cur)
+            settings = load_settings()
+            await query.edit_message_text(self.format_config_message(settings), reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
+
+        elif data == "cfg_toggle_arvore":
+            cur = get_setting("auto_tree_enabled", True)
+            set_setting("auto_tree_enabled", not cur)
             settings = load_settings()
             await query.edit_message_text(self.format_config_message(settings), reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
 
@@ -1669,7 +1880,6 @@ class TelegramController:
             )
 
         elif data.startswith("cfg_set_treino_"):
-            from baiaidle.settings import set_setting, load_settings
             val = int(data.split("_")[-1])
             set_setting("stamina_treino", val)
             settings = load_settings()
@@ -1698,7 +1908,6 @@ class TelegramController:
             )
 
         elif data.startswith("cfg_set_retorno_"):
-            from baiaidle.settings import set_setting, load_settings
             val = int(data.split("_")[-1])
             set_setting("stamina_retorno", val)
             settings = load_settings()
@@ -1726,7 +1935,6 @@ class TelegramController:
             )
 
         elif data.startswith("cfg_set_tier_"):
-            from baiaidle.settings import set_setting, load_settings
             val = int(data.split("_")[-1])
             set_setting("min_tier_stash", val)
             self.bot.hunt_stats.min_tier_to_stash = val
@@ -1756,7 +1964,6 @@ class TelegramController:
             )
 
         elif data.startswith("cfg_set_wd_"):
-            from baiaidle.settings import set_setting, load_settings
             val = int(data.split("_")[-1])
             set_setting("watchdog_minutes", val)
             settings = load_settings()
@@ -1869,7 +2076,6 @@ class TelegramController:
                 return
 
             self.bot.hunt_stats.min_tier_to_stash = new_tier
-            from baiaidle.settings import set_setting
             set_setting("min_tier_stash", new_tier)
             await self.reply_safe(
                 update,
@@ -2175,15 +2381,18 @@ class TelegramController:
         )
         keyboard = [
             [
-                InlineKeyboardButton("👥 Ver Membros da Party", callback_data="btn_party"),
+                InlineKeyboardButton("👥 Membros da Party", callback_data="btn_party"),
+                InlineKeyboardButton("🌳 Árvore de Habilidades", callback_data="btn_arvore_status"),
+            ],
+            [
                 InlineKeyboardButton("📊 Relatório de Status", callback_data="btn_status_detail"),
-            ],
-            [
                 InlineKeyboardButton("📸 Print da Tela (Screenshot)", callback_data="btn_print"),
-                InlineKeyboardButton("🔄 Recuperar / Limpar Popups", callback_data="btn_recuperar"),
             ],
             [
+                InlineKeyboardButton("🔄 Recuperar / Limpar Popups", callback_data="btn_recuperar"),
                 InlineKeyboardButton("🧹 Resetar Stats & Analyzer", callback_data="btn_reset_stats"),
+            ],
+            [
                 InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
             ],
         ]
@@ -2306,6 +2515,7 @@ class TelegramController:
         vendas_icon = "🟢 Ativado" if settings.get("notify_sales", True) else "🔴 Desativado"
         tasks_icon = "🟢 Ativado" if settings.get("notify_tasks", True) else "🔴 Desativado"
         auto_m_icon = "🟢 Ativado" if settings.get("auto_missions_after_boss", True) else "🔴 Desativado"
+        arvore_icon = "🟢 Ativado" if settings.get("auto_tree_enabled", True) else "🔴 Desativado"
 
         return (
             "⚙️ *PAINEL DE CONFIGURAÇÕES RÁPIDAS*\n\n"
@@ -2313,6 +2523,7 @@ class TelegramController:
             f"🔋 *Stamina de Retorno:* `{settings.get('stamina_retorno', 100)}%` (volta à hunt pós-treino)\n"
             f"📦 *Guardar no Baú:* `Tier {settings.get('min_tier_stash', 4)}+`\n"
             f"⏱️ *Watchdog Antitravamento:* `{settings.get('watchdog_minutes', 10)} min`\n"
+            f"🌳 *Auto Árvore de Habilidades:* {arvore_icon}\n"
             f"🚀 *Auto Missões (Pós-Boss):* {auto_m_icon}\n"
             f"🔔 *Notificar Vendas:* {vendas_icon}\n"
             f"🎯 *Notificar Tasks (120s):* {tasks_icon}\n\n"
@@ -2324,6 +2535,7 @@ class TelegramController:
         vendas_label = "🔔 Vendas: ON" if settings.get("notify_sales", True) else "🔕 Vendas: OFF"
         tasks_label = "🎯 Tasks: ON" if settings.get("notify_tasks", True) else "🎯 Tasks: OFF"
         auto_m_label = "🚀 Auto Missões: ON" if settings.get("auto_missions_after_boss", True) else "🚀 Auto Missões: OFF"
+        arvore_label = "🌳 Árvore: ON" if settings.get("auto_tree_enabled", True) else "🌳 Árvore: OFF"
 
         keyboard = [
             [
@@ -2335,6 +2547,7 @@ class TelegramController:
                 InlineKeyboardButton(f"⏱️ Watchdog ({settings.get('watchdog_minutes', 10)}m)", callback_data="cfg_menu_wd"),
             ],
             [
+                InlineKeyboardButton(arvore_label, callback_data="cfg_toggle_arvore"),
                 InlineKeyboardButton(auto_m_label, callback_data="cfg_toggle_auto_missions"),
             ],
             [
@@ -2356,7 +2569,6 @@ class TelegramController:
     @authorized_only
     async def config(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Exibe o painel de configurações rápidas."""
-        from baiaidle.settings import load_settings
         settings = load_settings()
         text = self.format_config_message(settings)
         await self.show_or_edit_menu(update, text, self.get_config_keyboard(settings))
@@ -2389,6 +2601,7 @@ Hunts e Rotinas:
 /passe - Gerencia missões do Passe de Batalha (entregar/pegar)
 /passetask <dificuldade> - Aceita missão do Passe (facil, media, dificil)
 /automissoes [on|off] - Liga/desliga missões automáticas pós-boss
+/arvore [on|off|run] - Gerencia e aloca pontos da Árvore de Habilidades
 /treino - Força ida para o Treino Online
 /casa - Força ida para o Dummie da Casa
 
@@ -2457,6 +2670,7 @@ async def main():
     application.add_handler(CommandHandler("passe", controller.passe))
     application.add_handler(CommandHandler("passetask", controller.passetask))
     application.add_handler(CommandHandler("automissoes", controller.automissoes))
+    application.add_handler(CommandHandler("arvore", controller.arvore))
     application.add_handler(CommandHandler("reset", controller.reset))
     application.add_handler(CommandHandler("daily", controller.daily))
     application.add_handler(CommandHandler("menu", controller.menu))

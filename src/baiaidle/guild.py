@@ -45,89 +45,199 @@ async def ensure_hunt_menus_closed(tab):
     await asyncio.sleep(0.2)
 
 
-async def open_guild_tasks(tab, timeout: float = 6.0):
+async def open_guild_tasks(tab, timeout: float = 8.0) -> bool:
     """
     Navega pelo menu Social > Guild e abre a aba de Tasks com verificação ativa de carregamento.
-    Garante que o menu e os cards/seções estejam devidamente renderizados antes de prosseguir.
+    Aguarda explicitamente até a aba de Tasks estar disponível após clicar no menu da Guild,
+    e em seguida aguarda os cards/seções carregarem antes de consultar as tasks.
     """
     print("Abrindo menu da Guild > Tasks...")
     # Garante que nenhum menu de hunt/teleporte esteja aberto cobrindo a tela
     await ensure_hunt_menus_closed(tab)
 
-    js_open = """
+    # 1. Abre o menu da Guild se o modal ainda não estiver visível
+    js_open_guild = """
     (() => {
-        // 1. Se o modal da guild já estiver aberto e visível
         const modal = document.querySelector('.gw-modal');
         if (modal && modal.offsetParent !== null) {
-            const taskTab = document.querySelector('#gw-tabs .gw-tab[data-tab="tasks"]') || 
-                            Array.from(document.querySelectorAll('#gw-tabs .gw-tab')).find(t => t.innerText.trim() === 'Tasks');
-            if (taskTab) {
-                if (!taskTab.classList.contains('active')) {
-                    taskTab.click();
-                }
+            return JSON.stringify({ modal_open: true });
+        }
+
+        // Se o botão da Guild já estiver visível na barra, clica diretamente
+        const btnGuild = document.getElementById('tab-guild') || 
+                         document.querySelector('[data-tab="guild"]');
+        if (btnGuild && btnGuild.offsetParent !== null) {
+            btnGuild.click();
+            return JSON.stringify({ modal_open: false, clicked: "guild" });
+        }
+
+        // Abre via menu Social primeiro se necessário
+        const btnSocial = document.getElementById('tab-social');
+        if (btnSocial) {
+            btnSocial.click();
+        }
+        return JSON.stringify({ modal_open: false, clicked: "social" });
+    })()
+    """
+    res = await tab.execute_script(js_open_guild)
+    info = parse_json_result(res)
+    if not isinstance(info, dict):
+        info = {}
+
+    # Se clicou no Social ou o modal não está aberto, clica na aba Guild
+    if not info.get("modal_open"):
+        await asyncio.sleep(0.3)
+        js_click_guild = """
+        (() => {
+            const btnGuild = document.getElementById('tab-guild') || 
+                             document.querySelector('[data-tab="guild"]');
+            if (btnGuild) {
+                btnGuild.click();
                 return true;
             }
-        }
+            return false;
+        })()
+        """
+        await tab.execute_script(js_click_guild)
 
-        // 2. Abre via menu Social
-        const btnSocial = document.getElementById('tab-social');
-        if (btnSocial) btnSocial.click();
-        return false;
-    })()
-    """
-    await tab.execute_script(js_open)
-    await asyncio.sleep(0.4)
-
-    # Clica na aba Guild
-    js_click_guild = """
-    (() => {
-        const btnGuild = document.getElementById('tab-guild');
-        if (btnGuild) {
-            btnGuild.click();
-            return true;
-        }
-        return false;
-    })()
-    """
-    await tab.execute_script(js_click_guild)
-    await asyncio.sleep(0.5)
-
-    # Clica na aba Tasks
-    js_click_tasks = """
-    (() => {
-        const taskTab = document.querySelector('#gw-tabs .gw-tab[data-tab="tasks"]') || 
-                        Array.from(document.querySelectorAll('#gw-tabs .gw-tab')).find(t => t.innerText.trim() === 'Tasks');
-        if (taskTab) {
-            taskTab.click();
-            return true;
-        }
-        return false;
-    })()
-    """
-    await tab.execute_script(js_click_tasks)
-
-    # Espera ativa para garantir que as seções/cards carregaram no DOM
-    start_time = asyncio.get_running_loop().time()
-    js_check_loaded = """
+    # 2. Aguarda até o menu da Guild abrir e a aba de Tasks estar DISPONÍVEL no DOM
+    js_check_task_tab = """
     (() => {
         const modal = document.querySelector('.gw-modal');
-        if (!modal || modal.offsetParent === null) return false;
+        const modalOpen = (modal && modal.offsetParent !== null);
+
+        // Procura a aba/botão de Tasks
+        const taskTab = document.querySelector('#gw-tabs .gw-tab[data-tab="tasks"]') || 
+                        document.querySelector('.gw-modal .gw-tab[data-tab="tasks"]') ||
+                        Array.from(document.querySelectorAll('#gw-tabs .gw-tab, .gw-modal .gw-tab, .gw-tab')).find(t => {
+                            const txt = t.innerText.trim().toLowerCase();
+                            const dataTab = (t.getAttribute('data-tab') || '').toLowerCase();
+                            return txt === 'tasks' || dataTab === 'tasks';
+                        });
+
+        const isAvailable = (taskTab !== null && taskTab !== undefined && taskTab.offsetParent !== null);
+        const isActive = isAvailable && taskTab.classList.contains('active');
+
+        return JSON.stringify({
+            modal_open: modalOpen,
+            task_available: isAvailable,
+            task_active: isActive
+        });
+    })()
+    """
+
+    start_tab_time = asyncio.get_running_loop().time()
+    task_tab_ready = False
+    task_tab_active = False
+
+    while (asyncio.get_running_loop().time() - start_tab_time) < (timeout / 2):
+        res = await tab.execute_script(js_check_task_tab)
+        tab_info = parse_json_result(res)
+        if not isinstance(tab_info, dict):
+            tab_info = {}
+        if tab_info.get("task_available"):
+            task_tab_ready = True
+            task_tab_active = tab_info.get("task_active", False)
+            break
+
+        # Se após 1.2s o modal ainda não abriu, re-tenta clicar na Guild
+        if (asyncio.get_running_loop().time() - start_tab_time) > 1.2 and not tab_info.get("modal_open"):
+            await tab.execute_script("""
+            (() => {
+                const btnGuild = document.getElementById('tab-guild') || document.querySelector('[data-tab="guild"]');
+                if (btnGuild) btnGuild.click();
+            })()
+            """)
+        await asyncio.sleep(0.25)
+
+    if not task_tab_ready:
+        print("[Guild] Aviso: Aba de Tasks não ficou disponível a tempo no menu da Guild.")
+        return False
+
+    # 3. Clica na aba Tasks se não estiver ativa
+    if not task_tab_active:
+        js_click_tasks = """
+        (() => {
+            const taskTab = document.querySelector('#gw-tabs .gw-tab[data-tab="tasks"]') || 
+                            document.querySelector('.gw-modal .gw-tab[data-tab="tasks"]') ||
+                            Array.from(document.querySelectorAll('#gw-tabs .gw-tab, .gw-modal .gw-tab, .gw-tab')).find(t => {
+                                const txt = t.innerText.trim().toLowerCase();
+                                const dataTab = (t.getAttribute('data-tab') || '').toLowerCase();
+                                return txt === 'tasks' || dataTab === 'tasks';
+                            });
+            if (taskTab) {
+                taskTab.click();
+                return true;
+            }
+            return false;
+        })()
+        """
+        await tab.execute_script(js_click_tasks)
+        await asyncio.sleep(0.3)
+
+    # 4. Aguarda até as TASKS estarem efetivamente carregadas e disponíveis
+    js_check_tasks_loaded = """
+    (() => {
+        const modal = document.querySelector('.gw-modal');
+        if (!modal || modal.offsetParent === null) return JSON.stringify({ ready: false, reason: "no_modal" });
+
+        const taskTab = document.querySelector('#gw-tabs .gw-tab[data-tab="tasks"]') || 
+                        document.querySelector('.gw-modal .gw-tab[data-tab="tasks"]') ||
+                        Array.from(document.querySelectorAll('#gw-tabs .gw-tab, .gw-modal .gw-tab, .gw-tab')).find(t => {
+                            const txt = t.innerText.trim().toLowerCase();
+                            const dataTab = (t.getAttribute('data-tab') || '').toLowerCase();
+                            return txt === 'tasks' || dataTab === 'tasks';
+                        });
+
+        const isTabActive = taskTab ? taskTab.classList.contains('active') : true;
 
         const cards = document.querySelectorAll('.gwt-card');
         const secs = document.querySelectorAll('.gwt-sec');
-        const emptyState = document.querySelector('.gwt-empty, .gw-body .gw-muted');
+        const emptyState = document.querySelector('.gwt-empty, .gwt-none');
 
-        return (cards.length > 0 || secs.length > 0 || !!emptyState);
+        // Pronto se a aba estiver ativa e cards, seções ou empty state estiverem renderizados
+        const isReady = isTabActive && (cards.length > 0 || secs.length > 0 || !!emptyState);
+
+        return JSON.stringify({
+            ready: isReady,
+            tab_active: isTabActive,
+            cards_count: cards.length,
+            sections_count: secs.length
+        });
     })()
     """
-    while (asyncio.get_running_loop().time() - start_time) < timeout:
-        res = await tab.execute_script(js_check_loaded)
-        if extract_execute_result(res):
-            await asyncio.sleep(0.4)
-            return True
-        await asyncio.sleep(0.4)
 
-    return True
+    start_content_time = asyncio.get_running_loop().time()
+    while (asyncio.get_running_loop().time() - start_content_time) < timeout:
+        res = await tab.execute_script(js_check_tasks_loaded)
+        content_info = parse_json_result(res)
+        if not isinstance(content_info, dict):
+            content_info = {}
+        if content_info.get("ready"):
+            await asyncio.sleep(0.3)
+            return True
+
+        # Se a aba perdeu o foco ativo, clica novamente
+        if not content_info.get("tab_active", True):
+            await tab.execute_script("""
+            (() => {
+                const taskTab = document.querySelector('#gw-tabs .gw-tab[data-tab="tasks"]') || 
+                                document.querySelector('.gw-modal .gw-tab[data-tab="tasks"]');
+                if (taskTab) taskTab.click();
+            })()
+            """)
+
+        await asyncio.sleep(0.3)
+
+    # Se estourou o timeout, confere se ao menos há cards ou seções renderizadas
+    final_check = await tab.execute_script("""
+    (() => {
+        const cards = document.querySelectorAll('.gwt-card');
+        const secs = document.querySelectorAll('.gwt-sec');
+        return (cards.length > 0 || secs.length > 0);
+    })()
+    """)
+    return bool(extract_execute_result(final_check))
 
 
 async def close_guild_modal(tab):
@@ -302,7 +412,9 @@ async def interact_with_guild_tasks(tab, action="read", target_task_name=None, t
                     if (parsed) tasks.push(parsed);
                 }});
             }});
-        }} else {{
+        }}
+
+        if (tasks.length === 0) {{
             const cards = Array.from(document.querySelectorAll('.gwt-card'));
             cards.forEach(card => {{
                 const parsed = parseCard(card, 'diaria', 'Diária', '');

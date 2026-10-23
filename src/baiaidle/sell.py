@@ -1,6 +1,7 @@
 import asyncio
 import random
 import re
+import time
 from dataclasses import dataclass
 
 from baiaidle.actions import (
@@ -27,6 +28,7 @@ from baiaidle.actions import get_party_average_level
 from baiaidle.guild import get_tracked_task_progress, process_guild_tasks, auto_select_best_guild_task
 from baiaidle.codex import process_codex_routine
 from baiaidle.battlepass import get_tracked_battlepass_progress, process_battlepass, auto_select_best_battlepass
+from baiaidle.tree import run_auto_tree
 from baiaidle.recovery import dismiss_welcome_and_popups
 from baiaidle.settings import get_setting
 
@@ -1002,6 +1004,7 @@ async def run_sell(
 
 
     try:
+        last_tree_check = time.time()
 
         while not stop_event.is_set():
             try:
@@ -1294,6 +1297,28 @@ async def run_sell(
                                         await on_message(f"✅ Missões do Passe de hoje concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
                             except Exception as e:
                                 print(f"Erro ao processar passe no loop de vendas: {e}")
+
+                # ====================================================
+                # VERIFICAR ÁRVORE DE HABILIDADES PERIODICAMENTE (600s)
+                # ====================================================
+                if not stop_event.is_set() and pause_event.is_set():
+                    now = time.time()
+                    if now - last_tree_check > 600:
+                        last_tree_check = now
+                        if get_setting("auto_tree_enabled", True):
+                            try:
+                                tree_res = await run_auto_tree(tab)
+                                if tree_res.get("allocated_total", 0) > 0:
+                                    det = tree_res.get("details", [])
+                                    lines = []
+                                    for d in det:
+                                        lines.append(f"• *{d['title']}*: +{d['spent']} pts ➔ {', '.join(d['nodes'])}")
+                                    msg = "🌳 *Árvore de Habilidades Atualizada Automaticamente!*\n" + "\n".join(lines)
+                                    print(msg.replace('*', ''))
+                                    if on_message:
+                                        await on_message(msg)
+                            except Exception as e:
+                                print(f"Aviso ao verificar árvore de habilidades no loop de hunt: {e}")
 
             except asyncio.CancelledError:
                 raise

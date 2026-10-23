@@ -1,0 +1,2101 @@
+{
+  "sorcerer": {
+    "voc": "sorcerer",
+    "nodes": [
+      {
+        "id": "s_arcane",
+        "name": "Arcane Power",
+        "kind": "small",
+        "tier": 0,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "spellDmgPct": 2
+        }
+      },
+      {
+        "id": "s_crit",
+        "name": "Arcane Focus",
+        "kind": "small",
+        "tier": 0,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "critChance": 0.5
+        }
+      },
+      {
+        "id": "s_mana",
+        "name": "Deep Well",
+        "kind": "small",
+        "tier": 0,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "manaPct": 1.5
+        }
+      },
+      {
+        "id": "s_fire",
+        "name": "Pyromancy",
+        "kind": "small",
+        "tier": 1,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_arcane"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "fire": 1
+          }
+        }
+      },
+      {
+        "id": "s_energy",
+        "name": "Voltaics",
+        "kind": "small",
+        "tier": 1,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_arcane",
+          "s_crit"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "energy": 1
+          }
+        }
+      },
+      {
+        "id": "s_scholar",
+        "name": "Scholar",
+        "kind": "small",
+        "tier": 1,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_crit",
+          "s_mana"
+        ],
+        "per": {
+          "expPct": 1
+        }
+      },
+      {
+        "id": "s_mregen",
+        "name": "Mind Spring",
+        "kind": "small",
+        "tier": 1,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_mana"
+        ],
+        "per": {
+          "mpRegenPct": 0.15
+        }
+      },
+      {
+        "id": "s_ignite",
+        "name": "Ignite",
+        "kind": "small",
+        "tier": 2,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_fire",
+          "s_energy"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "fire": 1
+          }
+        }
+      },
+      {
+        "id": "s_devastate",
+        "name": "Devastation",
+        "kind": "small",
+        "tier": 2,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_energy",
+          "s_crit"
+        ],
+        "per": {
+          "critDmg": 2
+        }
+      },
+      {
+        "id": "s_drain",
+        "name": "Essence Drain",
+        "kind": "small",
+        "tier": 2,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_scholar",
+          "s_mregen"
+        ],
+        "per": {
+          "manaLeech": 0.3
+        }
+      },
+      {
+        "id": "s_wildfire",
+        "name": "Wildfire",
+        "kind": "small",
+        "tier": 3,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_ignite"
+        ],
+        "per": {
+          "spellDmgPct": 2
+        }
+      },
+      {
+        "id": "s_conduit",
+        "name": "Conduit",
+        "kind": "small",
+        "tier": 3,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_ignite",
+          "s_devastate"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "energy": 1
+          }
+        }
+      },
+      {
+        "id": "s_haste",
+        "name": "Quickened Casting",
+        "kind": "small",
+        "tier": 3,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_devastate",
+          "s_drain"
+        ],
+        "per": {
+          "attackSpeedPct": 1.5
+        }
+      },
+      {
+        "id": "s_ward",
+        "name": "Energy Ward",
+        "kind": "small",
+        "tier": 3,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "s_drain",
+          "s_mregen"
+        ],
+        "per": {
+          "absorbPct": {
+            "energy": 0.5
+          }
+        }
+      },
+      {
+        "id": "s_focus_mastery",
+        "name": "Focus Mastery",
+        "kind": "notable",
+        "tier": 4,
+        "col": 1,
+        "maxRank": 1,
+        "cost": 50,
+        "requires": [
+          "s_wildfire",
+          "s_conduit"
+        ],
+        "per": {
+          "spellDmgPct": 10
+        },
+        "flavor": "O conhecimento rúnico alimenta seu poder"
+      },
+      {
+        "id": "s_necro",
+        "name": "Necromancy",
+        "kind": "small",
+        "tier": 4,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_conduit",
+          "s_haste"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "death": 1.2
+          }
+        }
+      },
+      {
+        "id": "s_barrier",
+        "name": "Mana Barrier",
+        "kind": "small",
+        "tier": 4,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_ward",
+          "s_haste"
+        ],
+        "per": {
+          "hpPct": 1
+        }
+      },
+      {
+        "id": "s_hellcore",
+        "name": "Hell's Core",
+        "kind": "notable",
+        "tier": 5,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 100,
+        "requires": [
+          "s_focus_mastery",
+          "s_wildfire"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "fire": 8
+          },
+          "spellDmgPct": 4
+        },
+        "icon": {
+          "sheet": "spell",
+          "spell": "exevo gran mas flam"
+        },
+        "flavor": "O núcleo do inferno amplifica seu fogo"
+      },
+      {
+        "id": "s_overchannel",
+        "name": "Overchannel",
+        "kind": "small",
+        "tier": 5,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_focus_mastery"
+        ],
+        "per": {
+          "spellDmgPct": 2.5
+        }
+      },
+      {
+        "id": "s_soulharvest",
+        "name": "Soul Harvest",
+        "kind": "small",
+        "tier": 5,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_necro"
+        ],
+        "per": {
+          "lifeLeech": 0.4
+        }
+      },
+      {
+        "id": "s_deepwell",
+        "name": "Bottomless Well",
+        "kind": "small",
+        "tier": 5,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_barrier",
+          "s_ward"
+        ],
+        "per": {
+          "manaPct": 2
+        }
+      },
+      {
+        "id": "s_scorch",
+        "name": "Scorch",
+        "kind": "small",
+        "tier": 6,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_hellcore",
+          "s_overchannel"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "fire": 1.2
+          }
+        }
+      },
+      {
+        "id": "s_lord_destruction",
+        "name": "Lord of Destruction",
+        "kind": "notable",
+        "tier": 6,
+        "col": 3,
+        "maxRank": 1,
+        "cost": 100,
+        "requires": [
+          "s_overchannel",
+          "s_soulharvest"
+        ],
+        "per": {
+          "critChance": 5,
+          "critDmg": 25
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 8
+        },
+        "flavor": "Mestre das chamas, do trovão e da ruína"
+      },
+      {
+        "id": "s_reaper",
+        "name": "Reaper",
+        "kind": "small",
+        "tier": 6,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_soulharvest",
+          "s_deepwell"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "death": 1.2
+          }
+        }
+      },
+      {
+        "id": "s_chain1",
+        "name": "Chain Arc I",
+        "kind": "notable",
+        "tier": 6,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "s_hellcore"
+        ],
+        "special": {
+          "key": "chain",
+          "value": 1
+        },
+        "desc": "O auto-attack da wand SALTA pra +1 monstro próximo (60% do dano)"
+      },
+      {
+        "id": "s_tactics",
+        "name": "Battle Tactics",
+        "kind": "small",
+        "tier": 6,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_soulharvest"
+        ],
+        "special": {
+          "key": "tactics",
+          "value": 1
+        },
+        "desc": "Afia a IA de combate: mira, posicionamento e reação (+100 níveis de tática por rank)"
+      },
+      {
+        "id": "s_inferno",
+        "name": "Inferno",
+        "kind": "small",
+        "tier": 7,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_scorch"
+        ],
+        "per": {
+          "spellDmgPct": 2.5
+        }
+      },
+      {
+        "id": "s_stormcall",
+        "name": "Stormcall",
+        "kind": "small",
+        "tier": 7,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_lord_destruction",
+          "s_scorch"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "energy": 1.2
+          }
+        }
+      },
+      {
+        "id": "s_deathchill",
+        "name": "Death Chill",
+        "kind": "small",
+        "tier": 7,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_reaper",
+          "s_lord_destruction"
+        ],
+        "per": {
+          "critDmg": 2.5
+        }
+      },
+      {
+        "id": "s_fire_ward",
+        "name": "Fire Ward",
+        "kind": "small",
+        "tier": 7,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "s_deepwell"
+        ],
+        "per": {
+          "absorbPct": {
+            "fire": 0.6
+          }
+        }
+      },
+      {
+        "id": "s_rage_skies",
+        "name": "Rage of the Skies",
+        "kind": "notable",
+        "tier": 8,
+        "col": 1,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "s_inferno",
+          "s_stormcall"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "energy": 8
+          },
+          "spellDmgPct": 5
+        },
+        "icon": {
+          "sheet": "spell",
+          "spell": "exevo gran mas vis"
+        },
+        "flavor": "A fúria dos céus corre nos seus encantamentos"
+      },
+      {
+        "id": "s_archmage",
+        "name": "Archmage",
+        "kind": "small",
+        "tier": 8,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "s_stormcall",
+          "s_deathchill"
+        ],
+        "per": {
+          "spellDmgPct": 3
+        }
+      },
+      {
+        "id": "s_lich",
+        "name": "Lichform",
+        "kind": "small",
+        "tier": 8,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "s_deathchill",
+          "s_fire_ward"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "death": 1.5
+          }
+        }
+      },
+      {
+        "id": "s_beam",
+        "name": "Beam Mastery",
+        "kind": "notable",
+        "tier": 9,
+        "col": 2,
+        "maxRank": 1,
+        "cost": 200,
+        "requires": [
+          "s_rage_skies",
+          "s_archmage"
+        ],
+        "per": {
+          "spellDmgPct": 12
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 7
+        },
+        "flavor": "Seus feixes varrem tudo"
+      },
+      {
+        "id": "s_voidtouch",
+        "name": "Void Touch",
+        "kind": "small",
+        "tier": 9,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "s_archmage",
+          "s_lich"
+        ],
+        "per": {
+          "critChance": 0.8
+        }
+      },
+      {
+        "id": "s_nether_ward",
+        "name": "Nether Ward",
+        "kind": "small",
+        "tier": 9,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "s_lich"
+        ],
+        "per": {
+          "absorbPct": 0.1
+        }
+      },
+      {
+        "id": "s_chain2",
+        "name": "Chain Arc II",
+        "kind": "notable",
+        "tier": 9,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "s_chain1"
+        ],
+        "special": {
+          "key": "chain",
+          "value": 1
+        },
+        "desc": "O arco salta pra mais +1 monstro"
+      },
+      {
+        "id": "s_momentum",
+        "name": "Momentum",
+        "kind": "notable",
+        "tier": 10,
+        "col": 3,
+        "maxRank": 1,
+        "cost": 200,
+        "requires": [
+          "s_beam",
+          "s_voidtouch"
+        ],
+        "special": {
+          "key": "momentum",
+          "value": 18
+        },
+        "desc": "18% de chance no auto-attack de reduzir 2s de todos os cooldowns de magia"
+      },
+      {
+        "id": "s_cataclysm",
+        "name": "Cataclysm",
+        "kind": "small",
+        "tier": 10,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "s_voidtouch",
+          "s_nether_ward"
+        ],
+        "per": {
+          "spellDmgPct": 3
+        }
+      },
+      {
+        "id": "s_avatar_storm",
+        "name": "Avatar of Storm",
+        "kind": "notable",
+        "tier": 11,
+        "col": 4,
+        "maxRank": 1,
+        "cost": 300,
+        "requires": [
+          "s_momentum",
+          "s_cataclysm"
+        ],
+        "per": {
+          "spellDmgPct": 12,
+          "manaPct": 8,
+          "absorbPct": 0.1
+        },
+        "special": {
+          "key": "avatar",
+          "value": 5
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 9
+        },
+        "desc": "5% de chance, por golpe ou magia que ACERTA, de entrar na forma avatar por 15s (crita sempre e -3% de dano recebido)",
+        "flavor": "O céu inteiro obedece"
+      }
+    ]
+  },
+  "knight": {
+    "voc": "knight",
+    "nodes": [
+      {
+        "id": "k_fury",
+        "name": "Fury",
+        "kind": "small",
+        "tier": 0,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "atkPct": 1.5
+        }
+      },
+      {
+        "id": "k_vigor",
+        "name": "Vigor",
+        "kind": "small",
+        "tier": 0,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "hpPct": 1
+        }
+      },
+      {
+        "id": "k_plating",
+        "name": "Plating",
+        "kind": "small",
+        "tier": 0,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "armorFlat": 1
+        }
+      },
+      {
+        "id": "k_haste",
+        "name": "Battle Haste",
+        "kind": "small",
+        "tier": 1,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_fury"
+        ],
+        "per": {
+          "attackSpeedPct": 1.5
+        }
+      },
+      {
+        "id": "k_sharp",
+        "name": "Sharpened Steel",
+        "kind": "small",
+        "tier": 1,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_fury",
+          "k_vigor"
+        ],
+        "per": {
+          "critChance": 0.5
+        }
+      },
+      {
+        "id": "k_toughness",
+        "name": "Toughness",
+        "kind": "small",
+        "tier": 1,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_vigor",
+          "k_plating"
+        ],
+        "per": {
+          "hpPct": 1
+        }
+      },
+      {
+        "id": "k_bulwark",
+        "name": "Bulwark",
+        "kind": "small",
+        "tier": 1,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_plating"
+        ],
+        "per": {
+          "defFlat": 1
+        }
+      },
+      {
+        "id": "k_warlord",
+        "name": "Warlord's Edge",
+        "kind": "small",
+        "tier": 2,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_haste"
+        ],
+        "per": {
+          "atkPct": 1.5
+        }
+      },
+      {
+        "id": "k_brutal",
+        "name": "Brutality",
+        "kind": "small",
+        "tier": 2,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_sharp"
+        ],
+        "per": {
+          "critDmg": 2
+        }
+      },
+      {
+        "id": "k_vampiric",
+        "name": "Vampiric Blows",
+        "kind": "small",
+        "tier": 2,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_vigor",
+          "k_sharp"
+        ],
+        "per": {
+          "lifeLeech": 0.4
+        }
+      },
+      {
+        "id": "k_fire_ward",
+        "name": "Fire Ward",
+        "kind": "small",
+        "tier": 2,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_bulwark",
+          "k_plating"
+        ],
+        "per": {
+          "absorbPct": {
+            "fire": 0.5
+          }
+        }
+      },
+      {
+        "id": "k_death_ward",
+        "name": "Death Ward",
+        "kind": "small",
+        "tier": 2,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_bulwark"
+        ],
+        "per": {
+          "absorbPct": {
+            "death": 0.5
+          }
+        }
+      },
+      {
+        "id": "k_combat_mastery",
+        "name": "Combat Mastery",
+        "kind": "notable",
+        "tier": 3,
+        "col": 1,
+        "maxRank": 1,
+        "cost": 50,
+        "requires": [
+          "k_warlord",
+          "k_brutal"
+        ],
+        "per": {
+          "atkPct": 8,
+          "armorFlat": 8
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 2
+        },
+        "flavor": "Domínio total do corpo a corpo"
+      },
+      {
+        "id": "k_second_wind",
+        "name": "Second Wind",
+        "kind": "small",
+        "tier": 3,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_vampiric"
+        ],
+        "per": {
+          "hpRegenPct": 0.15
+        }
+      },
+      {
+        "id": "k_resilience",
+        "name": "Resilience",
+        "kind": "small",
+        "tier": 3,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "k_fire_ward",
+          "k_death_ward"
+        ],
+        "per": {
+          "absorbPct": 0.1
+        }
+      },
+      {
+        "id": "k_smash",
+        "name": "Skull Smash",
+        "kind": "small",
+        "tier": 4,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_combat_mastery",
+          "k_warlord"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "physical": 1
+          }
+        }
+      },
+      {
+        "id": "k_cleave",
+        "name": "Cleave",
+        "kind": "small",
+        "tier": 4,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_combat_mastery",
+          "k_second_wind"
+        ],
+        "per": {
+          "atkPct": 2
+        }
+      },
+      {
+        "id": "k_battle_healing",
+        "name": "Battle Healing",
+        "kind": "notable",
+        "tier": 4,
+        "col": 4,
+        "maxRank": 1,
+        "cost": 100,
+        "requires": [
+          "k_second_wind",
+          "k_toughness"
+        ],
+        "per": {
+          "lifeLeech": 4,
+          "hpPct": 5
+        },
+        "flavor": "O sangue derramado costura suas feridas"
+      },
+      {
+        "id": "k_ice_ward",
+        "name": "Ice Ward",
+        "kind": "small",
+        "tier": 4,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_resilience"
+        ],
+        "per": {
+          "absorbPct": {
+            "ice": 0.6
+          }
+        }
+      },
+      {
+        "id": "k_berserk",
+        "name": "Berserk Mastery",
+        "kind": "notable",
+        "tier": 5,
+        "col": 1,
+        "maxRank": 1,
+        "cost": 100,
+        "requires": [
+          "k_smash",
+          "k_cleave"
+        ],
+        "per": {
+          "atkPct": 6,
+          "critDmg": 10
+        },
+        "icon": {
+          "sheet": "spell",
+          "spell": "exori mas"
+        },
+        "flavor": "O grito de guerra do exori mas corre nas suas veias"
+      },
+      {
+        "id": "k_bloodlust",
+        "name": "Bloodlust",
+        "kind": "small",
+        "tier": 5,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_battle_healing",
+          "k_second_wind"
+        ],
+        "per": {
+          "lifeLeech": 0.5
+        }
+      },
+      {
+        "id": "k_guardian",
+        "name": "Guardian",
+        "kind": "small",
+        "tier": 5,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_resilience",
+          "k_battle_healing"
+        ],
+        "per": {
+          "defFlat": 1.5
+        }
+      },
+      {
+        "id": "k_slash1",
+        "name": "Cleaving Strikes I",
+        "kind": "notable",
+        "tier": 5,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 100,
+        "requires": [
+          "k_smash"
+        ],
+        "special": {
+          "key": "slash",
+          "value": 40
+        },
+        "desc": "O ataque básico corpo a corpo corta os monstros ADJACENTES ao alvo por 40% do dano (magias não cortam)"
+      },
+      {
+        "id": "k_tactics",
+        "name": "Battle Tactics",
+        "kind": "small",
+        "tier": 5,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_cleave"
+        ],
+        "special": {
+          "key": "tactics",
+          "value": 1
+        },
+        "desc": "Afia a IA de combate: mira, posicionamento e reação (+100 níveis de tática por rank)"
+      },
+      {
+        "id": "k_rampage",
+        "name": "Rampage",
+        "kind": "small",
+        "tier": 6,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_berserk"
+        ],
+        "per": {
+          "attackSpeedPct": 2
+        }
+      },
+      {
+        "id": "k_precision",
+        "name": "Cold Precision",
+        "kind": "small",
+        "tier": 6,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_berserk",
+          "k_bloodlust"
+        ],
+        "per": {
+          "critChance": 0.6
+        }
+      },
+      {
+        "id": "k_juggernaut",
+        "name": "Juggernaut",
+        "kind": "small",
+        "tier": 6,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_bloodlust",
+          "k_guardian"
+        ],
+        "per": {
+          "hpPct": 1.2
+        }
+      },
+      {
+        "id": "k_energy_ward",
+        "name": "Energy Ward",
+        "kind": "small",
+        "tier": 6,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_ice_ward",
+          "k_guardian"
+        ],
+        "per": {
+          "absorbPct": {
+            "energy": 0.6
+          }
+        }
+      },
+      {
+        "id": "k_overpower",
+        "name": "Overpower",
+        "kind": "small",
+        "tier": 7,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_rampage",
+          "k_precision"
+        ],
+        "per": {
+          "critDmg": 2.5
+        }
+      },
+      {
+        "id": "k_second_skin",
+        "name": "Second Skin",
+        "kind": "small",
+        "tier": 7,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "k_juggernaut",
+          "k_precision"
+        ],
+        "per": {
+          "armorFlat": 1.5
+        }
+      },
+      {
+        "id": "k_battle_instinct",
+        "name": "Battle Instinct",
+        "kind": "notable",
+        "tier": 7,
+        "col": 5,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "k_guardian",
+          "k_juggernaut"
+        ],
+        "special": {
+          "key": "battle_instinct",
+          "value": 6
+        },
+        "desc": "+6 def por monstro em melee range"
+      },
+      {
+        "id": "k_slash2",
+        "name": "Cleaving Strikes II",
+        "kind": "notable",
+        "tier": 7,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "k_slash1"
+        ],
+        "special": {
+          "key": "slash",
+          "value": 15
+        },
+        "desc": "O corte adjacente sobe pra 55% do dano"
+      },
+      {
+        "id": "k_executioner",
+        "name": "Executioner",
+        "kind": "notable",
+        "tier": 8,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "k_overpower"
+        ],
+        "special": {
+          "key": "execute",
+          "value": 40
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 1
+        },
+        "desc": "+40% de dano em monstros abaixo de 25% do HP"
+      },
+      {
+        "id": "k_smite",
+        "name": "Smite",
+        "kind": "small",
+        "tier": 8,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "k_overpower",
+          "k_second_skin"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "physical": 1.5
+          }
+        }
+      },
+      {
+        "id": "k_vitality",
+        "name": "Deep Vitality",
+        "kind": "small",
+        "tier": 8,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "k_second_skin",
+          "k_battle_instinct"
+        ],
+        "per": {
+          "hpPct": 1.5
+        }
+      },
+      {
+        "id": "k_fortress",
+        "name": "Fortress",
+        "kind": "small",
+        "tier": 8,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "k_energy_ward",
+          "k_battle_instinct"
+        ],
+        "per": {
+          "absorbPct": 0.1
+        }
+      },
+      {
+        "id": "k_warlust",
+        "name": "Warlust",
+        "kind": "small",
+        "tier": 9,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "k_smite",
+          "k_executioner"
+        ],
+        "per": {
+          "atkPct": 2.5
+        }
+      },
+      {
+        "id": "k_gift_of_life",
+        "name": "Gift of Life",
+        "kind": "notable",
+        "tier": 9,
+        "col": 3,
+        "maxRank": 1,
+        "cost": 200,
+        "requires": [
+          "k_vitality"
+        ],
+        "special": {
+          "key": "gift_of_life",
+          "value": 60
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 0
+        },
+        "desc": "Sobrevive a um golpe letal curando 40% do HP (cooldown 60s)"
+      },
+      {
+        "id": "k_iron_will",
+        "name": "Iron Will",
+        "kind": "small",
+        "tier": 9,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "k_fortress",
+          "k_vitality"
+        ],
+        "per": {
+          "defFlat": 2
+        }
+      },
+      {
+        "id": "k_carnage",
+        "name": "Carnage",
+        "kind": "small",
+        "tier": 10,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "k_warlust",
+          "k_gift_of_life"
+        ],
+        "per": {
+          "critDmg": 3
+        }
+      },
+      {
+        "id": "k_colossus",
+        "name": "Colossus",
+        "kind": "small",
+        "tier": 10,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "k_gift_of_life",
+          "k_iron_will"
+        ],
+        "per": {
+          "hpPct": 1.5,
+          "absorbPct": 0.1
+        }
+      },
+      {
+        "id": "k_slash3",
+        "name": "Cleaving Strikes III",
+        "kind": "notable",
+        "tier": 10,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 200,
+        "requires": [
+          "k_slash2"
+        ],
+        "special": {
+          "key": "slash",
+          "value": 15
+        },
+        "desc": "O corte adjacente sobe pra 70% do dano"
+      },
+      {
+        "id": "k_avatar_steel",
+        "name": "Avatar of Steel",
+        "kind": "notable",
+        "tier": 11,
+        "col": 3,
+        "maxRank": 1,
+        "cost": 300,
+        "requires": [
+          "k_carnage",
+          "k_colossus"
+        ],
+        "per": {
+          "atkPct": 10,
+          "hpPct": 8,
+          "absorbPct": 0.1
+        },
+        "special": {
+          "key": "avatar",
+          "value": 5
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 3
+        },
+        "desc": "5% de chance, por golpe ou magia que ACERTA, de entrar na forma avatar por 15s (crita sempre e -3% de dano recebido)",
+        "flavor": "O aço não cede — e você já é aço"
+      }
+    ]
+  },
+  "druid": {
+    "voc": "druid",
+    "nodes": [
+      {
+        "id": "d_nature",
+        "name": "Nature's Wrath",
+        "kind": "small",
+        "tier": 0,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "spellDmgPct": 2
+        }
+      },
+      {
+        "id": "d_spring",
+        "name": "Spring",
+        "kind": "small",
+        "tier": 0,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "manaPct": 1.5
+        }
+      },
+      {
+        "id": "d_ice",
+        "name": "Frost Attunement",
+        "kind": "small",
+        "tier": 1,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "d_nature"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "ice": 1
+          }
+        }
+      },
+      {
+        "id": "d_earth",
+        "name": "Terra Attunement",
+        "kind": "small",
+        "tier": 1,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "d_nature",
+          "d_spring"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "earth": 1
+          }
+        }
+      },
+      {
+        "id": "d_bark",
+        "name": "Barkskin",
+        "kind": "small",
+        "tier": 1,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "d_spring"
+        ],
+        "per": {
+          "hpPct": 1
+        }
+      },
+      {
+        "id": "d_frostbite",
+        "name": "Frostbite",
+        "kind": "small",
+        "tier": 2,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "d_ice"
+        ],
+        "per": {
+          "critDmg": 2
+        }
+      },
+      {
+        "id": "d_mending",
+        "name": "Mending",
+        "kind": "small",
+        "tier": 2,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "d_ice",
+          "d_earth"
+        ],
+        "per": {
+          "spellHealPct": 1
+        }
+      },
+      {
+        "id": "d_fortune",
+        "name": "Fortune",
+        "kind": "small",
+        "tier": 2,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "d_earth",
+          "d_bark"
+        ],
+        "per": {
+          "lootPct": 1
+        }
+      },
+      {
+        "id": "d_leech",
+        "name": "Sap Life",
+        "kind": "small",
+        "tier": 2,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "d_bark"
+        ],
+        "per": {
+          "lifeLeech": 0.4
+        }
+      },
+      {
+        "id": "d_crit",
+        "name": "Wild Focus",
+        "kind": "small",
+        "tier": 3,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "d_frostbite",
+          "d_mending"
+        ],
+        "per": {
+          "critChance": 0.5
+        }
+      },
+      {
+        "id": "d_regen",
+        "name": "Regrowth",
+        "kind": "small",
+        "tier": 3,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "d_mending",
+          "d_fortune"
+        ],
+        "per": {
+          "hpRegenPct": 0.15
+        }
+      },
+      {
+        "id": "d_herbalist",
+        "name": "Herbalist",
+        "kind": "small",
+        "tier": 3,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "d_fortune",
+          "d_leech"
+        ],
+        "per": {
+          "expPct": 1
+        }
+      },
+      {
+        "id": "d_glacier",
+        "name": "Glacier",
+        "kind": "small",
+        "tier": 4,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_crit",
+          "d_frostbite"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "ice": 1.2
+          }
+        }
+      },
+      {
+        "id": "d_grove",
+        "name": "Blessing of the Grove",
+        "kind": "notable",
+        "tier": 4,
+        "col": 2,
+        "maxRank": 1,
+        "cost": 50,
+        "requires": [
+          "d_regen",
+          "d_crit"
+        ],
+        "per": {
+          "hpPct": 6,
+          "spellHealPct": 6
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 11
+        },
+        "flavor": "O bosque cura os seus"
+      },
+      {
+        "id": "d_thorns",
+        "name": "Thorns",
+        "kind": "small",
+        "tier": 4,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_regen",
+          "d_herbalist"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "earth": 1.2
+          }
+        }
+      },
+      {
+        "id": "d_lucky",
+        "name": "Lucky Charm",
+        "kind": "small",
+        "tier": 4,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_herbalist",
+          "d_leech"
+        ],
+        "per": {
+          "lootPct": 1.2
+        }
+      },
+      {
+        "id": "d_winterheart",
+        "name": "Winter Heart",
+        "kind": "small",
+        "tier": 5,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_glacier",
+          "d_grove"
+        ],
+        "per": {
+          "spellDmgPct": 2.5
+        }
+      },
+      {
+        "id": "d_lifebloom",
+        "name": "Lifebloom",
+        "kind": "small",
+        "tier": 5,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_grove",
+          "d_thorns"
+        ],
+        "per": {
+          "spellHealPct": 1.2
+        }
+      },
+      {
+        "id": "d_windfall",
+        "name": "Windfall",
+        "kind": "small",
+        "tier": 5,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_lucky",
+          "d_thorns"
+        ],
+        "per": {
+          "expPct": 1.2
+        }
+      },
+      {
+        "id": "d_chain1",
+        "name": "Wild Chain I",
+        "kind": "notable",
+        "tier": 5,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "d_glacier"
+        ],
+        "special": {
+          "key": "chain",
+          "value": 1
+        },
+        "desc": "O auto-attack da rod SALTA pra +1 monstro próximo (60% do dano)"
+      },
+      {
+        "id": "d_tactics",
+        "name": "Battle Tactics",
+        "kind": "small",
+        "tier": 5,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_lucky"
+        ],
+        "special": {
+          "key": "tactics",
+          "value": 1
+        },
+        "desc": "Afia a IA de combate: mira, posicionamento e reação (+100 níveis de tática por rank)"
+      },
+      {
+        "id": "d_hailstorm",
+        "name": "Hail Storm",
+        "kind": "notable",
+        "tier": 6,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 100,
+        "requires": [
+          "d_winterheart"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "ice": 8
+          },
+          "spellDmgPct": 4
+        },
+        "icon": {
+          "sheet": "spell",
+          "spell": "exevo gran mas frigo"
+        },
+        "flavor": "A tempestade de granizo anda com você"
+      },
+      {
+        "id": "d_naturebond",
+        "name": "Nature's Bond",
+        "kind": "small",
+        "tier": 6,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_winterheart",
+          "d_lifebloom"
+        ],
+        "per": {
+          "manaPct": 2
+        }
+      },
+      {
+        "id": "d_healing_link",
+        "name": "Healing Link",
+        "kind": "notable",
+        "tier": 6,
+        "col": 4,
+        "maxRank": 1,
+        "cost": 100,
+        "requires": [
+          "d_lifebloom",
+          "d_windfall"
+        ],
+        "per": {
+          "spellHealPct": 10,
+          "manaPct": 4
+        },
+        "flavor": "O elo vital flui entre você e a natureza"
+      },
+      {
+        "id": "d_ice_ward",
+        "name": "Ice Ward",
+        "kind": "small",
+        "tier": 6,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_windfall"
+        ],
+        "per": {
+          "absorbPct": {
+            "ice": 0.6,
+            "earth": 0.6
+          }
+        }
+      },
+      {
+        "id": "d_permafrost",
+        "name": "Permafrost",
+        "kind": "small",
+        "tier": 7,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_hailstorm",
+          "d_naturebond"
+        ],
+        "per": {
+          "critChance": 0.6
+        }
+      },
+      {
+        "id": "d_overgrowth",
+        "name": "Overgrowth",
+        "kind": "small",
+        "tier": 7,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_naturebond",
+          "d_healing_link"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "earth": 1.2
+          }
+        }
+      },
+      {
+        "id": "d_stoneskin",
+        "name": "Stone Skin",
+        "kind": "small",
+        "tier": 7,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "d_ice_ward",
+          "d_healing_link"
+        ],
+        "per": {
+          "absorbPct": 0.1
+        }
+      },
+      {
+        "id": "d_chain2",
+        "name": "Wild Chain II",
+        "kind": "notable",
+        "tier": 7,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "d_chain1"
+        ],
+        "special": {
+          "key": "chain",
+          "value": 1
+        },
+        "desc": "Os cipós saltam pra mais +1 monstro"
+      },
+      {
+        "id": "d_wrath_nature",
+        "name": "Wrath of Nature",
+        "kind": "notable",
+        "tier": 8,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "d_permafrost"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "earth": 8
+          },
+          "spellDmgPct": 5
+        },
+        "icon": {
+          "sheet": "spell",
+          "spell": "exevo gran mas tera"
+        },
+        "flavor": "A ira da natureza floresce em cada feitiço"
+      },
+      {
+        "id": "d_elder",
+        "name": "Elder Wisdom",
+        "kind": "small",
+        "tier": 8,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "d_permafrost",
+          "d_overgrowth"
+        ],
+        "per": {
+          "spellDmgPct": 3
+        }
+      },
+      {
+        "id": "d_guardian_grove",
+        "name": "Grove Guardian",
+        "kind": "small",
+        "tier": 8,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "d_overgrowth",
+          "d_stoneskin"
+        ],
+        "per": {
+          "hpPct": 1.5
+        }
+      },
+      {
+        "id": "d_deeproots",
+        "name": "Deep Roots",
+        "kind": "small",
+        "tier": 8,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "d_stoneskin"
+        ],
+        "per": {
+          "absorbPct": 0.1
+        }
+      },
+      {
+        "id": "d_twin_bursts",
+        "name": "Twin Bursts",
+        "kind": "notable",
+        "tier": 9,
+        "col": 1,
+        "maxRank": 1,
+        "cost": 200,
+        "requires": [
+          "d_elder",
+          "d_wrath_nature"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "ice": 6,
+            "earth": 6
+          }
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 10
+        },
+        "flavor": "Gelo e terra explodem em dobro"
+      },
+      {
+        "id": "d_lifekeeper",
+        "name": "Lifekeeper",
+        "kind": "small",
+        "tier": 9,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "d_elder",
+          "d_guardian_grove"
+        ],
+        "per": {
+          "spellHealPct": 1.5
+        }
+      },
+      {
+        "id": "d_worldtree",
+        "name": "World Tree",
+        "kind": "small",
+        "tier": 9,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "d_guardian_grove",
+          "d_deeproots"
+        ],
+        "per": {
+          "hpRegenPct": 0.25
+        }
+      },
+      {
+        "id": "d_gift",
+        "name": "Gift of Life",
+        "kind": "notable",
+        "tier": 10,
+        "col": 2,
+        "maxRank": 1,
+        "cost": 200,
+        "requires": [
+          "d_lifekeeper",
+          "d_twin_bursts"
+        ],
+        "special": {
+          "key": "gift_of_life",
+          "value": 60
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 0
+        },
+        "desc": "Sobrevive a um golpe letal curando 40% do HP (cooldown 60s)"
+      },
+      {
+        "id": "d_evergreen",
+        "name": "Evergreen",
+        "kind": "small",
+        "tier": 10,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "d_worldtree",
+          "d_lifekeeper"
+        ],
+        "per": {
+          "spellDmgPct": 3
+        }
+      },
+      {
+        "id": "d_avatar_nature",
+        "name": "Avatar of Nature",
+        "kind": "notable",
+        "tier": 11,
+        "col": 3,
+        "maxRank": 1,
+        "cost": 300,
+        "requires": [
+          "d_gift",
+          "d_evergreen"
+        ],
+        "per": {
+          "spellDmgPct": 10,
+          "spellHealPct": 8,
+          "absorbPct": 0.1
+        },
+        "special": {
+          "key": "avatar",
+          "value": 5
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 12
+        },
+        "desc": "5% de chance, por golpe ou magia que ACERTA, de entrar na forma avatar por 15s (crita sempre e -3% de dano recebido)",
+        "flavor": "A floresta inteira respira com você"
+      }
+    ]
+  }
+}
