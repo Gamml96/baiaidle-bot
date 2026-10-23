@@ -1525,6 +1525,26 @@ def extract_member_level(member: dict | None) -> int | None:
 
     return None
 
+
+async def get_party_average_level(tab) -> int:
+    """
+    Calcula a média dos níveis de todos os membros da party.
+    Se nenhum nível for encontrado, retorna 999 para não bloquear rotinas indevidamente.
+    """
+    try:
+        members = await get_party_info(tab)
+        levels = []
+        for m in members:
+            lvl = extract_member_level(m)
+            if lvl and lvl > 0:
+                levels.append(lvl)
+        if levels:
+            avg = int(round(sum(levels) / len(levels)))
+            return avg
+    except Exception as e:
+        print(f"Erro ao calcular média dos níveis da party: {e}")
+    return 999
+
 # ================================================================
 # GUARDAR ITENS VALIOSOS (SHIFT + CLIQUE)
 # ================================================================

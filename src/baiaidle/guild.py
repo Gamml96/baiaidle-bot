@@ -45,13 +45,16 @@ async def ensure_hunt_menus_closed(tab):
     await asyncio.sleep(0.2)
 
 
-async def open_guild_tasks(tab):
-    """Navega pelo menu Social > Guild e abre a aba de Tasks."""
+async def open_guild_tasks(tab, timeout: float = 6.0):
+    """
+    Navega pelo menu Social > Guild e abre a aba de Tasks com verificação ativa de carregamento.
+    Garante que o menu e os cards/seções estejam devidamente renderizados antes de prosseguir.
+    """
     print("Abrindo menu da Guild > Tasks...")
     # Garante que nenhum menu de hunt/teleporte esteja aberto cobrindo a tela
     await ensure_hunt_menus_closed(tab)
 
-    js_navigate = """
+    js_open = """
     (() => {
         // 1. Se o modal da guild já estiver aberto e visível
         const modal = document.querySelector('.gw-modal');
@@ -66,26 +69,64 @@ async def open_guild_tasks(tab):
             }
         }
 
-        // 2. Caso contrário, abre via menu Social > Guild
+        // 2. Abre via menu Social
         const btnSocial = document.getElementById('tab-social');
         if (btnSocial) btnSocial.click();
-        
-        setTimeout(() => {
-            const btnGuild = document.getElementById('tab-guild');
-            if (btnGuild) btnGuild.click();
-        }, 300);
-        
-        setTimeout(() => {
-            const taskTab = document.querySelector('#gw-tabs .gw-tab[data-tab="tasks"]') || 
-                            Array.from(document.querySelectorAll('#gw-tabs .gw-tab')).find(t => t.innerText.trim() === 'Tasks');
-            if (taskTab) taskTab.click();
-        }, 1200);
-        
-        return true;
+        return false;
     })()
     """
-    await tab.execute_script(js_navigate)
-    await asyncio.sleep(2.0)
+    await tab.execute_script(js_open)
+    await asyncio.sleep(0.4)
+
+    # Clica na aba Guild
+    js_click_guild = """
+    (() => {
+        const btnGuild = document.getElementById('tab-guild');
+        if (btnGuild) {
+            btnGuild.click();
+            return true;
+        }
+        return false;
+    })()
+    """
+    await tab.execute_script(js_click_guild)
+    await asyncio.sleep(0.5)
+
+    # Clica na aba Tasks
+    js_click_tasks = """
+    (() => {
+        const taskTab = document.querySelector('#gw-tabs .gw-tab[data-tab="tasks"]') || 
+                        Array.from(document.querySelectorAll('#gw-tabs .gw-tab')).find(t => t.innerText.trim() === 'Tasks');
+        if (taskTab) {
+            taskTab.click();
+            return true;
+        }
+        return false;
+    })()
+    """
+    await tab.execute_script(js_click_tasks)
+
+    # Espera ativa para garantir que as seções/cards carregaram no DOM
+    start_time = asyncio.get_running_loop().time()
+    js_check_loaded = """
+    (() => {
+        const modal = document.querySelector('.gw-modal');
+        if (!modal || modal.offsetParent === null) return false;
+
+        const cards = document.querySelectorAll('.gwt-card');
+        const secs = document.querySelectorAll('.gwt-sec');
+        const emptyState = document.querySelector('.gwt-empty, .gw-body .gw-muted');
+
+        return (cards.length > 0 || secs.length > 0 || !!emptyState);
+    })()
+    """
+    while (asyncio.get_running_loop().time() - start_time) < timeout:
+        res = await tab.execute_script(js_check_loaded)
+        if extract_execute_result(res):
+            await asyncio.sleep(0.4)
+            return True
+        await asyncio.sleep(0.4)
+
     return True
 
 
@@ -636,3 +677,126 @@ async def get_tracked_task_progress(tab):
         }
     except Exception:
         return None
+
+
+async def auto_select_best_guild_task(tab, avg_char_level: int, on_message=None):
+    """
+    Seleção autônoma da melhor Task da Guilda:
+    1. Abre o menu da Guilda com espera garantida de carregamento.
+    2. Entrega tasks concluídas.
+    3. Retoma task em andamento se já houver uma ativa.
+    4. Avalia primeiro as tasks SEMANAIS, depois as DIÁRIAS.
+    5. Em cada categoria, prioriza: DIFÍCIL -> MÉDIA -> FÁCIL.
+    6. Seleciona a primeira cujo nível da hunt seja compatível (hunt_lvl <= avg_char_level).
+    """
+    if not await open_guild_tasks(tab):
+        return False, "Não foi possível abrir o menu da Guild."
+
+    data = await interact_with_guild_tasks(tab, action="read")
+    if not data:
+        await close_guild_modal(tab)
+        return False, "Nenhuma task encontrada na tela da Guilda."
+
+    tasks = data.get("tasks", []) if isinstance(data, dict) else data
+
+    # 1. Entrega tasks concluídas
+    delivered = False
+    for t in tasks:
+        if t['is_completed'] and not t['disabled']:
+            await interact_with_guild_tasks(tab, action="deliver", target_task_name=t['name'], target_category=t.get('category'))
+            if on_message:
+                cat_desc = f" ({t.get('category_label', '')})" if t.get('category_label') else ""
+                await on_message(f"🎁 *Task Entregue!*{cat_desc}\nRecompensas coletadas em {t['name']}.")
+            delivered = True
+            await asyncio.sleep(1.5)
+
+    if delivered:
+        data = await interact_with_guild_tasks(tab, action="read")
+        tasks = data.get("tasks", []) if isinstance(data, dict) else data
+
+    # 2. Retoma task em andamento
+    tasks_in_progress = [t for t in tasks if t['is_in_progress']]
+    if tasks_in_progress:
+        t = tasks_in_progress[0]
+        if not t['is_tracking']:
+            await track_task_on_hud(tab, t['name'], t.get('category'))
+        await go_to_guild_task_hunt(tab, t['name'], t.get('category'))
+        await asyncio.sleep(0.5)
+        await close_guild_modal(tab)
+
+        lvl = t.get('level') if t.get('level') is not None else (get_hunt_level(t.get('name', '')) or get_hunt_level(t.get('monsters', '')))
+        lvl_str = f" [lvl {lvl}]" if lvl is not None else ""
+        if on_message:
+            cat_desc = f" ({t.get('category_label', '')})" if t.get('category_label') else ""
+            await on_message(f"🔄 *Retomando Task em Andamento{cat_desc}!*\nLocal: {t['name']}{lvl_str} (Progresso: {t['progress_pct']}%)")
+        return True, "recuperada"
+
+    # 3. Filtra tarefas disponíveis para aceitar
+    available_tasks = [t for t in tasks if t['button'].lower() == 'aceitar' and not t['disabled']]
+    if not available_tasks:
+        await close_guild_modal(tab)
+        return True, "finalizado"
+
+    # 4. Ordem de prioridade: SEMANAIS primeiro, depois DIÁRIAS
+    # Em cada categoria: DIFÍCIL -> MÉDIA -> FÁCIL
+    category_order = ["semanal", "diaria"]
+    difficulty_order = ["dificil", "media", "facil"]
+    chosen_task = None
+
+    for cat in category_order:
+        cat_tasks = [t for t in available_tasks if t.get("category") == cat]
+        if not cat_tasks:
+            continue
+
+        for diff in difficulty_order:
+            cand = next((t for t in cat_tasks if t.get("difficulty") == diff), None)
+            if cand:
+                hunt_lvl = cand.get("level") if cand.get("level") is not None else (get_hunt_level(cand.get("name", "")) or get_hunt_level(cand.get("monsters", "")))
+                # Se o level for compatível ou desconhecido
+                if hunt_lvl is None or hunt_lvl <= avg_char_level:
+                    chosen_task = cand
+                    break
+                else:
+                    print(f"[AutoGuild] Task {cand['name']} ({cat} {diff}) ignorada: hunt lvl {hunt_lvl} > party avg {avg_char_level}")
+
+        if chosen_task:
+            break
+
+    if chosen_task:
+        target_name = chosen_task["name"]
+        target_cat = chosen_task.get("category")
+        target_diff = chosen_task.get("difficulty", "")
+        h_lvl = chosen_task.get("level")
+        lvl_disp = f" [lvl {h_lvl}]" if h_lvl is not None else ""
+        cat_label = chosen_task.get("category_label") or target_cat.capitalize()
+
+        if on_message:
+            await on_message(
+                f"🤖 *AutoGuild:* Selecionando automaticamente a task {cat_label} *{target_name}* "
+                f"({target_diff.capitalize()}){lvl_disp}.\n"
+                f"📊 Nível médio da Party: `{avg_char_level}`."
+            )
+
+        # Clica em 'Aceitar' no card específico
+        await interact_with_guild_tasks(tab, action="accept", target_task_name=target_name, target_category=target_cat)
+        went_to_hunt = False
+        for _ in range(10):
+            await asyncio.sleep(0.3)
+            went_to_hunt = await go_to_guild_task_hunt(tab, target_name, target_cat)
+            if went_to_hunt:
+                break
+
+        await asyncio.sleep(0.5)
+        await close_guild_modal(tab)
+
+        if not went_to_hunt:
+            from baiaidle.hunts import change_hunt
+            await change_hunt(tab, target_name)
+
+        return True, f"Iniciando task {cat_label} em: {target_name}{lvl_disp}"
+    else:
+        await close_guild_modal(tab)
+        msg = f"⚠️ *AutoGuild:* Nenhuma task compatível com o nível médio da party ({avg_char_level}). Todas as disponíveis requerem level maior."
+        if on_message:
+            await on_message(msg)
+        return False, "nenhuma_compativel"

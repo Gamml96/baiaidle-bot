@@ -23,9 +23,10 @@ from baiaidle.hunts import (
     go_to_house,
     repair_house_dummy,
 )
-from baiaidle.guild import get_tracked_task_progress, process_guild_tasks
+from baiaidle.actions import get_party_average_level
+from baiaidle.guild import get_tracked_task_progress, process_guild_tasks, auto_select_best_guild_task
 from baiaidle.codex import process_codex_routine
-from baiaidle.battlepass import get_tracked_battlepass_progress, process_battlepass
+from baiaidle.battlepass import get_tracked_battlepass_progress, process_battlepass, auto_select_best_battlepass
 from baiaidle.recovery import dismiss_welcome_and_popups
 from baiaidle.settings import get_setting
 
@@ -869,6 +870,10 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
             target_ret = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
             await on_message(f"🏠 *Entrou na Casa com sucesso!*\n⚡ Stamina atual: `{init_stam}`. Treinando até `{target_ret}%`.")
         
+    # Aguarda alguns segundos para o cenário da casa e o dummy carregarem completamente
+    print("[Casa Dummies] Aguardando o cenário da Casa carregar para verificar o Dummy...")
+    await asyncio.sleep(4.0)
+
     # Repara o Dummy logo no início do treino
     await repair_house_dummy(tab, on_message=on_message)
 
@@ -1238,8 +1243,19 @@ async def run_sell(
                         
                         if on_message:
                             await on_message(msg)
-                            
-                        await process_guild_tasks(tab, on_message)
+
+                        auto_enabled = get_setting("auto_missions_after_boss", True)
+                        if auto_enabled:
+                            avg_lvl = await get_party_average_level(tab)
+                            success, g_msg = await auto_select_best_guild_task(tab, avg_lvl, on_message)
+                            if g_msg in ["finalizado", "nenhuma_compativel"]:
+                                target_hunt = stats.default_hunt or DEFAULT_HUNT
+                                await change_hunt(tab, target_hunt)
+                                stats.force_sell = True
+                                if on_message:
+                                    await on_message(f"✅ Tasks da Guilda concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
+                        else:
+                            await process_guild_tasks(tab, on_message)
 
                 # ====================================================
                 # VERIFICAR SE O PASSE DE BATALHA FOI FINALIZADO
@@ -1254,16 +1270,30 @@ async def run_sell(
                         if on_message:
                             await on_message(msg)
 
-                        try:
-                            success, bp_msg = await process_battlepass(tab, on_message)
-                            if bp_msg in ["finalizado", "nenhuma_nova"]:
-                                target_hunt = stats.default_hunt or DEFAULT_HUNT
-                                await change_hunt(tab, target_hunt)
-                                stats.force_sell = True
-                                if on_message:
-                                    await on_message(f"✅ Missões do Passe de hoje concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
-                        except Exception as e:
-                            print(f"Erro ao processar passe no loop de vendas: {e}")
+                        auto_enabled = get_setting("auto_missions_after_boss", True)
+                        if auto_enabled:
+                            avg_lvl = await get_party_average_level(tab)
+                            success, bp_msg = await auto_select_best_battlepass(tab, avg_lvl, on_message)
+                            if bp_msg in ["finalizado", "nenhuma_compativel"]:
+                                # Passe concluído! Tenta passar para tasks da Guilda se disponíveis
+                                g_success, g_msg = await auto_select_best_guild_task(tab, avg_lvl, on_message)
+                                if g_msg in ["finalizado", "nenhuma_compativel"]:
+                                    target_hunt = stats.default_hunt or DEFAULT_HUNT
+                                    await change_hunt(tab, target_hunt)
+                                    stats.force_sell = True
+                                    if on_message:
+                                        await on_message(f"✅ Missões e Tasks concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
+                        else:
+                            try:
+                                success, bp_msg = await process_battlepass(tab, on_message)
+                                if bp_msg in ["finalizado", "nenhuma_nova"]:
+                                    target_hunt = stats.default_hunt or DEFAULT_HUNT
+                                    await change_hunt(tab, target_hunt)
+                                    stats.force_sell = True
+                                    if on_message:
+                                        await on_message(f"✅ Missões do Passe de hoje concluídas!\nRetornando para a hunt padrão: *{target_hunt}*")
+                            except Exception as e:
+                                print(f"Erro ao processar passe no loop de vendas: {e}")
 
             except asyncio.CancelledError:
                 raise

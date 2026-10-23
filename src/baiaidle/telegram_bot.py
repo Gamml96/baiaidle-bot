@@ -53,13 +53,15 @@ from baiaidle.hunts import (
     change_hunt,
     debug_hunts_dom,
 )
-from baiaidle.guild import process_guild_tasks, accept_specific_task, get_tracked_task_progress
-from baiaidle.battlepass import process_battlepass, choose_battlepass_mission, get_tracked_battlepass_progress
+from baiaidle.settings import get_setting, set_setting
+from baiaidle.guild import process_guild_tasks, accept_specific_task, get_tracked_task_progress, auto_select_best_guild_task
+from baiaidle.battlepass import process_battlepass, choose_battlepass_mission, get_tracked_battlepass_progress, auto_select_best_battlepass
 from baiaidle.codex import process_codex_routine
 from baiaidle.daily import collect_daily_reward, cancel_daily_schedule
 from baiaidle.actions import (
     get_party_info,
     extract_member_level,
+    get_party_average_level,
     get_loot_analyzer_coins,
     get_hud_data,
 )
@@ -248,6 +250,7 @@ class TelegramController:
             BotCommand("casa", "🏠 Forçar ida para Dummie da Casa"),
             BotCommand("guildtask", "🎯 Gerenciar tasks da Guilda"),
             BotCommand("passe", "🎟️ Gerenciar missões do Passe"),
+            BotCommand("automissoes", "⚙️ Missões automáticas pós-boss"),
             BotCommand("daily", "🎁 Coletar recompensa diária"),
             BotCommand("print", "🖥️ Tirar print da tela do jogo"),
             BotCommand("recuperar", "🛠️ Fechar avisos e recuperar sessão"),
@@ -268,19 +271,111 @@ class TelegramController:
     async def autoboss_finished(self):
         print("\n========================================")
         print("AutoBoss terminou.")
-        print("Retomando Hunt automaticamente...")
         print("========================================\n")
 
-        if hasattr(self.bot, "hunt_stats"):
-            self.bot.hunt_stats.is_in_training = False
-            self.bot.hunt_stats.training_type = ""
-            self.bot.hunt_stats.force_sell = True
+        auto_missions = get_setting("auto_missions_after_boss", True)
+        if auto_missions and self.bot.is_running():
+            if self.auto_boss_instance:
+                await self.auto_boss_instance.send_message("⚔️ *AutoBoss concluído!*\nIniciando sequência de missões automáticas (Passe & Guild)...")
+            self.auto_boss_instance = None
 
-        self.bot.resume_hunt()
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    await self.run_auto_missions()
+                except Exception as e:
+                    print(f"Erro ao executar auto missões pós-boss: {e}")
+                finally:
+                    self.bot.resume_hunt()
+        else:
+            if hasattr(self.bot, "hunt_stats"):
+                self.bot.hunt_stats.is_in_training = False
+                self.bot.hunt_stats.training_type = ""
+                self.bot.hunt_stats.force_sell = True
 
-        if self.auto_boss_instance:
-            await self.auto_boss_instance.send_message("🏹 Hunt retomada automaticamente.")
-        self.auto_boss_instance = None
+            self.bot.resume_hunt()
+
+            if self.auto_boss_instance:
+                await self.auto_boss_instance.send_message("🏹 Hunt retomada automaticamente.")
+            self.auto_boss_instance = None
+
+    async def run_auto_missions(self, on_message=None):
+        """
+        Executa a cadeia autônoma de missões:
+        1. Calcula a média dos níveis dos personagens da party.
+        2. Tenta selecionar a melhor missão do Passe de Batalha (Difícil -> Média -> Fácil).
+        3. Se o Passe já estiver finalizado ou concluído, tenta a melhor Task da Guilda (Semanais -> Diárias).
+        4. Sempre notifica o resultado detalhado no Telegram para que o usuário saiba o que aconteceu.
+        """
+        send_fn = on_message or self.bot.on_message
+        if not self.bot or not self.bot.tab:
+            if send_fn:
+                await send_fn("⚠️ Bot ou aba do jogo não estão disponíveis no momento.")
+            return
+
+        avg_lvl = await get_party_average_level(self.bot.tab)
+
+        bp_desc = "Não verificado"
+        guild_desc = "Não verificado"
+        started_new_hunt = False
+
+        # 1. TENTA O PASSE DE BATALHA
+        bp_tracked = await get_tracked_battlepass_progress(self.bot.tab)
+        if bp_tracked and not bp_tracked.get("finished"):
+            bp_desc = f"Já em andamento ({bp_tracked['hunt_name']})"
+            started_new_hunt = True
+        else:
+            try:
+                success, status = await auto_select_best_battlepass(self.bot.tab, avg_lvl, on_message=send_fn)
+                if success and status == "recuperada":
+                    bp_desc = "Missão em andamento retomada"
+                    started_new_hunt = True
+                elif success and status not in ["finalizado", "nenhuma_compativel"]:
+                    bp_desc = f"Iniciada ({status})"
+                    started_new_hunt = True
+                elif status == "finalizado":
+                    bp_desc = "Nenhuma missão disponível (já concluídas hoje ou bloqueadas)"
+                elif status == "nenhuma_compativel":
+                    bp_desc = f"Nenhuma missão compatível com o nível médio ({avg_lvl})"
+                else:
+                    bp_desc = str(status)
+            except Exception as e:
+                bp_desc = f"Erro: {e}"
+
+        # 2. SE O PASSE NÃO INICIOU UMA NOVA HUNT (JÁ CONCLUÍDO OU INCOMPATÍVEL), AVALIA A GUILDA
+        if not started_new_hunt:
+            task_tracked = await get_tracked_task_progress(self.bot.tab)
+            if task_tracked and not task_tracked.get("finished"):
+                guild_desc = f"Já em andamento ({task_tracked['name']})"
+                started_new_hunt = True
+            else:
+                try:
+                    success, status = await auto_select_best_guild_task(self.bot.tab, avg_lvl, on_message=send_fn)
+                    if success and status == "recuperada":
+                        guild_desc = "Task em andamento retomada"
+                        started_new_hunt = True
+                    elif success and status not in ["finalizado", "nenhuma_compativel"]:
+                        guild_desc = f"Iniciada ({status})"
+                        started_new_hunt = True
+                    elif status == "finalizado":
+                        guild_desc = "Nenhuma task disponível (todas concluídas ou limite atingido)"
+                    elif status == "nenhuma_compativel":
+                        guild_desc = f"Nenhuma task compatível com o nível médio ({avg_lvl})"
+                    else:
+                        guild_desc = str(status)
+                except Exception as e:
+                    guild_desc = f"Erro: {e}"
+
+        # Se nenhuma missão nova foi iniciada (todas feitas ou incompatíveis), envia relatório detalhado
+        if not started_new_hunt and send_fn:
+            summary = (
+                "ℹ️ *Verificação de Auto Missões Finalizada*\n\n"
+                f"• 🎟️ *Passe de Batalha:* {bp_desc}\n"
+                f"• 🛡️ *Tasks da Guilda:* {guild_desc}\n"
+                f"📊 *Nível médio da Party:* `{avg_lvl}`\n\n"
+                "🏹 Nenhuma nova missão para iniciar no momento. Mantendo caçada atual."
+            )
+            await send_fn(summary)
 
     # ============================================================
     # HANDLERS: START & STOP
@@ -1086,6 +1181,44 @@ class TelegramController:
                 self.bot.resume_hunt()
 
     @authorized_only
+    async def automissoes(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if context.args:
+            arg = context.args[0].lower()
+            if arg in ["on", "1", "true", "ativar", "ligar"]:
+                set_setting("auto_missions_after_boss", True)
+            elif arg in ["off", "0", "false", "desativar", "desligar"]:
+                set_setting("auto_missions_after_boss", False)
+            elif arg in ["run", "agora", "iniciar", "start"]:
+                if self.action_lock.locked():
+                    await update.message.reply_text("⏳ Há outra ação em andamento no jogo. Aguarde um instante.")
+                    return
+                await update.message.reply_text("⏳ Verificando missões do Passe e Tasks da Guilda...")
+                async with self.action_lock:
+                    self.bot.pause_hunt()
+                    try:
+                        await self.run_auto_missions(on_message=self.bot.on_message)
+                    except Exception as e:
+                        await update.message.reply_text(f"❌ Erro ao executar auto missões: {e}")
+                    finally:
+                        self.bot.resume_hunt()
+                return
+
+        current = get_setting("auto_missions_after_boss", True)
+        st = "🟢 Ativado" if current else "🔴 Desativado"
+        await update.message.reply_text(
+            f"⚙️ *Auto Missões Pós-Boss:* {st}\n\n"
+            f"Quando ativado, ao finalizar o AutoBoss o bot verifica automaticamente:\n"
+            f"1. Passe de Batalha (Difícil ➔ Média ➔ Fácil)\n"
+            f"2. Tasks da Guilda (Semanais ➔ Diárias, Difícil ➔ Média ➔ Fácil)\n"
+            f"Comparando com a média de level da party.\n\n"
+            f"Comandos:\n"
+            f"• `/automissoes on` - Ativa execução automática pós-boss\n"
+            f"• `/automissoes off` - Desativa execução automática\n"
+            f"• `/automissoes run` - Executa a verificação e início agora",
+            parse_mode="Markdown"
+        )
+
+    @authorized_only
     @require_bot_running
     async def inline_button_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         query = update.callback_query
@@ -1241,6 +1374,29 @@ class TelegramController:
                         await query.message.reply_text(f"⚠️ Aviso: {msg}")
                 except Exception as e:
                     await query.message.reply_text(f"❌ Erro ao processar passe: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif data == "btn_toggle_auto_missions":
+            cur = get_setting("auto_missions_after_boss", True)
+            new_val = not cur
+            set_setting("auto_missions_after_boss", new_val)
+            st_text = "ativado" if new_val else "desativado"
+            await query.answer(f"⚙️ Auto Missões {st_text}!", show_alert=True)
+            await self.show_missoes_menu(update, context)
+
+        elif data == "btn_run_auto_missions":
+            if self.action_lock.locked():
+                await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            await query.answer("🚀 Verificando Auto Missões...", show_alert=False)
+            await query.message.reply_text("⏳ Verificando missões do Passe e Tasks da Guilda...")
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    await self.run_auto_missions(on_message=self.bot.on_message)
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao executar auto missões: {e}")
                 finally:
                     self.bot.resume_hunt()
 
@@ -1483,6 +1639,13 @@ class TelegramController:
             from baiaidle.settings import get_setting, set_setting, load_settings
             cur = get_setting("notify_tasks", True)
             set_setting("notify_tasks", not cur)
+            settings = load_settings()
+            await query.edit_message_text(self.format_config_message(settings), reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
+
+        elif data == "cfg_toggle_auto_missions":
+            from baiaidle.settings import get_setting, set_setting, load_settings
+            cur = get_setting("auto_missions_after_boss", True)
+            set_setting("auto_missions_after_boss", not cur)
             settings = load_settings()
             await query.edit_message_text(self.format_config_message(settings), reply_markup=self.get_config_keyboard(settings), parse_mode="Markdown")
 
@@ -1932,6 +2095,8 @@ class TelegramController:
         """Submenu: Missões, Passe de Batalha e Tasks."""
         bp_data = await get_tracked_battlepass_progress(self.bot.tab) if self.bot.tab else None
         task_data = await get_tracked_task_progress(self.bot.tab) if self.bot.tab else None
+        auto_m = get_setting("auto_missions_after_boss", True)
+        auto_m_str = "🟢 Ativado" if auto_m else "🔴 Desativado"
 
         bp_str = f"{bp_data['hunt_name']} ({bp_data['current']}/{bp_data['max']})" if bp_data else "Nenhum no HUD"
         task_str = f"{task_data['name']} ({task_data['current']}/{task_data['max']})" if task_data else "Nenhuma no HUD"
@@ -1941,13 +2106,20 @@ class TelegramController:
             "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🎟️ *Passe no HUD:* `{bp_str}`\n"
             f"🛡️ *Task da Guilda:* `{task_str}`\n"
+            f"🚀 *Auto Missões (Pós-Boss):* {auto_m_str}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "_Selecione uma rotina de tarefas:_"
         )
         keyboard = [
             [
+                InlineKeyboardButton("🚀 Iniciar Auto Missões Agora", callback_data="btn_run_auto_missions"),
+            ],
+            [
                 InlineKeyboardButton("🎟️ Gerenciar Passe", callback_data="btn_action_passe"),
                 InlineKeyboardButton("🛡️ Tasks da Guilda", callback_data="btn_action_guild"),
+            ],
+            [
+                InlineKeyboardButton(f"⚙️ Auto Missões: {auto_m_str}", callback_data="btn_toggle_auto_missions"),
             ],
             [
                 InlineKeyboardButton("🎁 Coletar Daily", callback_data="btn_action_daily"),
@@ -2133,13 +2305,15 @@ class TelegramController:
         """Formata o texto de apresentação do Painel de Configurações."""
         vendas_icon = "🟢 Ativado" if settings.get("notify_sales", True) else "🔴 Desativado"
         tasks_icon = "🟢 Ativado" if settings.get("notify_tasks", True) else "🔴 Desativado"
-        
+        auto_m_icon = "🟢 Ativado" if settings.get("auto_missions_after_boss", True) else "🔴 Desativado"
+
         return (
             "⚙️ *PAINEL DE CONFIGURAÇÕES RÁPIDAS*\n\n"
             f"⚡ *Stamina para Treino:* `{settings.get('stamina_treino', 20)}%` (pausa hunt e vai treinar)\n"
             f"🔋 *Stamina de Retorno:* `{settings.get('stamina_retorno', 100)}%` (volta à hunt pós-treino)\n"
             f"📦 *Guardar no Baú:* `Tier {settings.get('min_tier_stash', 4)}+`\n"
             f"⏱️ *Watchdog Antitravamento:* `{settings.get('watchdog_minutes', 10)} min`\n"
+            f"🚀 *Auto Missões (Pós-Boss):* {auto_m_icon}\n"
             f"🔔 *Notificar Vendas:* {vendas_icon}\n"
             f"🎯 *Notificar Tasks (120s):* {tasks_icon}\n\n"
             "_Toque nos botões abaixo para alterar os parâmetros:_"
@@ -2149,6 +2323,7 @@ class TelegramController:
         """Retorna os botões inline para o Painel de Configurações."""
         vendas_label = "🔔 Vendas: ON" if settings.get("notify_sales", True) else "🔕 Vendas: OFF"
         tasks_label = "🎯 Tasks: ON" if settings.get("notify_tasks", True) else "🎯 Tasks: OFF"
+        auto_m_label = "🚀 Auto Missões: ON" if settings.get("auto_missions_after_boss", True) else "🚀 Auto Missões: OFF"
 
         keyboard = [
             [
@@ -2158,6 +2333,9 @@ class TelegramController:
             [
                 InlineKeyboardButton(f"📦 Baú (Tier {settings.get('min_tier_stash', 4)}+)", callback_data="cfg_menu_tier"),
                 InlineKeyboardButton(f"⏱️ Watchdog ({settings.get('watchdog_minutes', 10)}m)", callback_data="cfg_menu_wd"),
+            ],
+            [
+                InlineKeyboardButton(auto_m_label, callback_data="cfg_toggle_auto_missions"),
             ],
             [
                 InlineKeyboardButton(vendas_label, callback_data="cfg_toggle_sales"),
@@ -2210,6 +2388,7 @@ Hunts e Rotinas:
 /task [diaria|semanal] <facil|media|dificil> - Aceita task específica
 /passe - Gerencia missões do Passe de Batalha (entregar/pegar)
 /passetask <dificuldade> - Aceita missão do Passe (facil, media, dificil)
+/automissoes [on|off] - Liga/desliga missões automáticas pós-boss
 /treino - Força ida para o Treino Online
 /casa - Força ida para o Dummie da Casa
 
@@ -2277,6 +2456,7 @@ async def main():
     application.add_handler(CommandHandler("task", controller.task))
     application.add_handler(CommandHandler("passe", controller.passe))
     application.add_handler(CommandHandler("passetask", controller.passetask))
+    application.add_handler(CommandHandler("automissoes", controller.automissoes))
     application.add_handler(CommandHandler("reset", controller.reset))
     application.add_handler(CommandHandler("daily", controller.daily))
     application.add_handler(CommandHandler("menu", controller.menu))

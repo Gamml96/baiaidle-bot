@@ -472,8 +472,8 @@ async def repair_house_dummy(tab, on_message=None):
     print("Verificando se o Dummy da Casa necessita de reparos...")
     js_repair = """
     (() => {
-        const canvas = document.querySelector('#arena canvas');
-        if (!canvas) return { success: false, reason: 'Canvas #arena não encontrado' };
+        const canvas = document.querySelector('#arena canvas') || document.querySelector('canvas#arena') || document.querySelector('canvas');
+        if (!canvas) return JSON.stringify({ success: false, reason: 'Canvas #arena não encontrado' });
         
         const rect = canvas.getBoundingClientRect();
         
@@ -483,7 +483,9 @@ async def repair_house_dummy(tab, on_message=None):
             [0.5, 0.45],
             [0.5, 0.55],
             [0.45, 0.5],
-            [0.55, 0.5]
+            [0.55, 0.5],
+            [0.48, 0.48],
+            [0.52, 0.52]
         ];
         
         for (const [ox, oy] of offsets) {
@@ -503,10 +505,10 @@ async def repair_house_dummy(tab, on_message=None):
                 if (btn && btn.innerText.includes('Reparar') && !btn.disabled) {
                     const costText = btn.innerText.trim();
                     btn.click();
-                    return { success: true, repaired: true, text: costText };
+                    return JSON.stringify({ success: true, repaired: true, text: costText });
                 }
                 if (tip.innerText.includes('Sem desgaste')) {
-                    return { success: true, repaired: false, reason: 'Sem desgaste' };
+                    return JSON.stringify({ success: true, repaired: false, reason: 'Sem desgaste' });
                 }
             }
         }
@@ -518,33 +520,51 @@ async def repair_house_dummy(tab, on_message=None):
             if (btn && btn.innerText.includes('Reparar') && !btn.disabled) {
                 const costText = btn.innerText.trim();
                 btn.click();
-                return { success: true, repaired: true, text: costText };
+                return JSON.stringify({ success: true, repaired: true, text: costText });
             }
             if (tip.innerText.includes('Sem desgaste')) {
-                return { success: true, repaired: false, reason: 'Sem desgaste' };
+                return JSON.stringify({ success: true, repaired: false, reason: 'Sem desgaste' });
             }
         }
         
-        return { success: false, reason: 'Dummy ou botão de reparo não localizado' };
+        return JSON.stringify({ success: false, reason: 'Dummy ou botão de reparo não localizado' });
     })()
     """
-    try:
-        res = await tab.execute_script(js_repair)
-        data = extract_execute_result(res) or {}
-        
-        if data.get("repaired"):
-            cost_info = data.get("text", "Reparar")
-            print(f"[Casa Dummies] Dummy reparado com sucesso! ({cost_info})")
-            if on_message:
-                await on_message(f"🔨 *Dummy reparado com sucesso!* ({cost_info})")
-            await asyncio.sleep(0.5)
-            return True
-        elif data.get("reason") == "Sem desgaste":
-            print("[Casa Dummies] Dummy verificado: Sem desgaste (100% de uso).")
-            return True
-        else:
-            print(f"[Casa Dummies] Reparo do Dummy não realizado: {data.get('reason', 'desconhecido')}")
+    for attempt in range(1, 4):
+        try:
+            res = await tab.execute_script(js_repair)
+            val = extract_execute_result(res)
+            data = {}
+            if isinstance(val, str):
+                try:
+                    data = json.loads(val)
+                except Exception:
+                    data = {}
+            elif isinstance(val, dict):
+                data = val
+
+            if data.get("repaired"):
+                cost_info = data.get("text", "Reparar")
+                print(f"[Casa Dummies] Dummy reparado com sucesso! ({cost_info})")
+                if on_message:
+                    await on_message(f"🔨 *Dummy reparado com sucesso!* ({cost_info})")
+                await asyncio.sleep(0.5)
+                return True
+            elif data.get("reason") == "Sem desgaste":
+                print("[Casa Dummies] Dummy verificado: Sem desgaste (100% de uso).")
+                return True
+            else:
+                reason = data.get("reason", "desconhecido")
+                if attempt < 3:
+                    await asyncio.sleep(1.0)
+                    continue
+                print(f"[Casa Dummies] Reparo do Dummy não realizado: {reason}")
+                return False
+        except Exception as e:
+            if attempt < 3:
+                await asyncio.sleep(1.0)
+                continue
+            print(f"[Casa Dummies] Erro ao tentar reparar o Dummy da Casa: {e}")
             return False
-    except Exception as e:
-        print(f"[Casa Dummies] Erro ao tentar reparar o Dummy da Casa: {e}")
-        return False
+
+    return False

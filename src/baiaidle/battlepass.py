@@ -482,3 +482,82 @@ async def process_battlepass(tab, on_message=None):
 
     # Se todas as missões foram finalizadas ou entregues
     return True, "finalizado"
+
+
+async def auto_select_best_battlepass(tab, avg_char_level: int, on_message=None):
+    """
+    Seleção autônoma da melhor missão do Passe de Batalha:
+    1. Entrega missões concluídas.
+    2. Retoma missão se já houver uma ativa no HUD.
+    3. Analisa as missões disponíveis na ordem de prioridade: 'dificil' -> 'media' -> 'facil'.
+    4. Se o level da hunt for compatível (hunt_lvl <= avg_char_level), aceita e inicia.
+    """
+    if not await open_battlepass(tab):
+        return False, "Não foi possível abrir o menu do Passe."
+
+    # 1. Entrega missões concluídas
+    delivered = await deliver_battlepass_mission(tab)
+    if delivered:
+        if on_message:
+            await on_message("🎁 *Missão do Passe Entregue!*\nRecompensas diárias coletadas.")
+        await asyncio.sleep(1.5)
+
+    # 2. Ler missões atuais
+    missions = await get_battlepass_missions(tab)
+    await close_battlepass(tab)
+
+    if not missions:
+        return False, "Nenhuma missão encontrada no Passe."
+
+    # 3. Retoma se já houver uma em andamento
+    tracked = await get_tracked_battlepass_progress(tab)
+    if tracked and not tracked.get("finished"):
+        hunt_name = tracked["hunt_name"]
+        pct = (tracked["current"] / tracked["max"] * 100) if tracked["max"] > 0 else 0
+        lvl = tracked.get("level") if tracked.get("level") is not None else get_hunt_level(hunt_name)
+        lvl_str = f" [lvl {lvl}]" if lvl is not None else ""
+        if on_message:
+            await on_message(
+                f"🔄 *Retomando Missão do Passe em Andamento!*\n"
+                f"Local: {hunt_name}{lvl_str} (Progresso: {pct:.1f}% - {tracked['current']}/{tracked['max']})"
+            )
+        await change_hunt(tab, hunt_name)
+        return True, "recuperada"
+
+    # 4. Filtra missões disponíveis
+    available_missions = [m for m in missions if not m["locked"] and not m["completed"]]
+    if not available_missions:
+        return True, "finalizado"
+
+    # 5. Prioridade: difícil -> média -> fácil
+    priority_order = ["dificil", "media", "facil"]
+    chosen_mission = None
+
+    for diff in priority_order:
+        cand = next((m for m in available_missions if m["difficulty"] == diff), None)
+        if cand:
+            hunt_lvl = cand.get("level") if cand.get("level") is not None else get_hunt_level(cand.get("name", ""))
+            # Se não soubermos o level ou se o level for compatível com a média da party
+            if hunt_lvl is None or hunt_lvl <= avg_char_level:
+                chosen_mission = cand
+                break
+            else:
+                print(f"[AutoPasse] Missão {cand['name']} ({diff}) ignorada: hunt lvl {hunt_lvl} > party avg {avg_char_level}")
+
+    if chosen_mission:
+        target_diff = chosen_mission["difficulty"]
+        h_lvl = chosen_mission.get("level")
+        lvl_disp = f" [lvl {h_lvl}]" if h_lvl is not None else ""
+        if on_message:
+            await on_message(
+                f"🤖 *AutoPasse:* Selecionando automaticamente a missão *{chosen_mission['name']}* "
+                f"({target_diff.capitalize()}){lvl_disp}.\n"
+                f"📊 Nível médio da Party: `{avg_char_level}`."
+            )
+        success, msg = await choose_battlepass_mission(tab, target_diff, on_message=on_message)
+        return success, msg
+    else:
+        msg = f"⚠️ *AutoPasse:* Nenhuma missão compatível com o nível médio da party ({avg_char_level}). Todas as disponíveis requerem level maior."
+        if on_message:
+            await on_message(msg)
+        return False, "nenhuma_compativel"

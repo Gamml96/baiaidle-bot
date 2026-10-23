@@ -11,6 +11,7 @@ DEFAULT_SETTINGS = {
     "watchdog_minutes": 10,     # Tempo sem atividade para o watchdog reiniciar (min)
     "notify_sales": True,       # Notificar cada venda no Telegram
     "notify_tasks": True,       # Notificar progresso de tasks a cada 120s
+    "auto_missions_after_boss": True,  # Executar Passe e Tasks da Guilda automaticamente após AutoBoss
 }
 
 _cached_settings = None

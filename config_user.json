@@ -4,5 +4,6 @@
   "min_tier_stash": 4,
   "watchdog_minutes": 10,
   "notify_sales": true,
-  "notify_tasks": true
+  "notify_tasks": true,
+  "auto_missions_after_boss": true
 }
