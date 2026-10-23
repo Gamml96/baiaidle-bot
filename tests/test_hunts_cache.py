@@ -45,6 +45,9 @@ class TestHuntsCache(unittest.IsolatedAsyncioTestCase):
     def test_get_hunt_level(self):
         self.assertEqual(get_hunt_level("Troll Cave"), 1)
         self.assertEqual(get_hunt_level("Elf"), 8)
+        self.assertEqual(get_hunt_level("Elf (facil)"), 8)
+        self.assertEqual(get_hunt_level("elf (fácil)"), 8)
+        self.assertEqual(get_hunt_level("amazon-camp"), 9)
         self.assertEqual(get_hunt_level("Hydra"), 100)
         self.assertEqual(get_hunt_level("Grim Reaper"), 130)
         self.assertIsNone(get_hunt_level("Nonexistent"))

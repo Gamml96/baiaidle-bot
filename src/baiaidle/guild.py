@@ -1,6 +1,8 @@
 import asyncio
 import json
 
+from baiaidle.hunts import get_hunt_level
+
 
 def extract_execute_result(result):
     try:
@@ -281,7 +283,14 @@ async def interact_with_guild_tasks(tab, action="read", target_task_name=None, t
     }})()
     """
     result = await tab.execute_script(js)
-    return parse_json_result(result)
+    data = parse_json_result(result)
+    if isinstance(data, dict) and "tasks" in data:
+        for t in data["tasks"]:
+            t["level"] = get_hunt_level(t.get("name", "")) or get_hunt_level(t.get("monsters", ""))
+    elif isinstance(data, list):
+        for t in data:
+            t["level"] = get_hunt_level(t.get("name", "")) or get_hunt_level(t.get("monsters", ""))
+    return data
 
 
 async def go_to_guild_task_hunt(tab, task_name=None, category=None):
@@ -431,9 +440,11 @@ async def process_guild_tasks(tab, on_message=None):
         await asyncio.sleep(0.5)
         await close_guild_modal(tab)
         
+        lvl = t.get('level') if t.get('level') is not None else (get_hunt_level(t.get('name', '')) or get_hunt_level(t.get('monsters', '')))
+        lvl_str = f" [lvl {lvl}]" if lvl is not None else ""
         if on_message:
             cat_desc = f" ({t.get('category_label', '')})" if t.get('category_label') else ""
-            await on_message(f"🔄 *Retomando Task em Andamento{cat_desc}!*\nLocal: {t['name']} (Progresso: {t['progress_pct']}%)")
+            await on_message(f"🔄 *Retomando Task em Andamento{cat_desc}!*\nLocal: {t['name']}{lvl_str} (Progresso: {t['progress_pct']}%)")
         return True, "recuperada"
 
     # 3. LISTAR TASKS E PERGUNTAR NO TELEGRAM (DETALHADO)
@@ -473,8 +484,10 @@ async def process_guild_tasks(tab, on_message=None):
                 emoji = emojis.get(t['difficulty'], "⚪")
                 stars = f" {t['stars']}" if t.get('stars') else ""
                 diff_label = t['difficulty'].capitalize()
+                lvl = t.get('level') if t.get('level') is not None else (get_hunt_level(t.get('name', '')) or get_hunt_level(t.get('monsters', '')))
+                lvl_str = f" [lvl {lvl}]" if lvl is not None else ""
                 
-                msg += f"{emoji} *{t['name']}*{stars} ({diff_label})\n"
+                msg += f"{emoji} *{t['name']}*{stars} ({diff_label}){lvl_str}\n"
                 if t.get('monsters'):
                     msg += f"👾 _{t['monsters']}_\n"
                 msg += f"🎯 {t['count_text']}\n"
@@ -483,7 +496,7 @@ async def process_guild_tasks(tab, on_message=None):
                 cat_code = t.get('category', 'diaria')
                 cat_short = "Diária" if cat_code == "diaria" else "Semanal"
                 buttons.append({
-                    "text": f"{emoji} {cat_short} {diff_label}",
+                    "text": f"{emoji} {cat_short} {diff_label}{lvl_str}",
                     "callback_data": f"task_{cat_code}_{t['difficulty']}"
                 })
 
@@ -547,11 +560,13 @@ async def accept_specific_task(tab, difficulty_choice, category=None, on_message
         target_name = target_task['name']
         target_cat = target_task.get('category')
         cat_label = f" ({target_task.get('category_label', '')})" if target_task.get('category_label') else ""
+        lvl = target_task.get('level') if target_task.get('level') is not None else (get_hunt_level(target_name) or get_hunt_level(target_task.get('monsters', '')))
+        lvl_str = f" [lvl {lvl}]" if lvl is not None else ""
         
         # 1. Clica em 'Aceitar' no card específico da task
         await interact_with_guild_tasks(tab, action="accept", target_task_name=target_name, target_category=target_cat)
         if on_message: 
-            await on_message(f"📜 *Task Aceita{cat_label}:*\nIniciando caçada em {target_name}...")
+            await on_message(f"📜 *Task Aceita{cat_label}:*\nIniciando caçada em {target_name}{lvl_str}...")
             
         # 2. Aguarda o DOM renderizar o botão nativo 'Ir para a hunt' (.gwt-gohunt)
         # Polling de até 3 segundos (10 tentativas de 300ms)
@@ -566,7 +581,7 @@ async def accept_specific_task(tab, difficulty_choice, category=None, on_message
         # 3. Fecha o modal da Guilda e garante que nenhum menu/modal de hunt fique aberto
         await close_guild_modal(tab)
         
-        return True, f"Iniciando task{cat_label} em: {target_name}"
+        return True, f"Iniciando task{cat_label} em: {target_name}{lvl_str}"
     else:
         await close_guild_modal(tab)
         cat_desc = f" ({category})" if category else ""
@@ -610,9 +625,11 @@ async def get_tracked_task_progress(tab):
         current_str, max_str = data["count_text"].split('/')
         current_kills = int(current_str.replace('.', '').strip())
         max_kills = int(max_str.replace('.', '').strip())
+        lvl = get_hunt_level(data["name"])
         
         return {
             "name": data["name"],
+            "level": lvl,
             "current": current_kills,
             "max": max_kills,
             "finished": current_kills >= max_kills

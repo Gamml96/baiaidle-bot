@@ -1,5 +1,6 @@
 import asyncio
 import json
+import re
 from pathlib import Path
 from baiaidle.config import PROJECT_ROOT
 
@@ -45,9 +46,34 @@ def get_hunt_info(hunt_name: str) -> dict | None:
         return None
     hunts = load_hunts_cache()
     target = hunt_name.strip().lower()
+
+    # 1. Correspondência exata
     for h in hunts:
         if h.get("name", "").strip().lower() == target:
             return h
+
+    # 2. Se contiver parênteses ou sufixos (ex: "Elf (facil)" -> "Elf")
+    clean = re.sub(r"\(.*?\)", "", target).strip()
+    if clean and clean != target:
+        for h in hunts:
+            if h.get("name", "").strip().lower() == clean:
+                return h
+
+    # 3. Tratamento de separadores como traços/underscores (ex: "amazon-camp")
+    clean_sep = clean.replace("-", " ").replace("_", " ").strip()
+    if clean_sep and clean_sep != clean:
+        for h in hunts:
+            if h.get("name", "").strip().lower() == clean_sep:
+                return h
+
+    # 4. Correspondência por contenção (ex: "Amazon Camp" vs "Amazon")
+    search_term = clean_sep or clean or target
+    if len(search_term) >= 3:
+        for h in hunts:
+            h_name = h.get("name", "").strip().lower()
+            if h_name and (h_name in search_term or search_term in h_name):
+                return h
+
     return None
 
 

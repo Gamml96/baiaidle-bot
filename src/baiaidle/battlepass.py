@@ -2,7 +2,7 @@ import asyncio
 import json
 import re
 
-from baiaidle.hunts import change_hunt
+from baiaidle.hunts import change_hunt, get_hunt_level
 
 
 def extract_execute_result(result):
@@ -131,7 +131,10 @@ async def get_battlepass_missions(tab) -> list:
     })()
     """
     result = await tab.execute_script(js)
-    return parse_json_result(result) or []
+    missions = parse_json_result(result) or []
+    for m in missions:
+        m["level"] = get_hunt_level(m.get("name", ""))
+    return missions
 
 
 async def deliver_battlepass_mission(tab) -> bool:
@@ -227,8 +230,10 @@ async def choose_battlepass_mission(tab, difficulty_choice: str, mode: str = "No
 
     target_name = target_mission["name"]
     target_idx = target_mission["index"]
+    target_lvl = target_mission.get("level") if target_mission.get("level") is not None else get_hunt_level(target_name)
+    lvl_str = f" [lvl {target_lvl}]" if target_lvl is not None else ""
 
-    print(f"Selecionando missão {target_name} ({clean_diff})...")
+    print(f"Selecionando missão {target_name} ({clean_diff}){lvl_str}...")
 
     # Passo 1: Clicar no botão da missão na lista
     js_click_mission = f"""
@@ -317,9 +322,9 @@ async def choose_battlepass_mission(tab, difficulty_choice: str, mode: str = "No
         await asyncio.sleep(0.5)
         await close_battlepass(tab)
 
-    msg = f"Iniciando missão do Passe: {target_name} ({clean_diff.capitalize()})"
+    msg = f"Iniciando missão do Passe: {target_name} ({clean_diff.capitalize()}){lvl_str}"
     if on_message:
-        await on_message(f"📜 *Missão do Passe Aceita!*\n🎯 {target_name} ({clean_diff.capitalize()})\n{target_mission['description']}")
+        await on_message(f"📜 *Missão do Passe Aceita!*\n🎯 {target_name} ({clean_diff.capitalize()}){lvl_str}\n{target_mission['description']}")
 
     return True, msg
 
@@ -386,9 +391,11 @@ async def get_tracked_battlepass_progress(tab) -> dict | None:
         max_kills = int(max_str.replace(".", "").strip())
 
         hunt_name = data.get("hunt_name") or "Passe"
+        lvl = get_hunt_level(hunt_name)
 
         return {
             "hunt_name": hunt_name,
+            "level": lvl,
             "current": current_kills,
             "max": max_kills,
             "finished": current_kills >= max_kills
@@ -426,10 +433,12 @@ async def process_battlepass(tab, on_message=None):
     if tracked and not tracked.get("finished"):
         hunt_name = tracked["hunt_name"]
         pct = (tracked["current"] / tracked["max"] * 100) if tracked["max"] > 0 else 0
+        lvl = tracked.get("level") if tracked.get("level") is not None else get_hunt_level(hunt_name)
+        lvl_str = f" [lvl {lvl}]" if lvl is not None else ""
         if on_message:
             await on_message(
                 f"🔄 *Retomando Missão do Passe em Andamento!*\n"
-                f"Local: {hunt_name} (Progresso: {pct:.1f}% - {tracked['current']}/{tracked['max']})"
+                f"Local: {hunt_name}{lvl_str} (Progresso: {pct:.1f}% - {tracked['current']}/{tracked['max']})"
             )
         await change_hunt(tab, hunt_name)
         return True, "recuperada"
@@ -445,13 +454,15 @@ async def process_battlepass(tab, on_message=None):
         for m in available_missions:
             emoji = emojis.get(m["difficulty"], "⚪")
             diff_label = m["difficulty"].capitalize()
+            lvl = m.get("level") if m.get("level") is not None else get_hunt_level(m.get("name", ""))
+            lvl_str = f" [lvl {lvl}]" if lvl is not None else ""
 
-            msg += f"{emoji} *{m['name']}* ({diff_label})\n"
+            msg += f"{emoji} *{m['name']}* ({diff_label}){lvl_str}\n"
             msg += f"🎯 {m['description']}\n"
             msg += f"💰 {m['rewards']}\n\n"
 
             buttons.append({
-                "text": f"{emoji} Iniciar {diff_label}",
+                "text": f"{emoji} Iniciar {diff_label}{lvl_str}",
                 "callback_data": f"bp_{m['difficulty']}"
             })
 
