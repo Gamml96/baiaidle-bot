@@ -346,6 +346,7 @@ class TelegramController:
         bp_tracked = await get_tracked_battlepass_progress(self.bot.tab)
         if bp_tracked and not bp_tracked.get("finished"):
             bp_desc = f"Já em andamento ({bp_tracked['hunt_name']})"
+            await change_hunt(self.bot.tab, bp_tracked["hunt_name"])
             started_new_hunt = True
         else:
             try:
@@ -370,6 +371,7 @@ class TelegramController:
             task_tracked = await get_tracked_task_progress(self.bot.tab)
             if task_tracked and not task_tracked.get("finished"):
                 guild_desc = f"Já em andamento ({task_tracked['name']})"
+                await change_hunt(self.bot.tab, task_tracked["name"])
                 started_new_hunt = True
             else:
                 try:
@@ -389,16 +391,19 @@ class TelegramController:
                 except Exception as e:
                     guild_desc = f"Erro: {e}"
 
-        # Se nenhuma missão nova foi iniciada (todas feitas ou incompatíveis), envia relatório detalhado
-        if not started_new_hunt and send_fn:
-            summary = (
-                "ℹ️ *Verificação de Auto Missões Finalizada*\n\n"
-                f"• 🎟️ *Passe de Batalha:* {bp_desc}\n"
-                f"• 🛡️ *Tasks da Guilda:* {guild_desc}\n"
-                f"📊 *Nível médio da Party:* `{avg_lvl}`\n\n"
-                "🏹 Nenhuma nova missão para iniciar no momento. Mantendo caçada atual."
-            )
-            await send_fn(summary)
+        # Se nenhuma missão nova foi iniciada (todas feitas ou incompatíveis), retorna para Codex ou Hunt padrão
+        if not started_new_hunt:
+            fallback_target = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else (self.bot.hunt_stats.default_hunt if hasattr(self.bot, "hunt_stats") and self.bot.hunt_stats and self.bot.hunt_stats.default_hunt else DEFAULT_HUNT))
+            await change_hunt(self.bot.tab, fallback_target)
+            if send_fn:
+                summary = (
+                    "ℹ️ *Verificação de Auto Missões Finalizada*\n\n"
+                    f"• 🎟️ *Passe de Batalha:* {bp_desc}\n"
+                    f"• 🛡️ *Tasks da Guilda:* {guild_desc}\n"
+                    f"📊 *Nível médio da Party:* `{avg_lvl}`\n\n"
+                    f"🏹 Retornando caçada para: *{fallback_target}*"
+                )
+                await send_fn(summary)
 
     # ============================================================
     # HANDLERS: START & STOP
@@ -1276,13 +1281,26 @@ class TelegramController:
         hw = await get_halloween_status(self.bot.tab) if self.bot.tab else {}
         auto_hw = get_setting("auto_halloween_invasion", True)
         st_icon = "🟢 Ativado" if auto_hw else "🔴 Desativado"
-        open_str = "🔥 *ABERTA AGORA!*" if hw.get("is_open") else f"Fechada (Próxima: *{hw.get('next_time', 'N/D')}*)"
+        if hw.get("is_dungeon"):
+            open_str = "⚔️ *Na Caverna da Invasão*"
+        elif hw.get("quota_done"):
+            q_txt = hw.get("quota_text", "100/100")
+            open_str = f"✅ *Cota {q_txt} cumprida!* (Aguardando próxima)"
+        elif hw.get("can_enter"):
+            closes = hw.get("closes_in")
+            c_str = f" (Fecha em {closes})" if closes else ""
+            open_str = f"🔥 *ABERTA AGORA!*{c_str}"
+        else:
+            open_str = f"Fechada (Próxima: *{hw.get('next_time', 'N/D')}*)"
+
         meta_str = hw.get("goal", "N/D")
+        quota_disp = hw.get("quota_text", "0/100") if hw.get("quota_text") else "0/100"
 
         await update.message.reply_text(
             f"🎃 *EVENTO • NIGHT OF THE HOLLOW PUMPKIN*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🚪 *Status da Invasão:* {open_str}\n"
+            f"🎯 *Sua Cota na Janela:* `{quota_disp}`\n"
             f"📊 *Meta do Servidor:* `{meta_str}`\n"
             f"⚙️ *Auto Invasão:* {st_icon}\n"
             f"⏰ *Janelas:* `01:30 · 04:30 · 07:30 · 10:30 · 13:30 · 16:30 · 19:30 · 22:30`\n"
@@ -2681,10 +2699,15 @@ class TelegramController:
         task_str = f"{task_data['name']} ({task_data['current']}/{task_data['max']})" if task_data else "Nenhuma no HUD"
 
         if hw_data and hw_data.get("available"):
-            if hw_data.get("is_open"):
-                hw_str = "🔥 ABERTA AGORA!"
-            elif hw_data.get("is_dungeon"):
+            if hw_data.get("is_dungeon"):
                 hw_str = "⚔️ Na Caverna da Invasão"
+            elif hw_data.get("quota_done"):
+                q_txt = hw_data.get("quota_text", "100/100")
+                hw_str = f"✅ Cota {q_txt} cumprida!"
+            elif hw_data.get("can_enter"):
+                closes = hw_data.get("closes_in")
+                c_str = f" (Fecha em {closes})" if closes else ""
+                hw_str = f"🔥 ABERTA AGORA!{c_str}"
             else:
                 hw_str = f"Abre às {hw_data.get('next_time', 'N/D')} ({hw_data.get('goal', '')})"
         else:

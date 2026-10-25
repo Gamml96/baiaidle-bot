@@ -29,7 +29,12 @@ from baiaidle.guild import get_tracked_task_progress, process_guild_tasks, auto_
 from baiaidle.codex import process_codex_routine, check_and_advance_codex_focus
 from baiaidle.battlepass import get_tracked_battlepass_progress, process_battlepass, auto_select_best_battlepass
 from baiaidle.tree import run_auto_tree
-from baiaidle.halloween import is_halloween_invasion_open, enter_halloween_invasion, monitor_halloween_invasion
+from baiaidle.halloween import (
+    is_halloween_invasion_open,
+    enter_halloween_invasion,
+    monitor_halloween_invasion,
+    is_in_halloween_invasion,
+)
 from baiaidle.recovery import dismiss_welcome_and_popups
 from baiaidle.settings import get_setting
 
@@ -383,13 +388,31 @@ def is_training_location(location: str | None) -> tuple[bool, str]:
 async def resolve_target_hunt(tab, stats: HuntStats | None = None) -> str:
     """
     Identifica a hunt atual. Se for desconhecida ou se o personagem estiver no treino/casa,
-    retorna a hunt padrão configurada (Infernal Demon por padrão).
+    retorna a hunt prioritária com base na hierarquia:
+    1. Missão do Passe de Batalha ativa no HUD
+    2. Task da Guilda ativa no HUD
+    3. Foco em Codex (se ativado)
+    4. Hunt padrão
     """
     fallback = (stats.default_hunt if stats and stats.default_hunt else DEFAULT_HUNT)
     if get_setting("codex_focus_enabled", False):
         codex_hunt = get_setting("codex_focus_hunt")
         if codex_hunt:
             fallback = codex_hunt
+
+    try:
+        from baiaidle.battlepass import get_tracked_battlepass_progress
+        from baiaidle.guild import get_tracked_task_progress
+        bp_data = await get_tracked_battlepass_progress(tab)
+        if bp_data and not bp_data.get("finished"):
+            fallback = bp_data["hunt_name"]
+        else:
+            task_data = await get_tracked_task_progress(tab)
+            if task_data and not task_data.get("finished"):
+                fallback = task_data["name"]
+    except Exception:
+        pass
+
     current = await get_current_hunt(tab)
     if not current or not isinstance(current, str):
         return fallback
@@ -821,7 +844,7 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
         
         target_retorno = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
         if current_stam_val >= target_retorno or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES):
-            target_destination = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else current_hunt)
+            target_destination = await resolve_target_hunt(tab, stats)
             msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Retornando para a hunt: {target_destination}."
             print(msg_done)
             if on_message:
@@ -944,7 +967,7 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
             # Repara o Dummy antes de terminar o treino e voltar para a hunt
             await repair_house_dummy(tab, on_message=on_message)
 
-            target_destination = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else current_hunt)
+            target_destination = await resolve_target_hunt(tab, stats)
             msg_done = f"🔋 Stamina recuperada ({current_stam_val}%). Saindo da Casa e retornando para: {target_destination}."
             print(f"[Casa Dummies] Stamina recuperada ({current_stam_val}%). Saindo da Casa e retornando para: {target_destination}.")
             if on_message:
@@ -1061,7 +1084,7 @@ async def run_sell(
                     await monitor_halloween_invasion(tab, max_duration_sec=900, on_message=on_message)
                     stats.is_in_invasion = False
                     stats.force_sell = True
-                    target_hunt = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else (stats.default_hunt or DEFAULT_HUNT))
+                    target_hunt = await resolve_target_hunt(tab, stats)
                     await change_hunt(tab, target_hunt)
                     continue
 
@@ -1080,10 +1103,10 @@ async def run_sell(
                     
                     target_retorno = get_setting("stamina_retorno", VOLTAR_PARA_HUNT)
                     is_full = (stam_pct >= target_retorno) or (current_minutes is not None and current_minutes >= MAX_STAMINA_MINUTES)
-                    target_hunt = stats.default_hunt or DEFAULT_HUNT
+                    target_hunt = await resolve_target_hunt(tab, stats)
 
                     if is_full:
-                        msg = f"🔋 Personagem detectado no {current_loc} com Stamina cheia ({stam_pct}%). Retornando para a hunt padrão: {target_hunt}."
+                        msg = f"🔋 Personagem detectado no {current_loc} com Stamina cheia ({stam_pct}%). Retornando para a hunt: {target_hunt}."
                         print(msg)
                         if on_message:
                             await on_message(f"✅ {msg}")
@@ -1216,7 +1239,14 @@ async def run_sell(
                             delivered, progress = await process_codex_routine(tab, current_hunt, on_message)
                             stats.codex_progress = progress
                             if get_setting("codex_focus_enabled", False):
-                                await check_and_advance_codex_focus(tab, on_message)
+                                bp_active = await get_tracked_battlepass_progress(tab)
+                                guild_active = await get_tracked_task_progress(tab)
+                                has_active_mission = (bp_active and not bp_active.get("finished")) or (guild_active and not guild_active.get("finished"))
+                                if not has_active_mission:
+                                    await check_and_advance_codex_focus(tab, on_message)
+                                else:
+                                    active_label = f"Passe ({bp_active['hunt_name']})" if (bp_active and not bp_active.get("finished")) else f"Task ({guild_active['name']})"
+                                    print(f"[Codex Foco] Pausado temporariamente enquanto {active_label} estiver em andamento.")
                     else:
                         stats.is_in_invasion = True
 
@@ -1377,7 +1407,7 @@ async def run_sell(
                                     success, enter_msg = await enter_halloween_invasion(tab, on_message=on_message)
                                     if success:
                                         await monitor_halloween_invasion(tab, max_duration_sec=900, on_message=on_message)
-                                        target_hunt = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else (stats.default_hunt or DEFAULT_HUNT))
+                                        target_hunt = await resolve_target_hunt(tab, stats)
                                         await change_hunt(tab, target_hunt)
                                         stats.force_sell = True
                             except Exception as e:

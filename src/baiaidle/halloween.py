@@ -34,7 +34,7 @@ async def get_halloween_status(tab) -> dict:
     (() => {
         const overlay = document.getElementById('halloween-overlay');
         if (!overlay || overlay.classList.contains('hidden')) {
-            return JSON.stringify({ available: false, is_open: false });
+            return JSON.stringify({ available: false, is_open: false, can_enter: false, quota_done: false });
         }
 
         // Botão direto de entrar no HUD
@@ -45,10 +45,71 @@ async def get_halloween_status(tab) -> dict:
         const name = overlay.querySelector('.gtk-hunt-name, .wbk-name')?.innerText?.trim() || '';
         const sub = overlay.querySelector('.gtk-mob, .wbk-sub')?.innerText?.trim() || '';
         const goal = overlay.querySelector('.gtk-count, .wbk-val')?.innerText?.trim() || '';
-        const nextTime = overlay.querySelector('.wbk-kv-val')?.innerText?.trim() || '';
-
-        const isOpen = hasEnterBtn || name.includes('Invasão') || sub.includes('Aberta') || (overlay.innerText || '').includes('Aberta');
         
+        let quotaText = "";
+        let nextTime = "";
+        let closesIn = "";
+
+        const kvRows = Array.from(overlay.querySelectorAll('.wbk-kv'));
+        for (const kv of kvRows) {
+            const lbl = (kv.querySelector('.wbk-kv-lbl')?.innerText || '').toLowerCase();
+            const val = kv.querySelector('.wbk-kv-val')?.innerText?.trim() || '';
+            if (lbl.includes('cota')) {
+                quotaText = val;
+            } else if (lbl.includes('abre')) {
+                nextTime = val;
+            } else if (lbl.includes('fecha')) {
+                closesIn = val;
+            }
+        }
+
+        // Se o modal estiver presente no DOM, busca informações complementares
+        const modal = document.getElementById('halloween-modal');
+        let modalBtnText = "";
+        let modalBtnDisabled = false;
+        if (modal) {
+            const btnModal = modal.querySelector('.hw-inv-top button');
+            if (btnModal) {
+                modalBtnText = (btnModal.innerText || '').trim();
+                modalBtnDisabled = btnModal.disabled;
+            }
+            if (!quotaText) {
+                const fatos = Array.from(modal.querySelectorAll('.hw-resumo-fato'));
+                for (const f of fatos) {
+                    if (f.innerText.toLowerCase().includes('cota')) {
+                        const bEl = f.querySelector('b');
+                        if (bEl) quotaText = bEl.innerText.trim();
+                    }
+                }
+            }
+        }
+
+        // Análise da cota
+        let kills = 0;
+        let quota = 100;
+        let quotaDone = false;
+        if (quotaText) {
+            const match = quotaText.match(/(\\d+)\\s*\\/\\s*(\\d+)/);
+            if (match) {
+                kills = parseInt(match[1], 10);
+                quota = parseInt(match[2], 10);
+                if (quota > 0 && kills >= quota) {
+                    quotaDone = true;
+                }
+            }
+        }
+
+        const modalBtnLower = modalBtnText.toLowerCase();
+        if (modalBtnLower.includes('cumprida') || modalBtnLower.includes('esgotado') || modalBtnLower.includes('todas as criaturas')) {
+            quotaDone = true;
+        }
+
+        // Janela aberta no servidor
+        const isServerOpen = hasEnterBtn || name.includes('Invasão') || sub.includes('Aberta') || (overlay.innerText || '').includes('Aberta') || !!closesIn;
+
+        // O jogador pode entrar?
+        const canEnter = hasEnterBtn || (isServerOpen && !quotaDone && !modalBtnDisabled);
+
         // Verificar se está em invasão / dungeon
         const isDungeon = !!(
             document.body.classList.contains('in-dungeon') ||
@@ -65,7 +126,13 @@ async def get_halloween_status(tab) -> dict:
             sub: sub,
             goal: goal,
             next_time: nextTime,
-            is_open: isOpen,
+            closes_in: closesIn,
+            quota_text: quotaText,
+            kills: kills,
+            quota: quota,
+            quota_done: quotaDone,
+            is_open: isServerOpen,
+            can_enter: canEnter && !isDungeon,
             has_enter_btn: hasEnterBtn,
             is_dungeon: isDungeon
         });
@@ -78,13 +145,15 @@ async def get_halloween_status(tab) -> dict:
             return data
     except Exception as e:
         print(f"[Halloween] Erro ao obter status: {e}")
-    return {"available": False, "is_open": False, "in_invasion": False}
+    return {"available": False, "is_open": False, "can_enter": False, "quota_done": False, "in_invasion": False}
 
 
 async def is_halloween_invasion_open(tab) -> bool:
-    """Verifica rapidamente se a Invasão das Abóboras está com janela aberta para entrada."""
+    """Verifica se a Invasão das Abóboras está aberta E se o jogador ainda pode entrar (cota não concluída)."""
     status = await get_halloween_status(tab)
-    return status.get("is_open", False) or status.get("has_enter_btn", False)
+    if status.get("quota_done", False):
+        return False
+    return status.get("can_enter", False)
 
 
 async def is_in_halloween_invasion(tab) -> bool:
@@ -128,7 +197,8 @@ async def is_in_halloween_invasion(tab) -> bool:
     """
     try:
         res = await tab.execute_script(js)
-        return bool(extract_execute_result(res))
+        val = extract_execute_result(res)
+        return val is True or val == "true" or val == 1
     except Exception:
         return False
 
@@ -147,7 +217,8 @@ async def exit_halloween_invasion_if_done(tab) -> bool:
     """
     try:
         res = await tab.execute_script(js)
-        return bool(extract_execute_result(res))
+        val = extract_execute_result(res)
+        return val is True or val == "true" or val == 1
     except Exception:
         return False
 
@@ -203,6 +274,13 @@ async def enter_halloween_invasion(tab, on_message=None) -> tuple[bool, str]:
     2. Se não estiver no HUD, abre o modal de Halloween e clica em 'Entrar na invasão'.
     3. Confirma no modal de confirmação (#confirm-yes).
     """
+    status = await get_halloween_status(tab)
+    if status.get("quota_done", False):
+        q_txt = status.get("quota_text", "100/100")
+        msg = f"Cota de {q_txt} já cumprida nesta janela de invasão. Aguarde a próxima janela!"
+        print(f"[Halloween] {msg}")
+        return False, msg
+
     print("[Halloween] Tentando iniciar a Invasão das Abóboras...")
     
     # Passo 1: Tentar clicar no botão direto do HUD

@@ -750,10 +750,11 @@ async def get_tracked_task_progress(tab):
         const boxes = Array.from(document.querySelectorAll('.gtk-box'));
         const guildBox = boxes.find(b => {
             const isBP = b.classList.contains('acx-box') || !!b.querySelector('.bpk-row');
+            const isHW = b.classList.contains('wbk-box') || !!b.closest('#halloween-overlay') || !!b.querySelector('.wbk-name');
             const hdr = b.querySelector('.gtk-hdr');
             const hdrText = hdr ? hdr.innerText.toLowerCase() : '';
-            return !isBP && !hdrText.includes('passe') && (!!b.querySelector('.gtk-hunt-name') || !!b.querySelector('.gtk-count'));
-        }) || document.querySelector('.gtk-box');
+            return !isBP && !isHW && !hdrText.includes('passe') && !hdrText.includes('halloween') && (!!b.querySelector('.gtk-hunt-name') || !!b.querySelector('.gtk-count'));
+        });
 
         if (!guildBox) return JSON.stringify({ error: "Nenhuma task rastreada" });
         

@@ -31,7 +31,9 @@ class TestCodexRoutine(unittest.IsolatedAsyncioTestCase):
             True,
             # 8. js_read_progress
             {"result": {"result": {"value": "45%"}}},
-            # 9. close_codex_menu
+            # 9. reset filter
+            True,
+            # 10. close_codex_menu
             True
         ]
 
@@ -73,6 +75,8 @@ class TestCodexRoutine(unittest.IsolatedAsyncioTestCase):
             True,
             # Read progress
             {"result": {"result": {"value": "80%"}}},
+            # Reset filter
+            True,
             # Close
             True
         ]
