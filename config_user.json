@@ -8,7 +8,7 @@
   "auto_missions_after_boss": true,
   "auto_tree_enabled": true,
   "auto_halloween_invasion": true,
-  "codex_focus_enabled": false,
+  "codex_focus_enabled": true,
   "codex_focus_attribute": "critDmg",
   "codex_focus_hunt": null,
   "default_hunt": "Infernal Demon"
