@@ -13,6 +13,7 @@ DEFAULT_SETTINGS = {
     "notify_tasks": True,       # Notificar progresso de tasks a cada 120s
     "auto_missions_after_boss": True,  # Executar Passe e Tasks da Guilda automaticamente após AutoBoss
     "auto_tree_enabled": True,         # Distribuir pontos da árvore automaticamente ao subir de nível
+    "auto_halloween_invasion": True,   # Participar automaticamente da Invasão de Halloween nos horários marcados
     "codex_focus_enabled": False,      # Focar automaticamente nas hunts do atributo selecionado no Codex
     "codex_focus_attribute": "critDmg",# Atributo alvo do Codex (ex: critDmg, atkPct, spellDmgPct)
     "codex_focus_hunt": None,          # Hunt atual sendo focada pelo Codex

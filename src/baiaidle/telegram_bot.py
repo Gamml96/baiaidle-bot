@@ -69,6 +69,11 @@ from baiaidle.codex import (
 )
 from baiaidle.daily import collect_daily_reward, cancel_daily_schedule
 from baiaidle.tree import get_tree_status, run_auto_tree
+from baiaidle.halloween import (
+    get_halloween_status,
+    enter_halloween_invasion,
+    is_halloween_invasion_open,
+)
 from baiaidle.actions import (
     get_party_info,
     extract_member_level,
@@ -261,6 +266,7 @@ class TelegramController:
             BotCommand("casa", "🏠 Forçar ida para Dummie da Casa"),
             BotCommand("guildtask", "🎯 Gerenciar tasks da Guilda"),
             BotCommand("passe", "🎟️ Gerenciar missões do Passe"),
+            BotCommand("halloween", "🎃 Gerenciar Invasão de Halloween"),
             BotCommand("automissoes", "⚙️ Missões automáticas pós-boss"),
             BotCommand("arvore", "🌳 Gerenciar Árvore de Habilidades"),
             BotCommand("codex", "📖 Gerenciar auto-completar do Codex"),
@@ -1237,6 +1243,59 @@ class TelegramController:
 
     @authorized_only
     @require_bot_running
+    async def halloween(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if context.args:
+            arg = context.args[0].lower()
+            if arg in ["on", "1", "true", "ativar", "ligar"]:
+                set_setting("auto_halloween_invasion", True)
+                await update.message.reply_text("🟢 Auto Invasão de Halloween *Ativada*!\nO bot entrará automaticamente nas janelas das 01:30, 04:30, 07:30, 10:30, 13:30, 16:30, 19:30 e 22:30.", parse_mode="Markdown")
+                return
+            elif arg in ["off", "0", "false", "desativar", "desligar"]:
+                set_setting("auto_halloween_invasion", False)
+                await update.message.reply_text("🔴 Auto Invasão de Halloween *Desativada*.", parse_mode="Markdown")
+                return
+            elif arg in ["run", "entrar", "start", "iniciar"]:
+                if self.action_lock.locked():
+                    await update.message.reply_text("⏳ Há outra ação em andamento no jogo. Aguarde um instante.")
+                    return
+                await update.message.reply_text("⏳ Verificando e entrando na Invasão de Halloween...")
+                async with self.action_lock:
+                    self.bot.pause_hunt()
+                    try:
+                        success, msg = await enter_halloween_invasion(self.bot.tab, on_message=self.bot.on_message)
+                        if success:
+                            await update.message.reply_text(f"✅ {msg}")
+                        else:
+                            await update.message.reply_text(f"⚠️ {msg}")
+                    except Exception as e:
+                        await update.message.reply_text(f"❌ Erro ao entrar na invasão: {e}")
+                    finally:
+                        self.bot.resume_hunt()
+                return
+
+        hw = await get_halloween_status(self.bot.tab) if self.bot.tab else {}
+        auto_hw = get_setting("auto_halloween_invasion", True)
+        st_icon = "🟢 Ativado" if auto_hw else "🔴 Desativado"
+        open_str = "🔥 *ABERTA AGORA!*" if hw.get("is_open") else f"Fechada (Próxima: *{hw.get('next_time', 'N/D')}*)"
+        meta_str = hw.get("goal", "N/D")
+
+        await update.message.reply_text(
+            f"🎃 *EVENTO • NIGHT OF THE HOLLOW PUMPKIN*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🚪 *Status da Invasão:* {open_str}\n"
+            f"📊 *Meta do Servidor:* `{meta_str}`\n"
+            f"⚙️ *Auto Invasão:* {st_icon}\n"
+            f"⏰ *Janelas:* `01:30 · 04:30 · 07:30 · 10:30 · 13:30 · 16:30 · 19:30 · 22:30`\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Comandos:\n"
+            f"• `/halloween on` - Ativa entrada automática nas janelas\n"
+            f"• `/halloween off` - Desativa entrada automática\n"
+            f"• `/halloween entrar` - Força tentativa de entrada agora",
+            parse_mode="Markdown"
+        )
+
+    @authorized_only
+    @require_bot_running
     async def arvore(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if context.args:
             arg = context.args[0].lower()
@@ -1663,6 +1722,33 @@ class TelegramController:
             set_setting("auto_missions_after_boss", new_val)
             st_text = "ativado" if new_val else "desativado"
             await query.answer(f"⚙️ Auto Missões {st_text}!", show_alert=True)
+            await self.show_missoes_menu(update, context)
+
+        elif data == "btn_action_halloween":
+            if self.action_lock.locked():
+                await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            await query.answer("🎃 Verificando Invasão...", show_alert=False)
+            await query.message.reply_text("⏳ Verificando e entrando na Invasão de Halloween...")
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    success, msg = await enter_halloween_invasion(self.bot.tab, on_message=self.bot.on_message)
+                    if success:
+                        await query.message.reply_text(f"✅ {msg}")
+                    else:
+                        await query.message.reply_text(f"⚠️ {msg}")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao entrar na invasão: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif data == "btn_toggle_auto_halloween":
+            cur = get_setting("auto_halloween_invasion", True)
+            new_val = not cur
+            set_setting("auto_halloween_invasion", new_val)
+            st_text = "ativada" if new_val else "desativada"
+            await query.answer(f"🎃 Auto Invasão {st_text}!", show_alert=True)
             await self.show_missoes_menu(update, context)
 
         elif data == "btn_run_auto_missions":
@@ -2580,27 +2666,48 @@ class TelegramController:
         await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
 
     async def show_missoes_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
-        """Submenu: Missões, Passe de Batalha e Tasks."""
+        """Submenu: Missões, Passe de Batalha, Tasks e Invasões."""
         bp_data = await get_tracked_battlepass_progress(self.bot.tab) if self.bot.tab else None
         task_data = await get_tracked_task_progress(self.bot.tab) if self.bot.tab else None
+        hw_data = await get_halloween_status(self.bot.tab) if self.bot.tab else None
+        
         auto_m = get_setting("auto_missions_after_boss", True)
         auto_m_str = "🟢 Ativado" if auto_m else "🔴 Desativado"
+
+        auto_hw = get_setting("auto_halloween_invasion", True)
+        auto_hw_str = "🟢 Ativado" if auto_hw else "🔴 Desativado"
 
         bp_str = f"{bp_data['hunt_name']} ({bp_data['current']}/{bp_data['max']})" if bp_data else "Nenhum no HUD"
         task_str = f"{task_data['name']} ({task_data['current']}/{task_data['max']})" if task_data else "Nenhuma no HUD"
 
+        if hw_data and hw_data.get("available"):
+            if hw_data.get("is_open"):
+                hw_str = "🔥 ABERTA AGORA!"
+            elif hw_data.get("is_dungeon"):
+                hw_str = "⚔️ Na Caverna da Invasão"
+            else:
+                hw_str = f"Abre às {hw_data.get('next_time', 'N/D')} ({hw_data.get('goal', '')})"
+        else:
+            hw_str = "Indisponível no HUD"
+
         text = (
-            "🎯 *SISTEMA • MISSÕES, PASSE & TASKS*\n"
+            "🎯 *SISTEMA • MISSÕES, EVENTOS & TASKS*\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🎟️ *Passe no HUD:* `{bp_str}`\n"
             f"🛡️ *Task da Guilda:* `{task_str}`\n"
+            f"🎃 *Invasão Halloween:* `{hw_str}`\n"
             f"🚀 *Auto Missões (Pós-Boss):* {auto_m_str}\n"
+            f"🎃 *Auto Invasão (Horários):* {auto_hw_str}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "_Selecione uma rotina de tarefas:_"
         )
         keyboard = [
             [
                 InlineKeyboardButton("🚀 Iniciar Auto Missões Agora", callback_data="btn_run_auto_missions"),
+            ],
+            [
+                InlineKeyboardButton("🎃 Entrar na Invasão", callback_data="btn_action_halloween"),
+                InlineKeyboardButton(f"🎃 Auto Invasão: {auto_hw_str}", callback_data="btn_toggle_auto_halloween"),
             ],
             [
                 InlineKeyboardButton("🎟️ Gerenciar Passe", callback_data="btn_action_passe"),
@@ -3044,6 +3151,8 @@ async def main():
     application.add_handler(CommandHandler("passe", controller.passe))
     application.add_handler(CommandHandler("passetask", controller.passetask))
     application.add_handler(CommandHandler("automissoes", controller.automissoes))
+    application.add_handler(CommandHandler("halloween", controller.halloween))
+    application.add_handler(CommandHandler("invasao", controller.halloween))
     application.add_handler(CommandHandler("arvore", controller.arvore))
     application.add_handler(CommandHandler("codex", controller.codex))
     application.add_handler(CommandHandler("reset", controller.reset))

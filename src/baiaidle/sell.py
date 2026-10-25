@@ -29,6 +29,7 @@ from baiaidle.guild import get_tracked_task_progress, process_guild_tasks, auto_
 from baiaidle.codex import process_codex_routine, check_and_advance_codex_focus
 from baiaidle.battlepass import get_tracked_battlepass_progress, process_battlepass, auto_select_best_battlepass
 from baiaidle.tree import run_auto_tree
+from baiaidle.halloween import is_halloween_invasion_open, enter_halloween_invasion, monitor_halloween_invasion
 from baiaidle.recovery import dismiss_welcome_and_popups
 from baiaidle.settings import get_setting
 
@@ -83,6 +84,7 @@ class HuntStats:
     total_coin_gold: int = 0
     is_in_training: bool = False
     training_type: str = ""
+    is_in_invasion: bool = False
 
     def reset(self):
         """Zera todos os dados da sessão."""
@@ -1011,6 +1013,7 @@ async def run_sell(
 
     try:
         last_tree_check = time.time()
+        last_halloween_check = 0
 
         while not stop_event.is_set():
             try:
@@ -1048,6 +1051,19 @@ async def run_sell(
                     await dismiss_welcome_and_popups(tab, max_passes=1)
                 except Exception:
                     pass
+
+                # ====================================================
+                # PROTEÇÃO DURANTE INVASÃO DE HALLOWEEN
+                # ====================================================
+                if stats.is_in_invasion or await is_in_halloween_invasion(tab):
+                    stats.is_in_invasion = True
+                    print("[Halloween] Party na Invasão das Abóboras. Pausando troca de hunt e monitorando...")
+                    await monitor_halloween_invasion(tab, max_duration_sec=900, on_message=on_message)
+                    stats.is_in_invasion = False
+                    stats.force_sell = True
+                    target_hunt = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else (stats.default_hunt or DEFAULT_HUNT))
+                    await change_hunt(tab, target_hunt)
+                    continue
 
                 # ====================================================
                 # DETECÇÃO AUTOMÁTICA DE LOCALIZAÇÃO (TREINO / CASA)
@@ -1171,6 +1187,19 @@ async def run_sell(
                     await asyncio.sleep(sleep_time)
                     remaining -= sleep_time
 
+                    # ====================================================
+                    # ACORDAR IMEDIATAMENTE SE A INVASÃO DE HALLOWEEN ABRIR
+                    # ====================================================
+                    if int(remaining) % 15 == 0 and not stop_event.is_set() and pause_event.is_set():
+                        if get_setting("auto_halloween_invasion", True):
+                            try:
+                                if await is_halloween_invasion_open(tab):
+                                    print("[Halloween] Invasão detectada durante a espera! Interrompendo para entrar agora...")
+                                    stats.force_sell = True
+                                    break
+                            except Exception:
+                                pass
+
                 if stop_event.is_set() or stats.force_action:
                     continue
 
@@ -1180,13 +1209,16 @@ async def run_sell(
                 # ====================================================
                 # VERIFICAR CODEX ANTES DA VENDA
                 # ====================================================
-                if not stop_event.is_set() and pause_event.is_set() and not stats.force_action:
-                    current_hunt = await get_current_hunt(tab)
-                    if current_hunt and current_hunt != "Hunt Desconhecida":
-                        delivered, progress = await process_codex_routine(tab, current_hunt, on_message)
-                        stats.codex_progress = progress
-                        if get_setting("codex_focus_enabled", False):
-                            await check_and_advance_codex_focus(tab, on_message)
+                if not stop_event.is_set() and pause_event.is_set() and not stats.force_action and not stats.is_in_invasion:
+                    if not await is_in_halloween_invasion(tab):
+                        current_hunt = await get_current_hunt(tab)
+                        if current_hunt and current_hunt != "Hunt Desconhecida":
+                            delivered, progress = await process_codex_routine(tab, current_hunt, on_message)
+                            stats.codex_progress = progress
+                            if get_setting("codex_focus_enabled", False):
+                                await check_and_advance_codex_focus(tab, on_message)
+                    else:
+                        stats.is_in_invasion = True
 
                 success = await execute_sale(
                     tab,
@@ -1245,7 +1277,7 @@ async def run_sell(
                 # ====================================================
                 # VERIFICAR SE A TASK DA GUILDA FOI FINALIZADA
                 # ====================================================
-                if not stop_event.is_set() and pause_event.is_set():
+                if not stop_event.is_set() and pause_event.is_set() and not stats.is_in_invasion:
                     task_data = await get_tracked_task_progress(tab)
                     
                     if task_data and task_data.get("finished"):
@@ -1271,7 +1303,7 @@ async def run_sell(
                 # ====================================================
                 # VERIFICAR SE O PASSE DE BATALHA FOI FINALIZADO
                 # ====================================================
-                if not stop_event.is_set() and pause_event.is_set():
+                if not stop_event.is_set() and pause_event.is_set() and not stats.is_in_invasion:
                     bp_data = await get_tracked_battlepass_progress(tab)
 
                     if bp_data and bp_data.get("finished"):
@@ -1327,6 +1359,29 @@ async def run_sell(
                                         await on_message(msg)
                             except Exception as e:
                                 print(f"Aviso ao verificar árvore de habilidades no loop de hunt: {e}")
+
+                # ====================================================
+                # VERIFICAR INVASÃO DE HALLOWEEN PERIODICAMENTE (20s)
+                # ====================================================
+                if not stop_event.is_set() and pause_event.is_set():
+                    now = time.time()
+                    if now - last_halloween_check > 20:
+                        last_halloween_check = now
+                        if get_setting("auto_halloween_invasion", True):
+                            try:
+                                if await is_halloween_invasion_open(tab):
+                                    msg = "🎃 *Invasão das Abóboras Detectada!*\nEntrando na caverna do evento de Halloween..."
+                                    print("[Halloween] Invasão das Abóboras Detectada! Entrando na caverna do evento...")
+                                    if on_message:
+                                        await on_message(msg)
+                                    success, enter_msg = await enter_halloween_invasion(tab, on_message=on_message)
+                                    if success:
+                                        await monitor_halloween_invasion(tab, max_duration_sec=900, on_message=on_message)
+                                        target_hunt = (get_setting("codex_focus_hunt") if get_setting("codex_focus_enabled", False) and get_setting("codex_focus_hunt") else (stats.default_hunt or DEFAULT_HUNT))
+                                        await change_hunt(tab, target_hunt)
+                                        stats.force_sell = True
+                            except Exception as e:
+                                print(f"[Halloween] Aviso ao verificar invasão no loop de hunt: {e}")
 
             except asyncio.CancelledError:
                 raise

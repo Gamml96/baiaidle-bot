@@ -126,6 +126,13 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
     Fase 1: Aplica filtros globais (todos os atributos, entregáveis, fill-desc) e entrega todos os itens possíveis no jogo.
     Fase 2: Filtra pela hunt atual e lê a porcentagem de progresso, restaurando os filtros ao terminar.
     """
+    try:
+        from baiaidle.halloween import is_in_halloween_invasion
+        if await is_in_halloween_invasion(tab):
+            return False, "0%"
+    except Exception:
+        pass
+
     print("\nVerificando entregas globais no Codex (todos os atributos)...")
     await open_codex_menu(tab)
     
@@ -543,6 +550,13 @@ async def check_and_advance_codex_focus(tab, on_message=None) -> dict:
     """
     if not get_setting("codex_focus_enabled", False):
         return {"enabled": False}
+
+    try:
+        from baiaidle.halloween import is_in_halloween_invasion
+        if await is_in_halloween_invasion(tab):
+            return {"enabled": True, "paused_for_invasion": True}
+    except Exception:
+        pass
 
     attribute = get_setting("codex_focus_attribute", "critDmg")
     attr_label = CODEX_ATTRIBUTES.get(attribute, attribute)
