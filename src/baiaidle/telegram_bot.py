@@ -55,6 +55,12 @@ from baiaidle.hunts import (
 )
 from baiaidle.settings import get_setting, set_setting, load_settings
 from baiaidle.guild import process_guild_tasks, accept_specific_task, get_tracked_task_progress, auto_select_best_guild_task
+from baiaidle.battlepass import (
+    process_battlepass,
+    choose_battlepass_mission,
+    get_tracked_battlepass_progress,
+    auto_select_best_battlepass,
+)
 from baiaidle.codex import (
     process_codex_routine,
     get_codex_attribute_queue,
@@ -293,6 +299,10 @@ class TelegramController:
                 except Exception as e:
                     print(f"Erro ao executar auto missões pós-boss: {e}")
                 finally:
+                    if hasattr(self.bot, "hunt_stats"):
+                        self.bot.hunt_stats.is_in_training = False
+                        self.bot.hunt_stats.training_type = ""
+                        self.bot.hunt_stats.force_sell = True
                     self.bot.resume_hunt()
         else:
             if hasattr(self.bot, "hunt_stats"):
