@@ -10,6 +10,6 @@
   "auto_halloween_invasion": true,
   "codex_focus_enabled": true,
   "codex_focus_attribute": "critDmg",
-  "codex_focus_hunt": null,
+  "codex_focus_hunt": "Choking Fear",
   "default_hunt": "Infernal Demon"
 }
