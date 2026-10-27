@@ -419,14 +419,43 @@ def extract_hunt_from_codex_name(name: str) -> str:
 async def get_codex_attribute_queue(tab, attribute: str = "critDmg", max_party_level: int = None) -> list[dict]:
     """
     Lê a lista de entradas pendentes do Codex filtradas pelo atributo selecionado.
+    Filtra especificamente pela aba 'Hunts' para ignorar codex de equipamentos e bosses.
     Retorna uma lista de dicionários ordenados da mais próxima de 100% até a menor.
     Se max_party_level for informado, marca 'is_safe' de acordo com o nível da hunt.
     """
     await open_codex_menu(tab)
     
+    # 0. Garante que a aba 'Hunts' está selecionada para listar apenas hunts (ignorando bosses e equipamentos)
+    js_tab = """
+    (() => {
+        const codexTabs = Array.from(document.querySelectorAll('.store-sidebtn.codex-tab, .codex-tab'));
+        const huntsTab = codexTabs.find(btn => {
+            const label = btn.querySelector('.codex-tab-label');
+            return label && label.innerText.trim().toLowerCase() === 'hunts';
+        }) || codexTabs.find(btn => (btn.innerText || '').toLowerCase().includes('hunts'));
+        if (huntsTab) {
+            huntsTab.click();
+            return true;
+        }
+        return false;
+    })()
+    """
+    await tab.execute_script(js_tab)
+    await asyncio.sleep(0.5)
+
     safe_attr = json.dumps(attribute)
     js_filter = f"""
     (() => {{
+        // Garante novamente a seleção da aba Hunts caso necessário
+        const codexTabs = Array.from(document.querySelectorAll('.store-sidebtn.codex-tab, .codex-tab'));
+        const huntsTab = codexTabs.find(btn => {{
+            const label = btn.querySelector('.codex-tab-label');
+            return label && label.innerText.trim().toLowerCase() === 'hunts';
+        }}) || codexTabs.find(btn => (btn.innerText || '').toLowerCase().includes('hunts'));
+        if (huntsTab && !huntsTab.classList.contains('active')) {{
+            huntsTab.click();
+        }}
+
         // 1. Limpa pesquisa
         const searchInput = document.querySelector('.cx-search');
         if (searchInput && searchInput.value !== '') {{

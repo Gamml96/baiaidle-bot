@@ -73,6 +73,11 @@ class TestCodexAuto(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(queue[2]["hunt_name"], "Lion Knight")
         self.assertEqual(queue[2]["pct_val"], 35.0)
 
+        # Verifica se filtrou especificamente pela aba 'Hunts'
+        scripts_called = [call.args[0] for call in tab.execute_script.call_args_list if call.args]
+        has_hunts_tab_script = any("codex-tab-label" in s and "hunts" in s.lower() for s in scripts_called)
+        self.assertTrue(has_hunts_tab_script)
+
     async def test_check_and_advance_codex_focus_redirects_party(self):
         set_setting("codex_focus_enabled", True)
         set_setting("codex_focus_attribute", "critDmg")
