@@ -566,10 +566,20 @@ async def monitor_page_recovery(bot):
                 from baiaidle.settings import get_setting
                 watchdog_min = get_setting("watchdog_minutes", 10)
                 watchdog_timeout = max(180, watchdog_min * 60)
+
+                tc = getattr(bot, "telegram_controller", None)
+                auto_boss = getattr(bot, "auto_boss_instance", None) or (getattr(tc, "auto_boss_instance", None) if tc else None)
+                is_autoboss = bool(auto_boss and getattr(auto_boss, "state", None) and auto_boss.state.running)
+
+                if is_autoboss:
+                    if hasattr(bot, "touch_activity"):
+                        bot.touch_activity()
+                    periodic_popup_counter = 0
+                    continue
+
                 last_act = getattr(bot, "last_activity_time", None) or time.time()
                 inactivity_sec = time.time() - last_act
 
-                is_autoboss = getattr(bot, "auto_boss_instance", None) and bot.auto_boss_instance.state.running
                 if bot.is_hunt_running() and not is_autoboss and inactivity_sec >= watchdog_timeout:
                     log_recovery(f"\n🚨 [WATCHDOG] Congelamento detectado! Sem atividade/venda há {int(inactivity_sec // 60)} minutos.")
                     warn_msg = (

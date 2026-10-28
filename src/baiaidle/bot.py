@@ -550,12 +550,12 @@ class GameBot:
     # ============================================================
 
     def pause_hunt(self):
-
+        self.touch_activity()
         self.hunt_pause_event.clear()
 
     # ============================================================
     def resume_hunt(self):
-
+        self.touch_activity()
         self.hunt_pause_event.set()
         self.ensure_hunt_running()
 

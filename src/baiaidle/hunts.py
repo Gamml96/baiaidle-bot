@@ -229,76 +229,174 @@ async def get_hunts_list(tab, force_refresh: bool = False):
 
     return load_hunts_cache()
 
+
+def is_same_hunt(current_loc: str, target: str | int | dict) -> bool:
+    """
+    Verifica se o local atual do personagem (#wave-title) é o mesmo do destino desejado.
+    Lida com nomes, índices numéricos (1-based), dicts e sufixos como (Loot), (Exp), etc.
+    """
+    if not current_loc or target is None:
+        return False
+
+    if isinstance(target, dict):
+        target = target.get("name") or target.get("hunt_name") or target.get("index")
+        if target is None:
+            return False
+
+    current_str = str(current_loc).strip()
+    if not current_str or current_str.lower() in ["hunt desconhecida", "carregando...", ""]:
+        return False
+
+    # Normaliza nome atual: remove parênteses, caracteres especiais e traços
+    current_clean = re.sub(r"\(.*?\)", "", current_str).strip().lower()
+    current_clean = current_clean.replace("-", " ").replace("_", " ")
+
+    # Normaliza destino
+    target_str = str(target).strip()
+    if target_str.isdigit():
+        target_idx = int(target_str)
+        hunts = load_hunts_cache()
+        target_hunt = next((h for h in hunts if h.get("index") == target_idx), None)
+        if target_hunt and target_hunt.get("name"):
+            target_name = target_hunt["name"]
+        else:
+            return False
+    else:
+        target_name = target_str
+
+    target_clean = re.sub(r"\(.*?\)", "", target_name).strip().lower()
+    target_clean = target_clean.replace("-", " ").replace("_", " ")
+
+    # 1. Comparação direta normalizada
+    if current_clean == target_clean:
+        return True
+
+    # 2. Resolução via cache de hunts
+    info_cur = get_hunt_info(current_str)
+    info_tar = get_hunt_info(target_name)
+    if info_cur and info_tar:
+        if info_cur.get("index") and info_cur.get("index") == info_tar.get("index"):
+            return True
+        if info_cur.get("name") and info_cur.get("name", "").strip().lower() == info_tar.get("name", "").strip().lower():
+            return True
+
+    return False
+
+
+async def close_hunts_menu(tab):
+    """Fecha o modal de seleção de hunts (#picker-modal) e o menu de teleportes se estiverem abertos."""
+    if not tab:
+        return
+    js_close = """
+    (() => {
+        let closed = false;
+        const pickerClose = document.getElementById('picker-modal-close');
+        if (pickerClose) {
+            pickerClose.click();
+            closed = true;
+        }
+        const tpMenu = document.getElementById('teleport-menu');
+        if (tpMenu && !tpMenu.classList.contains('hidden') && tpMenu.style.display !== 'none') {
+            const waveTitle = document.getElementById('wave-title');
+            if (waveTitle) waveTitle.click();
+            closed = true;
+        }
+        return closed;
+    })()
+    """
+    try:
+        await tab.execute_script(js_close)
+    except Exception:
+        pass
+
+
 async def change_hunt(tab, hunt_identifier):
     """Procura a hunt pelo nome ou índice, clica nela e clica em Caçar."""
+    if not tab:
+        return False, "Aba indisponível."
+
+    # 0. Verifica se o personagem já está na hunt de destino antes de abrir menus
+    try:
+        current_loc = await get_current_hunt(tab, timeout=1.0)
+        if current_loc and is_same_hunt(current_loc, hunt_identifier):
+            print(f"[change_hunt] Personagem já está no destino desejado ({current_loc}). Nenhuma troca necessária.")
+            await close_hunts_menu(tab)
+            return True, f"Personagem já está na hunt: {current_loc}"
+    except Exception as e:
+        print(f"[change_hunt] Aviso ao verificar localização atual: {e}")
+
     if not await open_hunts_menu(tab):
         return False, "Não foi possível abrir o menu de Hunts."
 
-    # 1. Procurar a Hunt na Grid, clicar para expandir e guardar o ÍNDICE EXATO dela
-    js_click_card = f"""
-    (() => {{
-        const identifier = {json.dumps(hunt_identifier)};
-        const grid = document.querySelector('#picker-modal-body .hunt-grid');
-        if (!grid) return JSON.stringify({{success: false, error: "Grid não encontrada"}});
-        
-        const cards = Array.from(grid.children);
-        let target = null;
-        let targetIndex = -1;
-        
-        if (!isNaN(identifier) && Number(identifier) > 0 && Number(identifier) <= cards.length) {{
-            targetIndex = Number(identifier) - 1;
-            target = cards[targetIndex];
-        }} else {{
-            targetIndex = cards.findIndex(c => {{
-                const b = c.querySelector('b');
-                return b && b.innerText.trim().toLowerCase() === String(identifier).toLowerCase();
-            }});
-            if (targetIndex !== -1) {{
+    try:
+        # 1. Procurar a Hunt na Grid, clicar para expandir e guardar o ÍNDICE EXATO dela
+        js_click_card = f"""
+        (() => {{
+            const identifier = {json.dumps(hunt_identifier)};
+            const grid = document.querySelector('#picker-modal-body .hunt-grid');
+            if (!grid) return JSON.stringify({{success: false, error: "Grid não encontrada"}});
+            
+            const cards = Array.from(grid.children);
+            let target = null;
+            let targetIndex = -1;
+            
+            if (!isNaN(identifier) && Number(identifier) > 0 && Number(identifier) <= cards.length) {{
+                targetIndex = Number(identifier) - 1;
                 target = cards[targetIndex];
+            }} else {{
+                targetIndex = cards.findIndex(c => {{
+                    const b = c.querySelector('b');
+                    return b && b.innerText.trim().toLowerCase() === String(identifier).toLowerCase();
+                }});
+                if (targetIndex !== -1) {{
+                    target = cards[targetIndex];
+                }}
             }}
-        }}
+            
+            if (!target) return JSON.stringify({{success: false, error: "Hunt não encontrada na lista."}});
+            
+            target.click(); 
+            return JSON.stringify({{success: true, index: targetIndex}});
+        }})()
+        """
+        res1 = await tab.execute_script(js_click_card)
+        data1 = parse_json_result(res1)
         
-        if (!target) return JSON.stringify({{success: false, error: "Hunt não encontrada na lista."}});
-        
-        target.click(); 
-        return JSON.stringify({{success: true, index: targetIndex}});
-    }})()
-    """
-    res1 = await tab.execute_script(js_click_card)
-    data1 = parse_json_result(res1)
-    
-    if not data1 or not data1.get("success"):
-        await tab.execute_script("(() => { const btn = document.getElementById('picker-modal-close'); if(btn) btn.click(); })()")
-        return False, data1.get("error", "Erro ao encontrar/clicar no card da hunt.")
+        if not data1 or not data1.get("success"):
+            await close_hunts_menu(tab)
+            return False, data1.get("error", "Erro ao encontrar/clicar no card da hunt.")
 
-    card_index = data1.get("index")
-    await asyncio.sleep(1) 
+        card_index = data1.get("index")
+        await asyncio.sleep(1) 
 
-    # 2. Clicar no botão 'Caçar' ESPECÍFICO do card que expandimos
-    js_click_go = f"""
-    (() => {{
-        const grid = document.querySelector('#picker-modal-body .hunt-grid');
-        const targetCard = grid.children[{card_index}];
-        if (!targetCard) return JSON.stringify({{success: false, error: "Card desapareceu da tela."}});
+        # 2. Clicar no botão 'Caçar' ESPECÍFICO do card que expandimos
+        js_click_go = f"""
+        (() => {{
+            const grid = document.querySelector('#picker-modal-body .hunt-grid');
+            const targetCard = grid.children[{card_index}];
+            if (!targetCard) return JSON.stringify({{success: false, error: "Card desapareceu da tela."}});
+            
+            const btn = targetCard.querySelector('button.stage-go');
+            if (!btn) return JSON.stringify({{success: false, error: "Botão 'Caçar' não encontrado neste card."}});
+            
+            btn.click();
+            return JSON.stringify({{success: true}});
+        }})()
+        """
+        res2 = await tab.execute_script(js_click_go)
+        data2 = parse_json_result(res2)
         
-        const btn = targetCard.querySelector('button.stage-go');
-        if (!btn) return JSON.stringify({{success: false, error: "Botão 'Caçar' não encontrado neste card."}});
-        
-        btn.click();
-        return JSON.stringify({{success: true}});
-    }})()
-    """
-    res2 = await tab.execute_script(js_click_go)
-    data2 = parse_json_result(res2)
-    
-    if not data2 or not data2.get("success"):
-        await tab.execute_script("(() => { const btn = document.getElementById('picker-modal-close'); if(btn) btn.click(); })()")
-        return False, data2.get("error", "Erro ao clicar no botão Caçar.")
+        if not data2 or not data2.get("success"):
+            await close_hunts_menu(tab)
+            return False, data2.get("error", "Erro ao clicar no botão Caçar.")
 
-    await asyncio.sleep(2)
-    current = await get_current_hunt(tab)
-    
-    return True, f"Mudança solicitada com sucesso! Local atual: {current}"
+        await asyncio.sleep(2)
+        current = await get_current_hunt(tab)
+        
+        return True, f"Mudança solicitada com sucesso! Local atual: {current}"
+    finally:
+        # Garante que o menu de hunts e teleporte sejam fechados caso tenham permanecido abertos
+        await close_hunts_menu(tab)
 
 async def debug_hunts_dom(tab):
     """Extrai todo o HTML do modal para debug."""

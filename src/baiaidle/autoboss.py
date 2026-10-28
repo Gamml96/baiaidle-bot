@@ -3027,12 +3027,16 @@ async def monitor_boss(
     stop_event,
     boss_name: str,
     on_message=None,
+    bot=None,
 ):
 
     last_state = None
     last_telegram_time = asyncio.get_running_loop().time()
 
     while True:
+
+        if bot and hasattr(bot, "touch_activity"):
+            bot.touch_activity()
 
         if stop_event.is_set():
 
@@ -3157,9 +3161,11 @@ class AutoBoss:
     def __init__(
         self,
         tab,
+        bot=None,
     ):
 
         self.tab = tab
+        self.bot = bot
 
         self.state = AutoBossState()
 
@@ -3375,6 +3381,9 @@ class AutoBoss:
             for position, index in enumerate(
                 self.state.queue
             ):
+
+                if self.bot and hasattr(self.bot, "touch_activity"):
+                    self.bot.touch_activity()
 
                 if self.state.stop_event.is_set():
 
@@ -3659,7 +3668,8 @@ class AutoBoss:
                     self.tab,
                     self.state.stop_event,
                     boss.name,
-                    on_message=self.send_message
+                    on_message=self.send_message,
+                    bot=self.bot,
                 )
 
                 if self.state.stop_event.is_set():
@@ -3729,6 +3739,9 @@ class AutoBoss:
 
         finally:
 
+            if self.bot and hasattr(self.bot, "touch_activity"):
+                self.bot.touch_activity()
+
             self.state.running = False
 
             self.state.current_index = None
@@ -3777,6 +3790,9 @@ class AutoBoss:
         print(
             "Parando AutoBoss..."
         )
+
+        if self.bot and hasattr(self.bot, "touch_activity"):
+            self.bot.touch_activity()
 
         self.state.stop_event.set()
 

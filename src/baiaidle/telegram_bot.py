@@ -292,6 +292,11 @@ class TelegramController:
         print("AutoBoss terminou.")
         print("========================================\n")
 
+        if self.bot:
+            self.bot.auto_boss_instance = None
+            if hasattr(self.bot, "touch_activity"):
+                self.bot.touch_activity()
+
         auto_missions = get_setting("auto_missions_after_boss", True)
         if auto_missions and self.bot.is_running():
             if self.auto_boss_instance:
@@ -309,6 +314,8 @@ class TelegramController:
                         self.bot.hunt_stats.is_in_training = False
                         self.bot.hunt_stats.training_type = ""
                         self.bot.hunt_stats.force_sell = True
+                    if hasattr(self.bot, "touch_activity"):
+                        self.bot.touch_activity()
                     self.bot.resume_hunt()
         else:
             if hasattr(self.bot, "hunt_stats"):
@@ -316,6 +323,8 @@ class TelegramController:
                 self.bot.hunt_stats.training_type = ""
                 self.bot.hunt_stats.force_sell = True
 
+            if hasattr(self.bot, "touch_activity"):
+                self.bot.touch_activity()
             self.bot.resume_hunt()
 
             if self.auto_boss_instance:
@@ -335,6 +344,9 @@ class TelegramController:
             if send_fn:
                 await send_fn("⚠️ Bot ou aba do jogo não estão disponíveis no momento.")
             return
+
+        if hasattr(self.bot, "touch_activity"):
+            self.bot.touch_activity()
 
         avg_lvl = await get_party_average_level(self.bot.tab)
 
@@ -471,6 +483,10 @@ class TelegramController:
         if self.auto_boss_instance:
             await self.auto_boss_instance.stop()
             self.auto_boss_instance = None
+            if self.bot:
+                self.bot.auto_boss_instance = None
+                if hasattr(self.bot, "touch_activity"):
+                    self.bot.touch_activity()
 
         await update.message.reply_text("⏳ Parando bot...")
 
@@ -845,7 +861,11 @@ class TelegramController:
                 await update.message.reply_text(f"❌ {e}")
                 return
 
-        self.auto_boss_instance = AutoBoss(self.bot.tab)
+        self.auto_boss_instance = AutoBoss(self.bot.tab, bot=self.bot)
+        if self.bot:
+            self.bot.auto_boss_instance = self.auto_boss_instance
+            if hasattr(self.bot, "touch_activity"):
+                self.bot.touch_activity()
 
         async def send_message(text):
             await self.send_hunt_msg(text)
@@ -858,6 +878,8 @@ class TelegramController:
         try:
             success, message = await self.auto_boss_instance.start(indices)
             if not success:
+                if self.bot:
+                    self.bot.auto_boss_instance = None
                 self.bot.resume_hunt()
                 self.auto_boss_instance = None
                 await update.message.reply_text(f"❌ {message}")
@@ -865,6 +887,8 @@ class TelegramController:
 
             await update.message.reply_text(f"{message}\n\n🏹 Hunt pausada.")
         except Exception as e:
+            if self.bot:
+                self.bot.auto_boss_instance = None
             self.bot.resume_hunt()
             self.auto_boss_instance = None
             await update.message.reply_text(f"❌ Erro ao iniciar AutoBoss:\n{e}")
@@ -982,6 +1006,8 @@ class TelegramController:
 
         if not self.auto_boss_instance.state.running:
             self.auto_boss_instance = None
+            if self.bot:
+                self.bot.auto_boss_instance = None
             self.bot.resume_hunt()
             await update.message.reply_text("⚠️ Nenhum AutoBoss está ativo.\n🏹 Hunt retomada.")
             return
@@ -991,6 +1017,10 @@ class TelegramController:
         try:
             stopped = await self.auto_boss_instance.stop()
             self.auto_boss_instance = None
+            if self.bot:
+                self.bot.auto_boss_instance = None
+                if hasattr(self.bot, "touch_activity"):
+                    self.bot.touch_activity()
             if hasattr(self.bot, "hunt_stats"):
                 self.bot.hunt_stats.is_in_training = False
                 self.bot.hunt_stats.training_type = ""
@@ -1002,6 +1032,8 @@ class TelegramController:
             else:
                 await update.message.reply_text("⚠️ AutoBoss já estava parado.\n\n🏹 Hunt retomada.")
         except Exception as e:
+            if self.bot:
+                self.bot.auto_boss_instance = None
             if hasattr(self.bot, "hunt_stats"):
                 self.bot.hunt_stats.is_in_training = False
                 self.bot.hunt_stats.training_type = ""
@@ -1961,6 +1993,10 @@ class TelegramController:
                 return
             await self.auto_boss_instance.stop()
             self.auto_boss_instance = None
+            if self.bot:
+                self.bot.auto_boss_instance = None
+                if hasattr(self.bot, "touch_activity"):
+                    self.bot.touch_activity()
             self.bot.resume_hunt()
             await query.answer("⏹️ AutoBoss interrompido! Hunt retomada.", show_alert=True)
             await self.show_autoboss_menu(update, context)
@@ -2175,7 +2211,11 @@ class TelegramController:
                 await query.message.reply_text("ℹ️ Nenhuma lista predefinida configurada. Use `/setautoboss 1,2,3` primeiro.", parse_mode="Markdown")
                 return
             await query.message.reply_text(f"🚀 *Iniciando AutoBoss na lista:* `{indices}`...", parse_mode="Markdown")
-            self.auto_boss_instance = AutoBoss(self.bot.tab)
+            self.auto_boss_instance = AutoBoss(self.bot.tab, bot=self.bot)
+            if self.bot:
+                self.bot.auto_boss_instance = self.auto_boss_instance
+                if hasattr(self.bot, "touch_activity"):
+                    self.bot.touch_activity()
             async def send_message(text):
                 await self.send_hunt_msg(text)
             self.auto_boss_instance.on_message = send_message
@@ -2184,10 +2224,14 @@ class TelegramController:
             try:
                 success, message = await self.auto_boss_instance.start(indices)
                 if not success:
+                    if self.bot:
+                        self.bot.auto_boss_instance = None
                     self.bot.resume_hunt()
                     self.auto_boss_instance = None
                     await query.message.reply_text(f"❌ Falha: {message}")
             except Exception as e:
+                if self.bot:
+                    self.bot.auto_boss_instance = None
                 self.bot.resume_hunt()
                 self.auto_boss_instance = None
                 await query.message.reply_text(f"❌ Erro no AutoBoss: {e}")

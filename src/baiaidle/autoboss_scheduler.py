@@ -196,7 +196,9 @@ async def _start_boss_battle(controller, indices: list[int]):
     controller.bot.pause_hunt()
     await asyncio.sleep(1.5)
 
-    controller.auto_boss_instance = AutoBoss(controller.bot.tab)
+    controller.auto_boss_instance = AutoBoss(controller.bot.tab, bot=controller.bot)
+    if controller.bot:
+        controller.bot.auto_boss_instance = controller.auto_boss_instance
 
     async def send_msg(text):
         await controller.send_hunt_msg(text)
@@ -207,6 +209,8 @@ async def _start_boss_battle(controller, indices: list[int]):
     try:
         success, message = await controller.auto_boss_instance.start(indices)
         if not success:
+            if controller.bot:
+                controller.bot.auto_boss_instance = None
             controller.bot.resume_hunt()
             controller.auto_boss_instance = None
             await controller.send_hunt_msg(f"⚠️ *AutoBoss Noturno:* {message}")
@@ -217,6 +221,8 @@ async def _start_boss_battle(controller, indices: list[int]):
             await controller.send_hunt_msg(f"{message}\n\n🏹 Hunt pausada.")
 
     except Exception as e:
+        if controller.bot:
+            controller.bot.auto_boss_instance = None
         controller.bot.resume_hunt()
         controller.auto_boss_instance = None
         await controller.send_hunt_msg(f"❌ Erro durante AutoBoss noturno: {e}")
