@@ -565,7 +565,6 @@ async def monitor_page_recovery(bot):
                 # 4. WATCHDOG DE CONGELAMENTO / INATIVIDADE (FREEZE WATCHDOG)
                 from baiaidle.settings import get_setting
                 watchdog_min = get_setting("watchdog_minutes", 10)
-                watchdog_timeout = max(180, watchdog_min * 60)
 
                 tc = getattr(bot, "telegram_controller", None)
                 auto_boss = getattr(bot, "auto_boss_instance", None) or (getattr(tc, "auto_boss_instance", None) if tc else None)
@@ -577,36 +576,66 @@ async def monitor_page_recovery(bot):
                     periodic_popup_counter = 0
                     continue
 
-                last_act = getattr(bot, "last_activity_time", None) or time.time()
-                inactivity_sec = time.time() - last_act
+                # 4.1 RECUPERAÇÃO DE HUNT_TASK CRASHADA OU FINALIZADA INESPERADAMENTE
+                if bot.running and not is_autoboss and (bot.hunt_task is None or bot.hunt_task.done()):
+                    log_recovery("\n🚨 [WATCHDOG] Task de hunt/vendas finalizada inesperadamente com o bot ativo! Reiniciando...")
+                    if hasattr(bot, "touch_activity"):
+                        bot.touch_activity()
+                    if hasattr(bot, "ensure_hunt_running"):
+                        bot.ensure_hunt_running(force_restart=True)
 
-                if bot.is_hunt_running() and not is_autoboss and inactivity_sec >= watchdog_timeout:
-                    log_recovery(f"\n🚨 [WATCHDOG] Congelamento detectado! Sem atividade/venda há {int(inactivity_sec // 60)} minutos.")
-                    warn_msg = (
-                        f"🚨 *WATCHDOG ANTITRAVAMENTO ACIONADO!*\n"
-                        f"Nenhuma venda ou atividade detectada nos últimos {int(inactivity_sec // 60)} minutos.\n"
-                        f"🔄 Forçando recarregamento da página e recuperação da sessão..."
-                    )
-                    notifier = getattr(bot, "on_message", None)
-                    if notifier:
+                # 4.2 CONGELAMENTO POR INATIVIDADE PROLONGADA (SEM VENDAS / PROGRESSO)
+                if watchdog_min and watchdog_min > 0:
+                    watchdog_timeout = max(180, watchdog_min * 60)
+                    last_act = getattr(bot, "last_activity_time", None) or time.time()
+                    inactivity_sec = time.time() - last_act
+
+                    is_hunting = bool(bot.is_hunt_running()) or (bot.running and not is_autoboss)
+
+                    if is_hunting and not is_autoboss and inactivity_sec >= watchdog_timeout:
+                        log_recovery(f"\n🚨 [WATCHDOG] Congelamento detectado! Sem atividade/venda há {int(inactivity_sec // 60)} minutos.")
+                        warn_msg = (
+                            f"🚨 *WATCHDOG ANTITRAVAMENTO ACIONADO!*\n"
+                            f"Nenhuma venda ou atividade detectada nos últimos {int(inactivity_sec // 60)} minutos.\n"
+                            f"🔄 Forçando recarregamento da página e recuperação da sessão..."
+                        )
+                        notifier = getattr(bot, "on_message", None)
+                        if notifier:
+                            try:
+                                res_w = notifier(warn_msg)
+                                if asyncio.iscoroutine(res_w):
+                                    await res_w
+                            except Exception:
+                                pass
+
                         try:
-                            res_w = notifier(warn_msg)
-                            if asyncio.iscoroutine(res_w):
-                                await res_w
+                            await bot.tab.go_to(BAIAKIDLE_URL.rstrip("/") + "/jogar")
+                            await asyncio.sleep(3.0)
                         except Exception:
                             pass
 
-                    try:
-                        await bot.tab.go_to(BAIAKIDLE_URL.rstrip("/") + "/jogar")
-                        await asyncio.sleep(3.0)
-                    except Exception:
-                        pass
+                        await ensure_page_session(bot, on_message=bot.on_message)
 
-                    await ensure_page_session(bot, on_message=bot.on_message)
-                    if hasattr(bot, "touch_activity"):
-                        bot.touch_activity()
-                    await asyncio.sleep(2.0)
-                    continue
+                        # Retorna o personagem para a hunt caso tenha caído na Cidade
+                        if hasattr(bot, "hunt_stats"):
+                            from baiaidle.sell import resolve_target_hunt
+                            from baiaidle.hunts import change_hunt
+                            try:
+                                target_hunt = await resolve_target_hunt(bot.tab, bot.hunt_stats)
+                                log_recovery(f"[WATCHDOG] Retornando personagem para a hunt: {target_hunt}")
+                                await change_hunt(bot.tab, target_hunt)
+                                bot.hunt_stats.force_sell = True
+                            except Exception as eh:
+                                log_recovery(f"[WATCHDOG] Erro ao retornar para hunt pós-watchdog: {eh}")
+
+                        if hasattr(bot, "touch_activity"):
+                            bot.touch_activity()
+
+                        if hasattr(bot, "ensure_hunt_running"):
+                            bot.ensure_hunt_running(force_restart=True)
+
+                        await asyncio.sleep(2.0)
+                        continue
 
                 # 5. TESTE DE RESPONSIVIDADE JS (PING DA ABA) A CADA ~30s
                 if periodic_popup_counter == 3:
@@ -620,8 +649,24 @@ async def monitor_page_recovery(bot):
                         except Exception:
                             pass
                         await ensure_page_session(bot, on_message=bot.on_message)
+
+                        if hasattr(bot, "hunt_stats"):
+                            from baiaidle.sell import resolve_target_hunt
+                            from baiaidle.hunts import change_hunt
+                            try:
+                                target_hunt = await resolve_target_hunt(bot.tab, bot.hunt_stats)
+                                log_recovery(f"[WATCHDOG] Retornando personagem para a hunt: {target_hunt}")
+                                await change_hunt(bot.tab, target_hunt)
+                                bot.hunt_stats.force_sell = True
+                            except Exception as eh:
+                                log_recovery(f"[WATCHDOG] Erro ao retornar para hunt pós-ping: {eh}")
+
                         if hasattr(bot, "touch_activity"):
                             bot.touch_activity()
+
+                        if hasattr(bot, "ensure_hunt_running"):
+                            bot.ensure_hunt_running(force_restart=True)
+
                         await asyncio.sleep(2.0)
                         continue
 

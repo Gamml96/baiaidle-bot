@@ -50,7 +50,22 @@ class TestHuntsCache(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(get_hunt_level("amazon-camp"), 9)
         self.assertEqual(get_hunt_level("Hydra"), 100)
         self.assertEqual(get_hunt_level("Grim Reaper"), 130)
+        self.assertEqual(get_hunt_level("darkthais"), 800)
+        self.assertEqual(get_hunt_level("Dark Thais"), 800)
         self.assertIsNone(get_hunt_level("Nonexistent"))
+
+    def test_darkthais_resolution_and_same_hunt(self):
+        from baiaidle.hunts import is_same_hunt
+        info = get_hunt_info("darkthais")
+        self.assertIsNotNone(info)
+        self.assertEqual(info["name"], "Dark Thais")
+        self.assertEqual(info["level"], 800)
+
+        # Deve reconhecer Dark Thais e darkthais como a mesma hunt
+        self.assertTrue(is_same_hunt("Dark Thais", "darkthais"))
+        self.assertTrue(is_same_hunt("darkthais", "Dark Thais"))
+        self.assertFalse(is_same_hunt("Casa", "Dark Thais"))
+        self.assertFalse(is_same_hunt("Casa", "darkthais"))
 
     def test_is_hunt_level_safe(self):
         # Personagem level 50 tentando Hydra (level 100) -> Não seguro

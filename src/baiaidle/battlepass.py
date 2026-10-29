@@ -2,7 +2,7 @@ import asyncio
 import json
 import re
 
-from baiaidle.hunts import change_hunt, get_hunt_level
+from baiaidle.hunts import change_hunt, get_hunt_level, get_hunt_info, is_same_hunt
 
 
 def extract_execute_result(result):
@@ -133,7 +133,13 @@ async def get_battlepass_missions(tab) -> list:
     result = await tab.execute_script(js)
     missions = parse_json_result(result) or []
     for m in missions:
-        m["level"] = get_hunt_level(m.get("name", ""))
+        m_name = m.get("name", "")
+        info = get_hunt_info(m_name)
+        if info and info.get("name"):
+            m["name"] = info["name"]
+            m["level"] = info.get("level")
+        else:
+            m["level"] = get_hunt_level(m_name)
     return missions
 
 
@@ -359,6 +365,8 @@ async def get_tracked_battlepass_progress(tab) -> dict | None:
 
         const countText = numEl ? numEl.innerText.trim() : '';
         const tipText = rowBtn ? (rowBtn.getAttribute('title') || rowBtn.getAttribute('data-tip') || '') : '';
+        const waveTitleEl = document.getElementById('wave-title');
+        const waveTitle = waveTitleEl ? waveTitleEl.innerText.trim() : '';
 
         let huntName = "";
         if (tipText) {
@@ -371,7 +379,8 @@ async def get_tracked_battlepass_progress(tab) -> dict | None:
         return JSON.stringify({
             hunt_name: huntName,
             count_text: countText,
-            tip: tipText
+            tip: tipText,
+            wave_title: waveTitle
         });
     })()
     """
@@ -391,7 +400,23 @@ async def get_tracked_battlepass_progress(tab) -> dict | None:
         max_kills = int(max_str.replace(".", "").strip())
 
         hunt_name = data.get("hunt_name") or "Passe"
-        lvl = get_hunt_level(hunt_name)
+        wave_title = (data.get("wave_title") or "").strip()
+
+        # Se o wave-title estiver disponível e ativo na tela, e coincidir com o passe
+        # (ex: "Dark Thais" vs "darkthais"), prefere o wave-title oficial!
+        if wave_title and wave_title.lower() not in ["hunt desconhecida", "treino online", "casa", "carregando...", ""]:
+            from baiaidle.sell import is_training_location
+            is_train, _ = is_training_location(wave_title)
+            if not is_train and (is_same_hunt(wave_title, hunt_name) or is_same_hunt(wave_title, data.get("tip", ""))):
+                hunt_name = wave_title
+
+        # Resolve via cache de hunts para garantir o nome canônico oficial (ex: "darkthais" -> "Dark Thais")
+        info = get_hunt_info(hunt_name)
+        if info and info.get("name"):
+            hunt_name = info["name"]
+            lvl = info.get("level")
+        else:
+            lvl = get_hunt_level(hunt_name)
 
         return {
             "hunt_name": hunt_name,

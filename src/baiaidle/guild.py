@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from baiaidle.hunts import get_hunt_level
+from baiaidle.hunts import get_hunt_level, get_hunt_info
 
 
 def extract_execute_result(result):
@@ -779,10 +779,17 @@ async def get_tracked_task_progress(tab):
         current_str, max_str = data["count_text"].split('/')
         current_kills = int(current_str.replace('.', '').strip())
         max_kills = int(max_str.replace('.', '').strip())
-        lvl = get_hunt_level(data["name"])
+        
+        task_name = data["name"]
+        info = get_hunt_info(task_name)
+        if info and info.get("name"):
+            task_name = info["name"]
+            lvl = info.get("level")
+        else:
+            lvl = get_hunt_level(task_name)
         
         return {
-            "name": data["name"],
+            "name": task_name,
             "level": lvl,
             "current": current_kills,
             "max": max_kills,

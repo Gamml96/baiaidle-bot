@@ -101,5 +101,25 @@ class TestBattlepassLevels(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(missions[0]["name"], "Elf")
         self.assertEqual(missions[0]["level"], 8)
 
+    async def test_get_tracked_battlepass_progress_resolves_darkthais(self):
+        from baiaidle.battlepass import get_tracked_battlepass_progress
+        tab = MagicMock()
+        tab.execute_script = AsyncMock(return_value={
+            "result": {"result": {"value": json.dumps({
+                "hunt_name": "darkthais",
+                "count_text": "150/600",
+                "tip": "darkthais — 150/600 · Limpe 600 criaturas.",
+                "wave_title": "Dark Thais"
+            })}}
+        })
+
+        data = await get_tracked_battlepass_progress(tab)
+        self.assertIsNotNone(data)
+        self.assertEqual(data["hunt_name"], "Dark Thais")
+        self.assertEqual(data["level"], 800)
+        self.assertEqual(data["current"], 150)
+        self.assertEqual(data["max"], 600)
+        self.assertFalse(data["finished"])
+
 if __name__ == "__main__":
     unittest.main()

@@ -559,9 +559,14 @@ class GameBot:
         self.hunt_pause_event.set()
         self.ensure_hunt_running()
 
-    def ensure_hunt_running(self):
+    def ensure_hunt_running(self, force_restart: bool = False):
         if not self.running or not self.tab:
             return
+        if force_restart and self.hunt_task and not self.hunt_task.done():
+            print("[Bot] Cancelando task de vendas anterior travada...")
+            self.hunt_task.cancel()
+            self.hunt_task = None
+
         if self.hunt_task is None or self.hunt_task.done():
             if self.hunt_task and self.hunt_task.done() and not self.hunt_task.cancelled():
                 try:

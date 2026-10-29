@@ -40,12 +40,20 @@ def save_hunts_cache(hunts: list[dict]) -> bool:
         return False
 
 
-def get_hunt_info(hunt_name: str) -> dict | None:
-    """Busca os dados de uma hunt (índice, level, tipo) a partir do nome no cache."""
-    if not hunt_name:
+def get_hunt_info(hunt_name: str | int) -> dict | None:
+    """Busca os dados de uma hunt (índice, level, tipo) a partir do nome ou índice no cache."""
+    if hunt_name is None:
         return None
     hunts = load_hunts_cache()
-    target = hunt_name.strip().lower()
+
+    # Se for numérico (índice 1-based da hunt na lista)
+    if isinstance(hunt_name, int) or (isinstance(hunt_name, str) and hunt_name.isdigit()):
+        idx = int(hunt_name)
+        return next((h for h in hunts if h.get("index") == idx), None)
+
+    target = str(hunt_name).strip().lower()
+    if not target:
+        return None
 
     # 1. Correspondência exata
     for h in hunts:
@@ -66,12 +74,27 @@ def get_hunt_info(hunt_name: str) -> dict | None:
             if h.get("name", "").strip().lower() == clean_sep:
                 return h
 
-    # 4. Correspondência por contenção (ex: "Amazon Camp" vs "Amazon")
+    # 4. Correspondência alfanumérica direta (ex: "darkthais" -> "Dark Thais")
+    norm_target = re.sub(r"[^a-z0-9]", "", target)
+    if norm_target:
+        for h in hunts:
+            h_norm = re.sub(r"[^a-z0-9]", "", h.get("name", "").lower())
+            if h_norm == norm_target:
+                return h
+
+    # 5. Correspondência por contenção (ex: "Amazon Camp" vs "Amazon")
     search_term = clean_sep or clean or target
     if len(search_term) >= 3:
         for h in hunts:
             h_name = h.get("name", "").strip().lower()
             if h_name and (h_name in search_term or search_term in h_name):
+                return h
+
+    # 6. Contenção alfanumérica (ex: "amazoncamp" contém "amazon")
+    if norm_target and len(norm_target) >= 4:
+        for h in hunts:
+            h_norm = re.sub(r"[^a-z0-9]", "", h.get("name", "").lower())
+            if h_norm and (h_norm in norm_target or norm_target in h_norm):
                 return h
 
     return None
@@ -271,6 +294,12 @@ def is_same_hunt(current_loc: str, target: str | int | dict) -> bool:
     if current_clean == target_clean:
         return True
 
+    # 1.1 Comparação alfanumérica pura (ex: "Dark Thais" vs "darkthais")
+    norm_cur = re.sub(r"[^a-z0-9]", "", current_str).lower()
+    norm_tar = re.sub(r"[^a-z0-9]", "", target_name).lower()
+    if norm_cur and norm_cur == norm_tar:
+        return True
+
     # 2. Resolução via cache de hunts
     info_cur = get_hunt_info(current_str)
     info_tar = get_hunt_info(target_name)
@@ -315,6 +344,11 @@ async def change_hunt(tab, hunt_identifier):
     if not tab:
         return False, "Aba indisponível."
 
+    # Normaliza o identificador para o nome canônico oficial se estiver no cache (ex: "darkthais" -> "Dark Thais")
+    info = get_hunt_info(str(hunt_identifier))
+    if info and info.get("name"):
+        hunt_identifier = info["name"]
+
     # 0. Verifica se o personagem já está na hunt de destino antes de abrir menus
     try:
         current_loc = await get_current_hunt(tab, timeout=1.0)
@@ -340,13 +374,18 @@ async def change_hunt(tab, hunt_identifier):
             let target = null;
             let targetIndex = -1;
             
+            const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const targetNorm = norm(identifier);
+            
             if (!isNaN(identifier) && Number(identifier) > 0 && Number(identifier) <= cards.length) {{
                 targetIndex = Number(identifier) - 1;
                 target = cards[targetIndex];
             }} else {{
                 targetIndex = cards.findIndex(c => {{
                     const b = c.querySelector('b');
-                    return b && b.innerText.trim().toLowerCase() === String(identifier).toLowerCase();
+                    if (!b) return false;
+                    const txt = b.innerText.trim();
+                    return txt.toLowerCase() === String(identifier).toLowerCase() || (targetNorm && norm(txt) === targetNorm);
                 }});
                 if (targetIndex !== -1) {{
                     target = cards[targetIndex];

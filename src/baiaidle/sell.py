@@ -23,6 +23,8 @@ from baiaidle.hunts import (
     go_to_training,
     go_to_house,
     repair_house_dummy,
+    get_hunt_info,
+    is_same_hunt,
 )
 from baiaidle.actions import get_party_average_level
 from baiaidle.guild import get_tracked_task_progress, process_guild_tasks, auto_select_best_guild_task
@@ -90,6 +92,7 @@ class HuntStats:
     is_in_training: bool = False
     training_type: str = ""
     is_in_invasion: bool = False
+    last_hunt: str = ""
 
     def reset(self):
         """Zera todos os dados da sessão."""
@@ -113,6 +116,7 @@ class HuntStats:
         self.session_crystal_coins = 0
         self.session_platinum_coins = 0
         self.session_gold_coins = 0
+        self.last_hunt = ""
         self.total_coin_gold = 0
         self.is_in_training = False
         self.training_type = ""
@@ -385,16 +389,28 @@ def is_training_location(location: str | None) -> tuple[bool, str]:
     return False, ""
 
 
+def is_city_location(location: str | None) -> bool:
+    """Verifica se a localização atual (#wave-title) é a Cidade."""
+    if not location or not isinstance(location, str):
+        return False
+    loc = location.strip().lower()
+    return any(k in loc for k in ["cidade", "city"])
+
+
 async def resolve_target_hunt(tab, stats: HuntStats | None = None) -> str:
     """
     Identifica a hunt atual. Se for desconhecida ou se o personagem estiver no treino/casa,
     retorna a hunt prioritária com base na hierarquia:
-    1. Missão do Passe de Batalha ativa no HUD
-    2. Task da Guilda ativa no HUD
+    1. Missão do Passe de Batalha ativa no HUD (resolvida para o nome canônico)
+    2. Task da Guilda ativa no HUD (resolvida para o nome canônico)
     3. Foco em Codex (se ativado)
-    4. Hunt padrão
+    4. Última hunt válida antes de ir para o treino (stats.last_hunt)
+    5. Hunt padrão (default_hunt)
     """
     fallback = (stats.default_hunt if stats and stats.default_hunt else DEFAULT_HUNT)
+    if stats and getattr(stats, "last_hunt", None):
+        fallback = stats.last_hunt
+
     if get_setting("codex_focus_enabled", False):
         codex_hunt = get_setting("codex_focus_hunt")
         if codex_hunt:
@@ -405,21 +421,35 @@ async def resolve_target_hunt(tab, stats: HuntStats | None = None) -> str:
         from baiaidle.guild import get_tracked_task_progress
         bp_data = await get_tracked_battlepass_progress(tab)
         if bp_data and not bp_data.get("finished"):
-            fallback = bp_data["hunt_name"]
+            bp_hunt = bp_data["hunt_name"]
+            info = get_hunt_info(bp_hunt)
+            fallback = info["name"] if info and info.get("name") else bp_hunt
         else:
             task_data = await get_tracked_task_progress(tab)
             if task_data and not task_data.get("finished"):
-                fallback = task_data["name"]
+                task_hunt = task_data["name"]
+                info = get_hunt_info(task_hunt)
+                fallback = info["name"] if info and info.get("name") else task_hunt
     except Exception:
         pass
+
+    # Garante que fallback seja sempre o nome canônico oficial se estiver no cache
+    info_fb = get_hunt_info(fallback)
+    if info_fb and info_fb.get("name"):
+        fallback = info_fb["name"]
 
     current = await get_current_hunt(tab)
     if not current or not isinstance(current, str):
         return fallback
     current = current.strip()
     is_training, _ = is_training_location(current)
-    if is_training or current.lower() == "hunt desconhecida":
+    if is_training or is_city_location(current) or current.lower() in ["hunt desconhecida", "carregando...", ""]:
         return fallback
+
+    # Se a localização atual for uma hunt válida (não cidade e não treino), atualiza o last_hunt no stats
+    if stats and not is_city_location(current):
+        stats.last_hunt = current
+
     return current
 
 
@@ -850,12 +880,31 @@ async def manage_training(tab, stop_event, pause_event, on_message, current_hunt
             if on_message:
                 await on_message(f"✅ {msg_done}")
             
-            # Tenta voltar para a hunt repetidamente até conseguir
+            # Tenta voltar para a hunt com limite de tentativas e fallback
             viagem_sucesso = False
+            attempts = 0
             while not viagem_sucesso and not stop_event.is_set():
+                if not pause_event.is_set():
+                    await pause_event.wait()
+                    if stop_event.is_set():
+                        break
+
+                attempts += 1
                 viagem_sucesso, msg_viagem = await change_hunt(tab, target_destination)
                 if not viagem_sucesso:
-                    print(f"⚠️ Falha ao voltar para a Hunt. Tentando novamente em 5s... Erro: {msg_viagem}")
+                    print(f"⚠️ Falha ao voltar para a Hunt ({target_destination}). Tentativa {attempts}/3. Erro: {msg_viagem}")
+                    if attempts >= 3:
+                        fallback_hunt = stats.default_hunt if stats and stats.default_hunt else DEFAULT_HUNT
+                        if target_destination != fallback_hunt:
+                            print(f"🔄 Tentando fallback para hunt padrão: {fallback_hunt}")
+                            if on_message:
+                                await on_message(f"⚠️ Falha ao ir para `{target_destination}` ({msg_viagem}). Redirecionando para hunt padrão: `{fallback_hunt}`.")
+                            target_destination = fallback_hunt
+                            attempts = 0
+                        else:
+                            if on_message:
+                                await on_message(f"❌ Erro crítico ao sair do Treino: não foi possível mudar para `{target_destination}` ({msg_viagem}).")
+                            break
                     await asyncio.sleep(5)
                     
             if stats:
@@ -973,12 +1022,31 @@ async def manage_house_training(tab, stop_event, pause_event, on_message, curren
             if on_message:
                 await on_message(f"✅ {msg_done}")
             
-            # Tenta voltar para a hunt repetidamente até conseguir
+            # Tenta voltar para a hunt com limite de tentativas e fallback
             viagem_sucesso = False
+            attempts = 0
             while not viagem_sucesso and not stop_event.is_set():
+                if not pause_event.is_set():
+                    await pause_event.wait()
+                    if stop_event.is_set():
+                        break
+
+                attempts += 1
                 viagem_sucesso, msg_viagem = await change_hunt(tab, target_destination)
                 if not viagem_sucesso:
-                    print(f"⚠️ Falha ao voltar para a Hunt. Tentando novamente em 5s... Erro: {msg_viagem}")
+                    print(f"⚠️ Falha ao voltar para a Hunt ({target_destination}). Tentativa {attempts}/3. Erro: {msg_viagem}")
+                    if attempts >= 3:
+                        fallback_hunt = stats.default_hunt if stats and stats.default_hunt else DEFAULT_HUNT
+                        if target_destination != fallback_hunt:
+                            print(f"🔄 Tentando fallback para hunt padrão: {fallback_hunt}")
+                            if on_message:
+                                await on_message(f"⚠️ Falha ao ir para `{target_destination}` ({msg_viagem}). Redirecionando para hunt padrão: `{fallback_hunt}`.")
+                            target_destination = fallback_hunt
+                            attempts = 0
+                        else:
+                            if on_message:
+                                await on_message(f"❌ Erro crítico ao sair do Treino: não foi possível mudar para `{target_destination}` ({msg_viagem}).")
+                            break
                     await asyncio.sleep(5)
 
             if stats:
@@ -1089,9 +1157,24 @@ async def run_sell(
                     continue
 
                 # ====================================================
-                # DETECÇÃO AUTOMÁTICA DE LOCALIZAÇÃO (TREINO / CASA)
+                # DETECÇÃO AUTOMÁTICA DE LOCALIZAÇÃO (CIDADE / TREINO / CASA)
                 # ====================================================
                 current_loc = await get_current_hunt(tab, timeout=2.0)
+                if is_city_location(current_loc):
+                    stats.is_in_training = False
+                    stats.training_type = ""
+                    target_hunt = await resolve_target_hunt(tab, stats)
+                    msg_city = f"🏰 Personagem detectado na Cidade ({current_loc}). Retornando para a hunt: {target_hunt}."
+                    print(msg_city)
+                    if on_message:
+                        await on_message(f"✅ {msg_city}")
+                    success_city, _ = await change_hunt(tab, target_hunt)
+                    if success_city:
+                        stats.force_sell = True
+                        if bot and hasattr(bot, "touch_activity"):
+                            bot.touch_activity()
+                    continue
+
                 is_training, train_type = is_training_location(current_loc)
                 if is_training:
                     stats.is_in_training = True
@@ -1137,6 +1220,8 @@ async def run_sell(
                 else:
                     stats.is_in_training = False
                     stats.training_type = ""
+                    if current_loc and not is_city_location(current_loc) and current_loc.lower() not in ["hunt desconhecida", "carregando...", ""]:
+                        stats.last_hunt = current_loc
                 # ====================================================
 
                 if not pause_event.is_set():
