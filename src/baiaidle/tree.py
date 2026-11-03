@@ -6,6 +6,7 @@ baseada em filas de prioridade customizadas para cada vocação:
 - Sorcerer (Royal MS): Foco Dano & Crítico + Avatar of Storm & Momentum
 - Knight (Royal Tyr): Foco Defesa, Armadura, HP & Cleave + Avatar of Steel & Gift of Life
 - Druid (Royal Eir): Foco Dano, Crítico & Suporte + Avatar of Nature & Gift of Life
+- Paladin (Royal Paladin / RP): Foco Dano Físico/Sagrado, Crítico, Velocidade de Ataque, Double Shot + Avatar of Light & Divine Grenade
 """
 
 import asyncio
@@ -19,142 +20,129 @@ from .settings import get_setting
 # ============================================================
 
 SORCERER_PRIORITY = [
-    # Capstones & Notáveis Lendários
-    "Avatar of Storm",
-    "Momentum",
     "Lord of Destruction",
-    "Focus Mastery",
-    "Rage of the Skies",
-    "Beam Mastery",
-    "Hell's Core",
-    # Dano Mágico & Crítico Primário
-    "Devastation",
-    "Arcane Power",
-    "Arcane Focus",
-    "Archmage",
-    "Cataclysm",
-    "Void Touch",
-    "Overchannel",
-    "Death Chill",
-    "Wildfire",
-    "Inferno",
-    "Voltaics",
-    "Conduit",
-    "Stormcall",
-    "Pyromancy",
-    "Ignite",
-    "Scorch",
-    "Quickened Casting",
     "Chain Arc I",
     "Chain Arc II",
-    "Battle Tactics",
-    "Deep Well",
-    "Mana Barrier",
-    "Bottomless Well",
-    "Soul Harvest",
-    "Reaper",
-    "Necromancy",
-    "Energy Ward",
-    "Fire Ward",
-    "Nether Ward",
+    "Avatar of Storm",
+    "Hell's Core",
+    "Focus Mastery",
+    "Death Chill",
+    "Devastation",
+    "Rage of the Skies",
+    "Momentum",
+    "Archmage",
+    "Cataclysm",
+    "Overchannel",
+    "Inferno",
+    "Arcane Power",
+    "Wildfire",
+    "Scorch",
+    "Pyromancy",
+    "Ignite",
+    "Quickened Casting",
+    "Void Touch",
+    "Arcane Focus",
     "Scholar",
-    "Mind Spring",
-    "Essence Drain",
-    "Lichform",
+    "Bottomless Well",
+    "Mana Barrier",
+    "Reaper"
 ]
 
 KNIGHT_PRIORITY = [
-    # Capstones & Notáveis Defensivos / Utilitários
-    "Avatar of Steel",
     "Gift of Life",
-    "Colossus",
-    "Battle Instinct",
+    "Avatar of Steel",
     "Battle Healing",
-    "Combat Mastery",
-    "Berserk Mastery",
-    "Executioner",
     "Cleaving Strikes I",
-    "Cleaving Strikes II",
-    "Cleaving Strikes III",
-    # Defesa, Armadura, Vida e Resistências
-    "Plating",
-    "Bulwark",
+    "Colossus",
+    "Deep Vitality",
+    "Combat Mastery",
+    "Juggernaut",
     "Vigor",
     "Toughness",
-    "Resilience",
-    "Guardian",
-    "Juggernaut",
-    "Second Skin",
-    "Fortress",
-    "Deep Vitality",
+    "Executioner",
     "Iron Will",
-    "Vampiric Blows",
+    "Guardian",
+    "Second Skin",
     "Bloodlust",
-    "Second Wind",
-    "Fire Ward",
-    "Death Ward",
-    "Ice Ward",
-    "Energy Ward",
-    # Ataque & Crítico
-    "Sharpened Steel",
-    "Brutality",
-    "Overpower",
-    "Carnage",
+    "Vampiric Blows",
+    "Plating",
+    "Bulwark",
+    "Fortress",
+    "Warlust",
+    "Resilience",
+    "Cleave",
     "Fury",
     "Warlord's Edge",
-    "Cleave",
-    "Warlust",
-    "Skull Smash",
-    "Smite",
-    "Rampage",
+    "Second Wind",
+    "Carnage",
+    "Overpower",
     "Battle Haste",
+    "Smite",
+    "Skull Smash",
     "Cold Precision",
-    "Battle Tactics",
+    "Sharpened Steel",
+    "Fire Ward",
+    "Energy Ward"
 ]
 
 DRUID_PRIORITY = [
-    # Capstones & Notáveis de Dano / Sobrevivência
-    "Avatar of Nature",
-    "Gift of Life",
-    "Twin Bursts",
-    "Wrath of Nature",
-    "Hail Storm",
-    "Blessing of the Grove",
-    "Healing Link",
     "Wild Chain I",
     "Wild Chain II",
-    # Dano Mágico & Crítico Primário
+    "Hail Storm",
+    "Avatar of Nature",
     "Frostbite",
-    "Wild Focus",
-    "Nature's Wrath",
-    "Winter Heart",
+    "Wrath of Nature",
     "Elder Wisdom",
-    "Permafrost",
-    "Frost Attunement",
-    "Glacier",
-    "Terra Attunement",
-    "Overgrowth",
     "Evergreen",
-    # Suporte & Vida
-    "Mending",
-    "Lifebloom",
-    "Lifekeeper",
-    "Barkskin",
-    "Grove Guardian",
-    "World Tree",
-    "Spring",
-    "Nature's Bond",
-    "Stone Skin",
-    "Deep Roots",
-    "Ice Ward",
-    "Sap Life",
-    "Regrowth",
-    "Fortune",
-    "Herbalist",
-    "Lucky Charm",
-    "Windfall",
+    "Winter Heart",
+    "Nature's Wrath",
+    "Glacier",
+    "Frost Attunement",
     "Battle Tactics",
+    "Permafrost",
+    "Wild Focus",
+    "Sap Life",
+    "Gift of Life",
+    "Herbalist",
+    "Nature's Bond",
+    "Spring",
+    "Lifekeeper",
+    "Lucky Charm",
+    "Barkskin",
+    "Mending"
 ]
+
+PALADIN_PRIORITY = [
+    "Sharpshooter",
+    "Positional Tactics",
+    "Avatar of Light",
+    "Culling Shot",
+    "Lightbringer",
+    "Deadly Aim",
+    "Swift Quiver",
+    "Volley",
+    "Double Shot I",
+    "Divine Caldera",
+    "Power Shot",
+    "Rapid Fire",
+    "Relentless",
+    "Marksman",
+    "Zealot",
+    "Might",
+    "Piercing Bolts",
+    "Battle Tactics",
+    "Hawkeye",
+    "Keen Aim",
+    "Precision",
+    "Lifesteal Shot",
+    "Hunter's Pace",
+    "Spirit Sip",
+    "Faith",
+    "Vitality",
+    "Scavenger",
+    "Holy Ward"
+]
+
 
 
 def get_priority_for_vocation(vocation: str = "", char_index: int | None = None) -> List[str]:
@@ -164,14 +152,18 @@ def get_priority_for_vocation(vocation: str = "", char_index: int | None = None)
         return KNIGHT_PRIORITY
     if any(k in voc for k in ["druid", "ed", "eir", "heal", "sup"]):
         return DRUID_PRIORITY
+    if any(k in voc for k in ["paladin", "rp", "pala", "archer", "distance"]):
+        return PALADIN_PRIORITY
     if any(k in voc for k in ["sorc", "ms", "mage", "dps"]):
         return SORCERER_PRIORITY
 
-    # Fallback por índice da party (0: MS, 1: EK, 2: ED)
+    # Fallback por índice da party (0: MS, 1: EK, 2: ED, 3: RP)
     if char_index == 1:
         return KNIGHT_PRIORITY
     elif char_index == 2:
         return DRUID_PRIORITY
+    elif char_index == 3:
+        return PALADIN_PRIORITY
     return SORCERER_PRIORITY
 
 
@@ -467,7 +459,8 @@ async def run_auto_tree(page, force: bool = False) -> Dict[str, Any]:
         const priorities = {{
             0: {json.dumps(SORCERER_PRIORITY)},
             1: {json.dumps(KNIGHT_PRIORITY)},
-            2: {json.dumps(DRUID_PRIORITY)}
+            2: {json.dumps(DRUID_PRIORITY)},
+            3: {json.dumps(PALADIN_PRIORITY)}
         }};
 
         const count = document.querySelectorAll('.tree-char').length || 3;
@@ -504,6 +497,8 @@ async def run_auto_tree(page, force: bool = False) -> Dict[str, Any]:
                 priority = priorities[1];
             }} else if (vocLower.includes('druid') || vocLower.includes('eir') || vocLower.includes('ed') || vocLower.includes('sup')) {{
                 priority = priorities[2];
+            }} else if (vocLower.includes('paladin') || vocLower.includes('rp') || vocLower.includes('pala') || vocLower.includes('archer')) {{
+                priority = priorities[3];
             }} else if (vocLower.includes('sorc') || vocLower.includes('ms') || vocLower.includes('mage')) {{
                 priority = priorities[0];
             }}

@@ -5,6 +5,7 @@ from baiaidle.tree import (
     SORCERER_PRIORITY,
     KNIGHT_PRIORITY,
     DRUID_PRIORITY,
+    PALADIN_PRIORITY,
     get_priority_for_vocation,
     get_tree_status,
     auto_allocate_character_points,
@@ -32,6 +33,12 @@ class TestTreePriorities(unittest.TestCase):
         self.assertIn("Twin Bursts", DRUID_PRIORITY)
         self.assertIn("Blessing of the Grove", DRUID_PRIORITY)
 
+        # RP capstones & distance/crit
+        self.assertIn("Avatar of Light", PALADIN_PRIORITY)
+        self.assertIn("Double Shot III", PALADIN_PRIORITY)
+        self.assertIn("Divine Grenade", PALADIN_PRIORITY)
+        self.assertIn("Ballistic Mastery", PALADIN_PRIORITY)
+
     def test_get_priority_for_vocation(self):
         self.assertEqual(get_priority_for_vocation("Royal MS"), SORCERER_PRIORITY)
         self.assertEqual(get_priority_for_vocation("Master Sorcerer"), SORCERER_PRIORITY)
@@ -44,6 +51,11 @@ class TestTreePriorities(unittest.TestCase):
         self.assertEqual(get_priority_for_vocation("Royal Eir"), DRUID_PRIORITY)
         self.assertEqual(get_priority_for_vocation("Elder Druid"), DRUID_PRIORITY)
         self.assertEqual(get_priority_for_vocation("ED"), DRUID_PRIORITY)
+
+        self.assertEqual(get_priority_for_vocation("Royal Paladin"), PALADIN_PRIORITY)
+        self.assertEqual(get_priority_for_vocation("Paladin"), PALADIN_PRIORITY)
+        self.assertEqual(get_priority_for_vocation("RP"), PALADIN_PRIORITY)
+        self.assertEqual(get_priority_for_vocation(char_index=3), PALADIN_PRIORITY)
 
 
 class TestTreeExecution(unittest.IsolatedAsyncioTestCase):

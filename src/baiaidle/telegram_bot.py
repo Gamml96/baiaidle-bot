@@ -1356,7 +1356,8 @@ class TelegramController:
                     "O bot distribuirá pontos pendentes automaticamente seguindo a prioridade:\n"
                     "• *MS*: Dano Mágico & Crítico ➔ Avatar of Storm\n"
                     "• *Eir (ED)*: Cura & Dano Mágico ➔ Avatar of Nature\n"
-                    "• *Tyr (EK)*: Defesa, Armadura & HP ➔ Avatar of Steel",
+                    "• *Tyr (EK)*: Defesa, Armadura & HP ➔ Avatar of Steel\n"
+                    "• *RP*: Dano à Distância & Sagrado ➔ Avatar of Light",
                     parse_mode="Markdown"
                 )
                 return
@@ -1432,6 +1433,7 @@ class TelegramController:
             "• *Royal MS*: Dano Mágico & Crítico ➔ Avatar of Storm (T11)",
             "• *Royal Eir*: Cura & Dano Mágico ➔ Avatar of Nature (T11)",
             "• *Royal Tyr*: Defesa, Armadura & HP ➔ Avatar of Steel (T11)",
+            "• *Royal Paladin (RP)*: Dano Físico/Sagrado & Double Shot ➔ Avatar of Light (T11)",
             "",
             "Comandos:",
             "• `/arvore on` - Ativa alocação automática periódica",
@@ -2114,6 +2116,7 @@ class TelegramController:
                 "• *Royal MS*: Dano Mágico & Crítico ➔ Avatar of Storm",
                 "• *Royal Eir*: Cura & Dano Mágico ➔ Avatar of Nature",
                 "• *Royal Tyr*: Defesa, Armadura & HP ➔ Avatar of Steel",
+                "• *Royal Paladin (RP)*: Dano Físico/Sagrado & Double Shot ➔ Avatar of Light",
             ])
             keyboard = [
                 [
@@ -2143,6 +2146,7 @@ class TelegramController:
                 "• *Royal MS*: Dano Mágico & Crítico ➔ Avatar of Storm",
                 "• *Royal Eir*: Cura & Dano Mágico ➔ Avatar of Nature",
                 "• *Royal Tyr*: Defesa, Armadura & HP ➔ Avatar of Steel",
+                "• *Royal Paladin (RP)*: Dano Físico/Sagrado & Double Shot ➔ Avatar of Light",
             ]
             keyboard = [
                 [

@@ -2097,5 +2097,692 @@
         "flavor": "A floresta inteira respira com você"
       }
     ]
+  },
+  "paladin": {
+    "voc": "paladin",
+    "nodes": [
+      {
+        "id": "p_might",
+        "name": "Might",
+        "kind": "small",
+        "tier": 0,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "atkPct": 1.5
+        }
+      },
+      {
+        "id": "p_aim",
+        "name": "Keen Aim",
+        "kind": "small",
+        "tier": 0,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "critChance": 0.5
+        }
+      },
+      {
+        "id": "p_vitality",
+        "name": "Vitality",
+        "kind": "small",
+        "tier": 0,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "hpPct": 1
+        }
+      },
+      {
+        "id": "p_faith",
+        "name": "Faith",
+        "kind": "small",
+        "tier": 0,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 1,
+        "per": {
+          "manaPct": 1.5
+        }
+      },
+      {
+        "id": "p_rapid",
+        "name": "Rapid Fire",
+        "kind": "small",
+        "tier": 1,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "p_might",
+          "p_aim"
+        ],
+        "per": {
+          "attackSpeedPct": 1.5
+        }
+      },
+      {
+        "id": "p_ward",
+        "name": "Holy Ward",
+        "kind": "small",
+        "tier": 1,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "p_vitality",
+          "p_faith"
+        ],
+        "per": {
+          "absorbPct": {
+            "holy": 0.5
+          }
+        }
+      },
+      {
+        "id": "p_piercing",
+        "name": "Piercing Bolts",
+        "kind": "small",
+        "tier": 2,
+        "col": 0,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "p_rapid"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "physical": 1
+          }
+        }
+      },
+      {
+        "id": "p_power",
+        "name": "Power Shot",
+        "kind": "small",
+        "tier": 2,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "p_rapid"
+        ],
+        "per": {
+          "critDmg": 2
+        }
+      },
+      {
+        "id": "p_blessed",
+        "name": "Blessed Ammunition",
+        "kind": "small",
+        "tier": 2,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "p_ward"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "holy": 1
+          }
+        }
+      },
+      {
+        "id": "p_scavenger",
+        "name": "Scavenger",
+        "kind": "small",
+        "tier": 2,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "p_ward"
+        ],
+        "per": {
+          "lootPct": 1
+        }
+      },
+      {
+        "id": "p_precision",
+        "name": "Precision",
+        "kind": "small",
+        "tier": 3,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "p_piercing",
+          "p_power"
+        ],
+        "per": {
+          "critChance": 0.5
+        }
+      },
+      {
+        "id": "p_leech",
+        "name": "Lifesteal Shot",
+        "kind": "small",
+        "tier": 3,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "p_power",
+          "p_blessed"
+        ],
+        "per": {
+          "lifeLeech": 0.4
+        }
+      },
+      {
+        "id": "p_pace",
+        "name": "Hunter's Pace",
+        "kind": "small",
+        "tier": 3,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 1,
+        "requires": [
+          "p_scavenger",
+          "p_blessed"
+        ],
+        "per": {
+          "expPct": 1
+        }
+      },
+      {
+        "id": "p_positional",
+        "name": "Positional Tactics",
+        "kind": "notable",
+        "tier": 4,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 50,
+        "requires": [
+          "p_precision"
+        ],
+        "per": {
+          "attackSpeedPct": 6,
+          "critChance": 3
+        },
+        "flavor": "Posicionamento perfeito: cadência e precisão"
+      },
+      {
+        "id": "p_swift",
+        "name": "Swift Quiver",
+        "kind": "small",
+        "tier": 4,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_precision"
+        ],
+        "per": {
+          "attackSpeedPct": 2
+        }
+      },
+      {
+        "id": "p_caldera",
+        "name": "Divine Caldera",
+        "kind": "notable",
+        "tier": 4,
+        "col": 4,
+        "maxRank": 1,
+        "cost": 50,
+        "requires": [
+          "p_leech",
+          "p_pace"
+        ],
+        "per": {
+          "spellDmgPct": 6,
+          "elementDmgPct": {
+            "holy": 4
+          }
+        },
+        "icon": {
+          "sheet": "spell",
+          "spell": "exevo mas san"
+        },
+        "flavor": "A caldera sagrada amplifica suas magias"
+      },
+      {
+        "id": "p_spirit",
+        "name": "Spirit Sip",
+        "kind": "small",
+        "tier": 4,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_pace"
+        ],
+        "per": {
+          "manaLeech": 0.3
+        }
+      },
+      {
+        "id": "p_marksman",
+        "name": "Marksman",
+        "kind": "small",
+        "tier": 5,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_positional",
+          "p_swift"
+        ],
+        "per": {
+          "atkPct": 2
+        }
+      },
+      {
+        "id": "p_sanctify",
+        "name": "Sanctify",
+        "kind": "small",
+        "tier": 5,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_caldera",
+          "p_leech"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "holy": 1.2
+          }
+        }
+      },
+      {
+        "id": "p_aegis",
+        "name": "Aegis",
+        "kind": "small",
+        "tier": 5,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_spirit",
+          "p_caldera"
+        ],
+        "per": {
+          "absorbPct": 0.010000000000000002
+        }
+      },
+      {
+        "id": "p_precision1",
+        "name": "Double Shot I",
+        "kind": "notable",
+        "tier": 5,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 100,
+        "requires": [
+          "p_positional"
+        ],
+        "special": {
+          "key": "precision",
+          "value": 6
+        },
+        "desc": "6% de chance de disparar um SEGUNDO tiro completo"
+      },
+      {
+        "id": "p_tactics",
+        "name": "Battle Tactics",
+        "kind": "small",
+        "tier": 5,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_spirit"
+        ],
+        "special": {
+          "key": "tactics",
+          "value": 1
+        },
+        "desc": "Afia a IA de combate: mira, posicionamento e reação (+100 níveis de tática por rank)"
+      },
+      {
+        "id": "p_sharpshooter",
+        "name": "Sharpshooter",
+        "kind": "notable",
+        "tier": 6,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 100,
+        "requires": [
+          "p_marksman"
+        ],
+        "per": {
+          "critDmg": 15,
+          "critChance": 3
+        },
+        "flavor": "Nenhum tiro desperdiçado"
+      },
+      {
+        "id": "p_deadly",
+        "name": "Deadly Aim",
+        "kind": "small",
+        "tier": 6,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_marksman"
+        ],
+        "per": {
+          "critDmg": 2.5
+        }
+      },
+      {
+        "id": "p_grace",
+        "name": "Divine Grace",
+        "kind": "small",
+        "tier": 6,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_sanctify",
+          "p_aegis"
+        ],
+        "per": {
+          "hpPct": 1.2
+        }
+      },
+      {
+        "id": "p_holy_ground",
+        "name": "Holy Ground",
+        "kind": "small",
+        "tier": 6,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_aegis"
+        ],
+        "per": {
+          "absorbPct": {
+            "death": 0.6,
+            "holy": 0.6
+          }
+        }
+      },
+      {
+        "id": "p_volley",
+        "name": "Volley",
+        "kind": "small",
+        "tier": 7,
+        "col": 1,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_deadly",
+          "p_sharpshooter"
+        ],
+        "per": {
+          "attackSpeedPct": 2
+        }
+      },
+      {
+        "id": "p_zealot",
+        "name": "Zealot",
+        "kind": "small",
+        "tier": 7,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_grace",
+          "p_deadly"
+        ],
+        "per": {
+          "atkPct": 2
+        }
+      },
+      {
+        "id": "p_reprisal",
+        "name": "Reprisal",
+        "kind": "small",
+        "tier": 7,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 2,
+        "requires": [
+          "p_holy_ground",
+          "p_grace"
+        ],
+        "per": {
+          "defFlat": 1.5
+        }
+      },
+      {
+        "id": "p_precision2",
+        "name": "Double Shot II",
+        "kind": "notable",
+        "tier": 7,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "p_precision1"
+        ],
+        "special": {
+          "key": "precision",
+          "value": 6
+        },
+        "desc": "A chance do segundo tiro sobe pra 12%"
+      },
+      {
+        "id": "p_ballistic",
+        "name": "Ballistic Mastery",
+        "kind": "notable",
+        "tier": 8,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 150,
+        "requires": [
+          "p_volley"
+        ],
+        "special": {
+          "key": "element_pierce",
+          "value": 20
+        },
+        "desc": "Ignora 20% da resistência elemental do monstro"
+      },
+      {
+        "id": "p_hawkeye",
+        "name": "Hawkeye",
+        "kind": "small",
+        "tier": 8,
+        "col": 2,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "p_volley"
+        ],
+        "per": {
+          "critChance": 0.8
+        }
+      },
+      {
+        "id": "p_crusader",
+        "name": "Crusader",
+        "kind": "small",
+        "tier": 8,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "p_zealot",
+          "p_reprisal"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "holy": 1.5
+          }
+        }
+      },
+      {
+        "id": "p_bastion",
+        "name": "Bastion",
+        "kind": "small",
+        "tier": 8,
+        "col": 6,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "p_reprisal"
+        ],
+        "per": {
+          "absorbPct": 0.015
+        }
+      },
+      {
+        "id": "p_exec_throw",
+        "name": "Culling Shot",
+        "kind": "notable",
+        "tier": 9,
+        "col": 1,
+        "maxRank": 1,
+        "cost": 200,
+        "requires": [
+          "p_hawkeye",
+          "p_ballistic"
+        ],
+        "special": {
+          "key": "execute",
+          "value": 35
+        },
+        "desc": "+35% de dano em monstros abaixo de 25% do HP"
+      },
+      {
+        "id": "p_relentless",
+        "name": "Relentless",
+        "kind": "small",
+        "tier": 9,
+        "col": 3,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "p_hawkeye",
+          "p_crusader"
+        ],
+        "per": {
+          "atkPct": 2.5
+        }
+      },
+      {
+        "id": "p_sanctuary_p",
+        "name": "Sacred Bulwark",
+        "kind": "small",
+        "tier": 9,
+        "col": 5,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "p_bastion",
+          "p_crusader"
+        ],
+        "per": {
+          "hpPct": 1.5
+        }
+      },
+      {
+        "id": "p_grenade",
+        "name": "Divine Grenade",
+        "kind": "notable",
+        "tier": 10,
+        "col": 2,
+        "maxRank": 1,
+        "cost": 200,
+        "requires": [
+          "p_relentless",
+          "p_exec_throw"
+        ],
+        "per": {
+          "elementDmgPct": {
+            "holy": 8
+          },
+          "spellDmgPct": 6
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 4
+        },
+        "flavor": "Explosão sagrada devastadora"
+      },
+      {
+        "id": "p_lightbringer",
+        "name": "Lightbringer",
+        "kind": "small",
+        "tier": 10,
+        "col": 4,
+        "maxRank": 10,
+        "cost": 3,
+        "requires": [
+          "p_sanctuary_p",
+          "p_relentless"
+        ],
+        "per": {
+          "critDmg": 3
+        }
+      },
+      {
+        "id": "p_precision3",
+        "name": "Double Shot III",
+        "kind": "notable",
+        "tier": 10,
+        "col": 0,
+        "maxRank": 1,
+        "cost": 200,
+        "requires": [
+          "p_precision2"
+        ],
+        "special": {
+          "key": "precision",
+          "value": 6
+        },
+        "desc": "A chance do segundo tiro sobe pra 18%"
+      },
+      {
+        "id": "p_avatar_light",
+        "name": "Avatar of Light",
+        "kind": "notable",
+        "tier": 11,
+        "col": 3,
+        "maxRank": 1,
+        "cost": 300,
+        "requires": [
+          "p_grenade",
+          "p_lightbringer"
+        ],
+        "per": {
+          "atkPct": 10,
+          "elementDmgPct": {
+            "holy": 6
+          },
+          "absorbPct": 0.1
+        },
+        "special": {
+          "key": "avatar",
+          "value": 5
+        },
+        "icon": {
+          "sheet": "wheel",
+          "idx": 6
+        },
+        "desc": "5% de chance, por golpe ou magia que ACERTA, de entrar na forma avatar por 15s (crita sempre e -3% de dano recebido)",
+        "flavor": "A luz não erra o alvo"
+      }
+    ]
   }
 }
