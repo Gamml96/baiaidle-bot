@@ -256,12 +256,18 @@ class TelegramController:
             BotCommand("start", "🟢 Iniciar o bot e abrir painel"),
             BotCommand("stop", "🔴 Parar o bot"),
             BotCommand("config", "⚙️ Painel de configurações rápidas"),
+            BotCommand("settier", "📦 Definir tier mínimo para o baú"),
+            BotCommand("setattrs", "💎 Definir atributos para o baú"),
+            BotCommand("defaulthunt", "🧭 Definir hunt padrão pós-treino"),
             BotCommand("party", "👥 Ver status da equipe"),
             BotCommand("hunts", "🗺️ Listar hunts disponíveis"),
             BotCommand("hunt", "🏹 Mudar de hunt"),
             BotCommand("bosses", "⚔️ Listar bosses e cargas"),
             BotCommand("autoboss", "🚀 Iniciar AutoBoss"),
             BotCommand("stopautoboss", "⏹️ Parar AutoBoss"),
+            BotCommand("setautoboss", "📋 Definir lista padrão de bosses"),
+            BotCommand("autoboss_on", "⏰ Ligar agendamento 00h"),
+            BotCommand("autoboss_off", "🔕 Desligar agendamento 00h"),
             BotCommand("treino", "🧘‍♂️ Forçar ida para Treino Online"),
             BotCommand("casa", "🏠 Forçar ida para Dummie da Casa"),
             BotCommand("guildtask", "🎯 Gerenciar tasks da Guilda"),
@@ -275,6 +281,7 @@ class TelegramController:
             BotCommand("recuperar", "🛠️ Fechar avisos e recuperar sessão"),
             BotCommand("reset", "🧹 Zerar estatísticas e Analyzer"),
             BotCommand("help", "❓ Mostrar lista de ajuda"),
+            BotCommand("ajuda", "❓ Mostrar lista de ajuda"),
         ]
 
         try:
@@ -2375,6 +2382,114 @@ class TelegramController:
                 parse_mode="Markdown"
             )
 
+        elif data == "cfg_menu_attrs":
+            settings = load_settings()
+            current_attrs = settings.get("stash_attributes", [])
+            current_str = ", ".join(current_attrs) if current_attrs else "Nenhum (salvando apenas por Tier)"
+
+            def attr_btn(name, key):
+                is_on = any(key == a for a in current_attrs)
+                prefix = "🟢" if is_on else "⚪"
+                return InlineKeyboardButton(f"{prefix} {name}", callback_data=f"cfg_toggle_attr_{key}")
+
+            keyboard = [
+                [
+                    attr_btn("Exp", "exp"),
+                    attr_btn("Onslaught", "onslaught"),
+                ],
+                [
+                    attr_btn("Crit Chance", "crit chance"),
+                    attr_btn("Crit Damage", "crit damage"),
+                ],
+                [
+                    attr_btn("Life Leech", "life leech"),
+                    attr_btn("Mana Leech", "mana leech"),
+                ],
+                [
+                    attr_btn("Loot", "loot"),
+                    attr_btn("Attack Speed", "attack speed"),
+                ],
+                [
+                    InlineKeyboardButton("🧹 Limpar Todos", callback_data="cfg_clear_attrs"),
+                    InlineKeyboardButton("🔙 Voltar", callback_data="btn_config"),
+                ],
+            ]
+            msg = (
+                "💎 *CONFIGURAÇÃO • ATRIBUTOS DE PROTEÇÃO (BACKPACK)*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🛡️ *Atributos Ativos:* `{current_str}`\n\n"
+                "_Itens com qualquer um destes atributos serão guardados na Backpack antes da venda, independente do Tier._\n\n"
+                "Toque nos botões para ligar/desligar, ou digite `/setattrs <atributos>` para configurar livremente."
+            )
+            await query.edit_message_text(
+                msg,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+
+        elif data.startswith("cfg_toggle_attr_"):
+            key = data.replace("cfg_toggle_attr_", "").strip().lower()
+            settings = load_settings()
+            current_attrs = list(settings.get("stash_attributes", []))
+            if any(key == a for a in current_attrs):
+                current_attrs = [a for a in current_attrs if a != key]
+            else:
+                current_attrs.append(key)
+            set_setting("stash_attributes", current_attrs)
+
+            settings = load_settings()
+            current_str = ", ".join(current_attrs) if current_attrs else "Nenhum (salvando apenas por Tier)"
+
+            def attr_btn(name, k):
+                is_on = any(k == a for a in current_attrs)
+                prefix = "🟢" if is_on else "⚪"
+                return InlineKeyboardButton(f"{prefix} {name}", callback_data=f"cfg_toggle_attr_{k}")
+
+            keyboard = [
+                [
+                    attr_btn("Exp", "exp"),
+                    attr_btn("Onslaught", "onslaught"),
+                ],
+                [
+                    attr_btn("Crit Chance", "crit chance"),
+                    attr_btn("Crit Damage", "crit damage"),
+                ],
+                [
+                    attr_btn("Life Leech", "life leech"),
+                    attr_btn("Mana Leech", "mana leech"),
+                ],
+                [
+                    attr_btn("Loot", "loot"),
+                    attr_btn("Attack Speed", "attack speed"),
+                ],
+                [
+                    InlineKeyboardButton("🧹 Limpar Todos", callback_data="cfg_clear_attrs"),
+                    InlineKeyboardButton("🔙 Voltar", callback_data="btn_config"),
+                ],
+            ]
+            msg = (
+                "💎 *CONFIGURAÇÃO • ATRIBUTOS DE PROTEÇÃO (BACKPACK)*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🛡️ *Atributos Ativos:* `{current_str}`\n\n"
+                "_Itens com qualquer um destes atributos serão guardados na Backpack antes da venda, independente do Tier._\n\n"
+                "Toque nos botões para ligar/desligar, ou digite `/setattrs <atributos>` para configurar livremente."
+            )
+            await query.edit_message_text(
+                msg,
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+
+        elif data == "cfg_clear_attrs":
+            set_setting("stash_attributes", [])
+            settings = load_settings()
+            await query.answer("🧹 Atributos limpos! O bot salvará apenas por Tier.", show_alert=True)
+            await query.edit_message_text(
+                self.format_config_message(settings),
+                reply_markup=self.get_config_keyboard(settings),
+                parse_mode="Markdown"
+            )
+
         elif data == "cfg_menu_wd":
             keyboard = [
                 [
@@ -2515,6 +2630,51 @@ class TelegramController:
             )
         except ValueError:
             await update.message.reply_text("❌ Por favor, digite apenas números. Ex: /settier 4")
+
+    @authorized_only
+    @require_bot_running
+    async def setattrs(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Define atributos de raridade para guardar itens automaticamente no baú."""
+        current_attrs = get_setting("stash_attributes", [])
+
+        if not context.args:
+            current_str = ", ".join(current_attrs) if current_attrs else "Nenhum (salvando apenas por Tier)"
+            msg = (
+                "💎 *CONFIGURAÇÃO • ATRIBUTOS DE ITENS PARA O BAÚ*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🛡️ *Atributos Ativos:* `{current_str}`\n\n"
+                "Quando configurado, qualquer item que possuir esses atributos será automaticamente "
+                "enviado para o *Backpack* antes da venda, independente do Tier!\n\n"
+                "📌 *Como usar:*\n"
+                "• `/setattrs exp, onslaught` - Protege itens com Exp ou Onslaught\n"
+                "• `/setattrs crit damage, life leech` - Protege atributos específicos\n"
+                "• `/setattrs off` (ou `limpar`) - Desativa a proteção por atributo\n\n"
+                "💡 *Atributos Populares:* `onslaught`, `exp`, `crit chance`, `crit damage`, "
+                "`life leech`, `mana leech`, `loot`, `attack speed`, `spell damage`, `max hp`"
+            )
+            await self.reply_safe(update, msg, parse_mode="Markdown")
+            return
+
+        arg = " ".join(context.args).lower().strip()
+        if arg in ["off", "0", "false", "nenhum", "limpar", "desativar", "reset"]:
+            set_setting("stash_attributes", [])
+            await self.reply_safe(update, "🛑 *Filtro de atributos desativado!* O bot voltará a guardar itens apenas pelo Tier mínimo.", parse_mode="Markdown")
+            return
+
+        raw_parts = [p.strip().lower() for p in arg.split(",") if p.strip()]
+        new_attrs = []
+        for p in raw_parts:
+            if p not in new_attrs:
+                new_attrs.append(p)
+
+        set_setting("stash_attributes", new_attrs)
+        await self.reply_safe(
+            update,
+            f"✅ *Atributos de proteção atualizados com sucesso!*\n\n"
+            f"🛡️ *Atributos Protegidos:* `{', '.join(new_attrs)}`\n\n"
+            f"_Qualquer item que possuir algum desses atributos será guardado na Backpack antes de cada venda!_",
+            parse_mode="Markdown"
+        )
 
     @authorized_only
     async def defaulthunt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2995,9 +3155,10 @@ class TelegramController:
             ],
             [
                 InlineKeyboardButton("🎁 Daily", callback_data="btn_action_daily"),
-                InlineKeyboardButton(pause_label, callback_data="btn_pause_toggle"),
+                InlineKeyboardButton("🌳 Alocar Árvore", callback_data="btn_arvore_run"),
             ],
             [
+                InlineKeyboardButton(pause_label, callback_data="btn_pause_toggle"),
                 InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
             ],
         ]
@@ -3062,12 +3223,15 @@ class TelegramController:
         auto_m_icon = "🟢 Ativado" if settings.get("auto_missions_after_boss", True) else "🔴 Desativado"
         arvore_icon = "🟢 Ativado" if settings.get("auto_tree_enabled", True) else "🔴 Desativado"
         codex_icon = "🟢 Ativado" if settings.get("codex_focus_enabled", False) else "🔴 Desativado"
+        attrs = settings.get("stash_attributes", [])
+        attrs_str = ", ".join(attrs) if attrs else "Nenhum"
 
         return (
             "⚙️ *PAINEL DE CONFIGURAÇÕES RÁPIDAS*\n\n"
             f"⚡ *Stamina para Treino:* `{settings.get('stamina_treino', 20)}%` (pausa hunt e vai treinar)\n"
             f"🔋 *Stamina de Retorno:* `{settings.get('stamina_retorno', 100)}%` (volta à hunt pós-treino)\n"
             f"📦 *Guardar no Baú:* `Tier {settings.get('min_tier_stash', 4)}+`\n"
+            f"💎 *Atributos no Baú:* `{attrs_str}`\n"
             f"⏱️ *Watchdog Antitravamento:* `{settings.get('watchdog_minutes', 10)} min`\n"
             f"📖 *Auto Foco no Codex:* {codex_icon}\n"
             f"🌳 *Auto Árvore de Habilidades:* {arvore_icon}\n"
@@ -3084,6 +3248,7 @@ class TelegramController:
         auto_m_label = "🚀 Auto Missões: ON" if settings.get("auto_missions_after_boss", True) else "🚀 Auto Missões: OFF"
         arvore_label = "🌳 Árvore: ON" if settings.get("auto_tree_enabled", True) else "🌳 Árvore: OFF"
         codex_label = "📖 Codex: ON" if settings.get("codex_focus_enabled", False) else "📖 Codex: OFF"
+        attrs = settings.get("stash_attributes", [])
 
         keyboard = [
             [
@@ -3092,21 +3257,22 @@ class TelegramController:
             ],
             [
                 InlineKeyboardButton(f"📦 Baú (Tier {settings.get('min_tier_stash', 4)}+)", callback_data="cfg_menu_tier"),
+                InlineKeyboardButton(f"💎 Atributos ({len(attrs)})", callback_data="cfg_menu_attrs"),
+            ],
+            [
                 InlineKeyboardButton(f"⏱️ Watchdog ({settings.get('watchdog_minutes', 10)}m)", callback_data="cfg_menu_wd"),
-            ],
-            [
                 InlineKeyboardButton(codex_label, callback_data="cfg_toggle_codex"),
+            ],
+            [
                 InlineKeyboardButton(arvore_label, callback_data="cfg_toggle_arvore"),
-            ],
-            [
                 InlineKeyboardButton(auto_m_label, callback_data="cfg_toggle_auto_missions"),
+            ],
+            [
                 InlineKeyboardButton(vendas_label, callback_data="cfg_toggle_sales"),
-            ],
-            [
                 InlineKeyboardButton(tasks_label, callback_data="cfg_toggle_tasks"),
-                InlineKeyboardButton("🔄 Atualizar", callback_data="cfg_refresh"),
             ],
             [
+                InlineKeyboardButton("🔄 Atualizar", callback_data="cfg_refresh"),
                 InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
             ],
         ]
@@ -3127,48 +3293,55 @@ class TelegramController:
     @authorized_only
     async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = """
-🤖 BAIAK IDLE BOT
+🤖 BAIAK IDLE BOT • GUIA DE COMANDOS
 
-Comandos Principais:
-/start - Inicia o bot
-/stop - Para o bot
-/status - Mostra o estado atual e a Hunt
-/party - Exibe status da equipe (HP, Mana, XP)
-/print - Tira print da tela do jogo e envia aqui
+🎛️ Painel e Controle:
+• /menu (ou /atalhos) - Painel interativo com botões de atalho rápido
+• /start - Inicia a automação e abre o painel
+• /stop - Para o bot
+• /status - Exibe estado atual, hunt, stamina e ganhos
+• /party - Status detalhado dos personagens (HP, Mana, XP)
+• /print - Tira print da tela do jogo e envia aqui
+• /ajuda (ou /help) - Mostra este guia de comandos
 
-Hunts e Rotinas:
-/hunts - Lista todos os mapas de caça disponíveis
-/hunt <id/nome> - Muda de hunt (ex: /hunt 1 ou /hunt Livraria)
-/bosses - Lista bosses disponíveis e cargas
-/autoboss [ids] - Inicia AutoBoss (executa a lista padrão se sem parâmetros)
-/stopautoboss - Para o AutoBoss e retoma a Hunt
-/setautoboss <ids> - Define a lista padrão permanente (ex: /setautoboss 1,2,3)
-/autoboss_on - Liga o agendamento automático às 00h (reset das cargas)
-/autoboss_off - Desliga o agendamento automático às 00h
-/autoboss_status - Exibe painel e status do AutoBoss
-/daily - Tenta coletar a recompensa diária
-/guildtask - Gerencia tasks da Guilda (entregar/pegar)
-/task [diaria|semanal] <facil|media|dificil> - Aceita task específica
-/passe - Gerencia missões do Passe de Batalha (entregar/pegar)
-/passetask <dificuldade> - Aceita missão do Passe (facil, media, dificil)
-/automissoes [on|off] - Liga/desliga missões automáticas pós-boss
-/arvore [on|off|run] - Gerencia e aloca pontos da Árvore de Habilidades
-/codex [on|off|foco|fila|entregar] - Gerencia o auto-completar do Codex
-/treino - Força ida para o Treino Online
-/casa - Força ida para o Dummie da Casa
+🗺️ Hunts & Combate:
+• /hunts - Lista todos os mapas de caça disponíveis com níveis
+• /hunt <id/nome> (ou /ir) - Muda a party para a hunt desejada
+• /bosses - Lista bosses disponíveis e cargas restantes
+• /autoboss [ids] - Inicia sequência de AutoBoss
+• /stopautoboss - Interrompe o AutoBoss e retorna à Hunt
+• /setautoboss <ids> (ou /autoboss_preset) - Salva lista padrão permanente
+• /autoboss_on - Ativa agendamento diário automático às 00h
+• /autoboss_off - Desativa agendamento diário às 00h
+• /autoboss_status - Exibe painel e status do agendador
 
-Configurações e Manutenção:
-/menu - Menu interativo com botões de atalhos rápidos
-/config - Painel de configurações rápidas (stamina, watchdog, alertas)
-/defaulthunt [nome] - Ver ou definir hunt padrão de retorno pós-treino
-/settier <numero> - Define tier mínimo para proteger item no baú
-/recuperar - Fecha telas de boas-vindas/avisos e recupera sessão pós-refresh
-/fechar - Atalho para fechar telas e avisos em tela
-/reset - Zera o Hunt Analyzer no jogo e estatísticas do bot
-/debughunt - Salva o HTML do modal de Hunts para diagnóstico
-/help - Mostra esta mensagem de ajuda
+🎯 Missões, Eventos & Tasks:
+• /guildtask (ou /task) - Gerencia tasks da Guilda (entregar/pegar)
+• /task [diaria|semanal] <facil|media|dificil> - Aceita task específica
+• /passe (ou /passetask) - Gerencia missões do Passe de Batalha
+• /passetask <facil|media|dificil> - Aceita missão específica do Passe
+• /automissoes [on|off] - Liga/desliga missões automáticas pós-boss
+• /halloween [on|off|entrar] (ou /invasao) - Gerencia Invasão de Halloween
+• /daily - Coleta a recompensa diária
+
+🌳 Progressão & Treino:
+• /arvore [on|off|run] - Gerencia e aloca pontos da Árvore de Habilidades
+• /codex [on|off|foco|fila|entregar] - Foco automático em atributos do Codex
+• /treino - Força ida imediata para o Treino Online
+• /casa - Força ida imediata para os Dummies da Casa
+
+⚙️ Configurações & Proteção de Loot:
+• /config (ou /painel) - Painel interativo de configurações rápidas
+• /defaulthunt [nome] - Define hunt padrão de segurança e retorno pós-treino
+• /settier <numero> - Define tier mínimo para salvar item no baú (ex: /settier 4)
+• /setattrs <atributos> - Salva itens com atributos específicos (ex: /setattrs exp, onslaught)
+
+🛠️ Manutenção & Diagnóstico:
+• /recuperar (ou /fechar) - Fecha modais/avisos e recupera sessão pós-refresh
+• /reset - Zera o Hunt Analyzer no jogo e estatísticas do bot
+• /debughunt - Salva o HTML das hunts para depuração
 """
-        await update.message.reply_text(text.strip())
+        await self.reply_safe(update, text.strip())
 
 
 # ================================================================
@@ -3234,10 +3407,12 @@ async def main():
     application.add_handler(CommandHandler("painel", controller.config))
     application.add_handler(CommandHandler("defaulthunt", controller.defaulthunt))
     application.add_handler(CommandHandler("settier", controller.settier))
+    application.add_handler(CommandHandler("setattrs", controller.setattrs))
     application.add_handler(CommandHandler("recuperar", controller.recover))
     application.add_handler(CommandHandler("fechar", controller.recover))
     application.add_handler(CommandHandler("print", controller.print_screen))
     application.add_handler(CommandHandler("help", controller.help))
+    application.add_handler(CommandHandler("ajuda", controller.help))
 
     # Registro do Ouvinte de Botões Inline
     application.add_handler(CallbackQueryHandler(controller.inline_button_handler))

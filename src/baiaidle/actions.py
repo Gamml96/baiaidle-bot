@@ -1549,37 +1549,123 @@ async def get_party_average_level(tab) -> int:
 # GUARDAR ITENS VALIOSOS (SHIFT + CLIQUE)
 # ================================================================
 
-async def stash_valuable_items(tab, min_tier: int = 4) -> dict:
+async def stash_valuable_items(tab, min_tier: int = 4, target_attributes: list[str] | None = None) -> dict:
     """
-    Varre o inventário em busca de itens com tier igual ou superior ao min_tier.
+    Varre o inventário em busca de itens com tier igual ou superior ao min_tier
+    ou que possuam atributos de raridade configurados pelo usuário (ex: Exp, Onslaught).
     A varredura é feita de trás para frente para evitar que a mudança 
     de slots na interface quebre a ordem dos cliques.
     """
+    clean_attrs = [a.lower().strip() for a in (target_attributes or []) if a and a.strip()]
+    json_target_attrs = json.dumps(clean_attrs)
+
     js = f"""
     (() => {{
         const grid = document.getElementById('inv-grid');
         if (!grid) return JSON.stringify({{stashed: 0, items: []}});
-        
+
+        const targetAttrs = {json_target_attrs};
+        const hasAttrFilter = targetAttrs.length > 0;
+
+        // Mapeamento id -> chaves/nomes conhecidos dos 32 atributos de raridade do jogo
+        const attrMap = {{
+            1: ["weapon attack", "weapon_attack"],
+            2: ["defense"],
+            3: ["armor"],
+            4: ["onslaught"],
+            5: ["crit chance", "crit_chance"],
+            6: ["crit damage", "crit_damage", "crit dmg"],
+            7: ["life leech", "life_leech"],
+            8: ["mana leech", "mana_leech"],
+            9: ["loot"],
+            10: ["exp", "xp"],
+            11: ["protect all", "protect_all"],
+            12: ["protect fire", "protect_fire"],
+            13: ["protect earth", "protect_earth"],
+            14: ["protect energy", "protect_energy"],
+            15: ["protect ice", "protect_ice"],
+            16: ["protect holy", "protect_holy"],
+            17: ["protect death", "protect_death"],
+            18: ["attack speed", "attack_speed"],
+            19: ["spell damage", "spell_damage"],
+            20: ["spell healing", "spell_healing"],
+            21: ["max hp", "max_hp", "hp"],
+            22: ["max mana", "max_mana", "mana"],
+            23: ["hp regen", "hp_regen"],
+            24: ["mp regen", "mp_regen"],
+            25: ["execute"],
+            26: ["frenzy"],
+            27: ["fire damage", "damage_fire"],
+            28: ["earth damage", "damage_earth"],
+            29: ["energy damage", "damage_energy"],
+            30: ["ice damage", "damage_ice"],
+            31: ["holy damage", "damage_holy"],
+            32: ["death damage", "damage_death"]
+        }};
+
         const cells = Array.from(grid.querySelectorAll('.cell[data-tier]'));
         let count = 0;
         let names = [];
-        
+
         // === LOOP REVERSO ===
-        // Lê do último item para o primeiro para não quebrar os índices
+        // Lê do último item para o primeiro para não quebrar os índices na interface
         for (let i = cells.length - 1; i >= 0; i--) {{
             const cell = cells[i];
             const tier = parseInt(cell.getAttribute('data-tier') || "0", 10);
-            
-            if (tier >= {min_tier}) {{
-                // Tenta extrair o nome do item para o log do Telegram
-                let itemName = "Item Desconhecido";
-                const cmpData = cell.getAttribute('data-cmpitem');
-                if (cmpData) {{
-                    try {{
-                        itemName = JSON.parse(cmpData).name || itemName;
-                    }} catch(e) {{}}
+
+            let itemName = "Item Desconhecido";
+            let matchedAttr = false;
+            let foundAttrTexts = [];
+
+            // 1. Inspeciona objeto serializado data-cmpitem (attrs: [{{id, level}}, ...])
+            const cmpData = cell.getAttribute('data-cmpitem');
+            if (cmpData) {{
+                try {{
+                    const itemObj = JSON.parse(cmpData);
+                    itemName = itemObj.name || itemName;
+                    if (Array.isArray(itemObj.attrs) && itemObj.attrs.length > 0) {{
+                        for (const a of itemObj.attrs) {{
+                            const aliases = attrMap[a.id] || [];
+                            if (hasAttrFilter) {{
+                                for (const target of targetAttrs) {{
+                                    if (aliases.some(alias => alias.includes(target) || target.includes(alias))) {{
+                                        matchedAttr = true;
+                                        break;
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+                }} catch(e) {{}}
+            }}
+
+            // 2. Inspeciona tooltip HTML data-tiphtml (para extrair texto exato como 'Exp +1%' ou 'Onslaught +0.5%')
+            const tipHtml = cell.dataset.tiphtml || cell.getAttribute('data-tiphtml') || '';
+            if (tipHtml) {{
+                const re = /<div class="tt-attr[^"]*">([^<]+)<\\/div>/gi;
+                let m;
+                while ((m = re.exec(tipHtml)) !== null) {{
+                    const rawAttr = m[1].trim();
+                    if (!rawAttr.toLowerCase().includes('empty slot') && !rawAttr.toLowerCase().includes('sem carga')) {{
+                        foundAttrTexts.push(rawAttr);
+                        if (hasAttrFilter && !matchedAttr) {{
+                            const low = rawAttr.toLowerCase();
+                            for (const target of targetAttrs) {{
+                                if (low.includes(target)) {{
+                                    matchedAttr = true;
+                                    break;
+                                }}
+                            }}
+                        }}
+                    }}
                 }}
-                
+            }}
+
+            // Critério de guarda: Tier mínimo atingido OU possui atributo desejado
+            const isTierMatch = (tier >= {min_tier});
+            const shouldStash = isTierMatch || (hasAttrFilter && matchedAttr);
+
+            if (shouldStash) {{
                 // Simula o clique do mouse com a tecla Shift pressionada
                 const dispatchShiftEvent = (type) => {{
                     cell.dispatchEvent(new MouseEvent(type, {{
@@ -1589,17 +1675,23 @@ async def stash_valuable_items(tab, min_tier: int = 4) -> dict:
                         view: window
                     }}));
                 }};
-                
-                // Dispara a sequência completa para o jogo registrar o clique perfeitamente
+
+                // Dispara sequência completa de clique para envio ao Backpack
                 dispatchShiftEvent('mousedown');
                 dispatchShiftEvent('mouseup');
                 dispatchShiftEvent('click');
-                
+
                 count++;
-                names.push(itemName + " (Tier " + tier + ")");
+
+                let label = itemName + " (Tier " + tier;
+                if (foundAttrTexts.length > 0) {{
+                    label += " · " + foundAttrTexts.join(", ");
+                }}
+                label += ")";
+                names.push(label);
             }}
         }}
-        
+
         return JSON.stringify({{stashed: count, items: names.reverse()}});
     }})()
     """
@@ -1687,4 +1779,4 @@ async def get_loot_analyzer_coins(tab) -> dict[str, int]:
     except Exception as e:
         print(f"Erro ao ler moedas do Loot Analyser: {e}")
 
-    return {"crystal": 0, "platinum": 0, "gold": 0}
+    return {"crystal": 0, "platinum": 0, "gold": 0}

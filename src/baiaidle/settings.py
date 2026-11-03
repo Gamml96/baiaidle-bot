@@ -8,6 +8,7 @@ DEFAULT_SETTINGS = {
     "stamina_treino": 20,       # Ir para o treino quando stamina <= 20%
     "stamina_retorno": 100,     # Voltar para hunt quando stamina >= 100%
     "min_tier_stash": 4,        # Tier mínimo para guardar item no baú
+    "stash_attributes": [],     # Lista de atributos de raridade para guardar na backpack (ex: exp, onslaught)
     "watchdog_minutes": 10,     # Tempo sem atividade para o watchdog reiniciar (min)
     "notify_sales": True,       # Notificar cada venda no Telegram
     "notify_tasks": True,       # Notificar progresso de tasks a cada 120s

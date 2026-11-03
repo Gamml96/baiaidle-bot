@@ -30,14 +30,14 @@ class TestTreePriorities(unittest.TestCase):
         # ED capstones & heal/magic
         self.assertIn("Avatar of Nature", DRUID_PRIORITY)
         self.assertIn("Gift of Life", DRUID_PRIORITY)
-        self.assertIn("Twin Bursts", DRUID_PRIORITY)
-        self.assertIn("Blessing of the Grove", DRUID_PRIORITY)
+        self.assertIn("Hail Storm", DRUID_PRIORITY)
+        self.assertIn("Wrath of Nature", DRUID_PRIORITY)
 
         # RP capstones & distance/crit
         self.assertIn("Avatar of Light", PALADIN_PRIORITY)
-        self.assertIn("Double Shot III", PALADIN_PRIORITY)
-        self.assertIn("Divine Grenade", PALADIN_PRIORITY)
-        self.assertIn("Ballistic Mastery", PALADIN_PRIORITY)
+        self.assertIn("Sharpshooter", PALADIN_PRIORITY)
+        self.assertIn("Positional Tactics", PALADIN_PRIORITY)
+        self.assertIn("Culling Shot", PALADIN_PRIORITY)
 
     def test_get_priority_for_vocation(self):
         self.assertEqual(get_priority_for_vocation("Royal MS"), SORCERER_PRIORITY)

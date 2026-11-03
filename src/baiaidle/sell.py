@@ -591,10 +591,14 @@ async def execute_sale(
 
         return False
     
-    # === NOVO BLOCO: SALVAR ITENS VALIOSOS ===
+    # === BLOCO: SALVAR ITENS VALIOSOS (TIER OU ATRIBUTOS) ===
     min_tier = get_setting("min_tier_stash", stats.min_tier_to_stash)
-    print(f"Verificando itens raros no inventário (Tier {min_tier}+)...")
-    stash_result = await stash_valuable_items(tab, min_tier=min_tier)
+    target_attrs = get_setting("stash_attributes", [])
+    if target_attrs:
+        print(f"Verificando itens no inventário (Tier {min_tier}+ ou atributos: {', '.join(target_attrs)})...")
+    else:
+        print(f"Verificando itens raros no inventário (Tier {min_tier}+)...")
+    stash_result = await stash_valuable_items(tab, min_tier=min_tier, target_attributes=target_attrs)
     
     if stash_result and stash_result.get("stashed", 0) > 0:
         stashed_items = stash_result.get("items", [])
@@ -602,11 +606,11 @@ async def execute_sale(
         print(f"💎 {stash_result['stashed']} item(ns) guardado(s): {stashed_msg}")
         
         if on_message:
-            await on_message(f"💎 *Item Raro Protegido!*\nEnviado para o Backpack: {stashed_msg}")
+            await on_message(f"💎 *Item Protegido!*\nEnviado para o Backpack: {stashed_msg}")
             
         # Aguarda 1 segundo para a animação do jogo retirar os itens da grid
         await asyncio.sleep(1)
-    # ==========================================
+    # ========================================================
 
     # === CAPTURA DE MOEDAS NO LOOT ANALYSER ===
     # Moedas (crystal, platinum, gold) vão direto ao banco e não entram no pouch de venda,
