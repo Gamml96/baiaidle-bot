@@ -2,7 +2,10 @@
   "stamina_treino": 20,
   "stamina_retorno": 100,
   "min_tier_stash": 4,
-  "stash_attributes": [],
+  "stash_attributes": [
+    "exp",
+    "onslaught"
+  ],
   "watchdog_minutes": 10,
   "notify_sales": true,
   "notify_tasks": true,
