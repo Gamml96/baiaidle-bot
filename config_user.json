@@ -2,18 +2,15 @@
   "stamina_treino": 20,
   "stamina_retorno": 100,
   "min_tier_stash": 4,
-  "stash_attributes": [
-    "exp",
-    "onslaught"
-  ],
+  "stash_attributes": [],
   "watchdog_minutes": 10,
   "notify_sales": true,
   "notify_tasks": true,
   "auto_missions_after_boss": true,
   "auto_tree_enabled": true,
   "auto_halloween_invasion": true,
-  "codex_focus_enabled": true,
+  "codex_focus_enabled": false,
   "codex_focus_attribute": "critDmg",
-  "codex_focus_hunt": "True Azura",
+  "codex_focus_hunt": null,
   "default_hunt": "Infernal Demon"
 }

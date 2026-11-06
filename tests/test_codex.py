@@ -2,7 +2,7 @@ import unittest
 import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock
-from baiaidle.codex import process_codex_routine, extract_execute_result
+from baiaidle.codex import process_codex_routine, extract_execute_result, reset_codex_filters_to_default
 
 class TestCodexRoutine(unittest.IsolatedAsyncioTestCase):
     async def test_extract_execute_result(self):
@@ -99,6 +99,20 @@ class TestCodexRoutine(unittest.IsolatedAsyncioTestCase):
         summary_call = on_message.call_args_list[1][0][0]
         self.assertIn("Resumo de Codex Entregues", summary_call)
         self.assertIn("Demon", summary_call)
+
+    async def test_reset_codex_filters_to_default_selects_todas_tab(self):
+        tab = AsyncMock()
+        tab.execute_script.return_value = True
+
+        await reset_codex_filters_to_default(tab)
+
+        tab.execute_script.assert_called_once()
+        script = tab.execute_script.call_args[0][0]
+        self.assertIn("todas", script.lower())
+        self.assertIn("codex-tab-label", script)
+        self.assertIn("store-sidebtn", script)
+        self.assertIn("Entregáveis", script)
+        self.assertIn("fill-desc", script)
 
 if __name__ == "__main__":
     unittest.main()

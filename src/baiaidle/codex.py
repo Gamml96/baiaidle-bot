@@ -71,6 +71,7 @@ async def close_codex_menu(tab):
 async def reset_codex_filters_to_default(tab):
     """
     Restaura os filtros do Codex para o padrão de entrega global:
+    - Aba: Seleciona 'Todas' (.store-sidebtn.codex-tab)
     - Barra de pesquisa limpa ('')
     - Atributo: Todos os Atributos (selectedIndex = 0)
     - Checkboxes: Entregáveis (true), Esconder concluídos (true), Esconder bloqueadas (true)
@@ -78,42 +79,58 @@ async def reset_codex_filters_to_default(tab):
     """
     js_reset = """
     (() => {
-        // 1. Limpa a barra de pesquisa
-        const searchInput = document.querySelector('.cx-search');
-        if (searchInput && searchInput.value !== '') {
-            searchInput.value = '';
-            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+        // 0. Garante que a aba 'Todas' está selecionada (entrega global de todos os itens antes da venda)
+        const codexTabs = Array.from(document.querySelectorAll('.store-sidebtn.codex-tab, .codex-tab'));
+        const todasTab = codexTabs.find(btn => {
+            const label = btn.querySelector('.codex-tab-label');
+            const txt = (label ? label.innerText : btn.innerText || '').trim().toLowerCase();
+            return txt === 'todas' || txt === 'all' || txt.startsWith('todas') || txt.startsWith('all');
+        });
+        if (todasTab && !todasTab.classList.contains('on') && !todasTab.classList.contains('active')) {
+            todasTab.click();
         }
 
-        // 2. Reseta o select de atributo para Todos (índice 0)
-        const attrSelect = document.querySelector('.cx-attr');
-        if (attrSelect && attrSelect.selectedIndex !== 0) {
-            attrSelect.selectedIndex = 0;
-            attrSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+        const applyFilters = () => {
+            // 1. Limpa a barra de pesquisa
+            const searchInput = document.querySelector('.cx-search');
+            if (searchInput && searchInput.value !== '') {
+                searchInput.value = '';
+                searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            }
 
-        // 3. Checkboxes padrão de entrega
-        const checks = Array.from(document.querySelectorAll('.cx-check'));
-        const setCheck = (text, state) => {
-            const label = checks.find(l => l.innerText.includes(text));
-            if (label) {
-                const input = label.querySelector('input');
-                if (input && input.checked !== state) {
-                    input.checked = state;
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
+            // 2. Reseta o select de atributo para Todos (índice 0)
+            const attrSelect = document.querySelector('.cx-attr');
+            if (attrSelect && attrSelect.selectedIndex !== 0) {
+                attrSelect.selectedIndex = 0;
+                attrSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            // 3. Checkboxes padrão de entrega
+            const checks = Array.from(document.querySelectorAll('.cx-check'));
+            const setCheck = (text, state) => {
+                const label = checks.find(l => l.innerText.includes(text));
+                if (label) {
+                    const input = label.querySelector('input');
+                    if (input && input.checked !== state) {
+                        input.checked = state;
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
                 }
+            };
+            setCheck('Entregáveis', true);
+            setCheck('Esconder concluídos', true);
+            setCheck('Esconder bloqueadas', true);
+
+            // 4. Ordenação por mais completo primeiro
+            const sortSelect = document.querySelector('.cx-sort');
+            if (sortSelect && sortSelect.value !== 'fill-desc') {
+                sortSelect.value = 'fill-desc';
+                sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
             }
         };
-        setCheck('Entregáveis', true);
-        setCheck('Esconder concluídos', true);
-        setCheck('Esconder bloqueadas', true);
 
-        // 4. Ordenação por mais completo primeiro
-        const sortSelect = document.querySelector('.cx-sort');
-        if (sortSelect && sortSelect.value !== 'fill-desc') {
-            sortSelect.value = 'fill-desc';
-            sortSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        }
+        applyFilters();
+        setTimeout(applyFilters, 100);
         return true;
     })()
     """
@@ -433,7 +450,7 @@ async def get_codex_attribute_queue(tab, attribute: str = "critDmg", max_party_l
             const label = btn.querySelector('.codex-tab-label');
             return label && label.innerText.trim().toLowerCase() === 'hunts';
         }) || codexTabs.find(btn => (btn.innerText || '').toLowerCase().includes('hunts'));
-        if (huntsTab) {
+        if (huntsTab && !huntsTab.classList.contains('on') && !huntsTab.classList.contains('active')) {
             huntsTab.click();
             return true;
         }
@@ -452,7 +469,7 @@ async def get_codex_attribute_queue(tab, attribute: str = "critDmg", max_party_l
             const label = btn.querySelector('.codex-tab-label');
             return label && label.innerText.trim().toLowerCase() === 'hunts';
         }}) || codexTabs.find(btn => (btn.innerText || '').toLowerCase().includes('hunts'));
-        if (huntsTab && !huntsTab.classList.contains('active')) {{
+        if (huntsTab && !huntsTab.classList.contains('on') && !huntsTab.classList.contains('active')) {{
             huntsTab.click();
         }}
 
