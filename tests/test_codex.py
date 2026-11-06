@@ -100,6 +100,48 @@ class TestCodexRoutine(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Resumo de Codex Entregues", summary_call)
         self.assertIn("Demon", summary_call)
 
+    async def test_codex_routine_delivers_higher_rarity_items(self):
+        tab = AsyncMock()
+        on_message = AsyncMock()
+
+        tab.execute_script.side_effect = [
+            # 1. open_codex_menu
+            True,
+            # 2. global filter
+            True,
+            # 3. js_click (item 1: spiked squelcher)
+            {"result": {"result": {"value": json.dumps({"clicked": True, "name": "spiked squelcher", "pct": "33%"})}}},
+            # 4. js_check_modal (higher rarity detected, requires_confirmation = False)
+            {"result": {"result": {"value": json.dumps({
+                "opened": True,
+                "requires_confirmation": False,
+                "is_higher_rarity": True,
+                "items": ["spiked squelcher (Uncommon) (x3)"]
+            })}}},
+            # 5. js_confirm
+            True,
+            # 6. js_click (no more items)
+            {"result": {"result": {"value": json.dumps({"clicked": False})}}},
+            # 7. js_hunt_filter
+            True,
+            # 8. js_read_progress
+            {"result": {"result": {"value": "66%"}}},
+            # 9. reset filter
+            True,
+            # 10. close_codex_menu
+            True
+        ]
+
+        delivered, progress = await process_codex_routine(tab, "spiked squelcher", on_message=on_message)
+
+        self.assertTrue(delivered)
+        self.assertEqual(progress, "66%")
+        on_message.assert_called_once()
+        summary = on_message.call_args[0][0]
+        self.assertIn("spiked squelcher", summary)
+        self.assertIn("Raridade maior", summary)
+        self.assertIn("Resumo de Codex Entregues", summary)
+
     async def test_reset_codex_filters_to_default_selects_todas_tab(self):
         tab = AsyncMock()
         tab.execute_script.return_value = True

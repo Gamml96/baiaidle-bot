@@ -232,25 +232,28 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
                         return JSON.stringify({ opened: false });
                     }
                     
-                    // Indicadores de que itens serão destruídos e pede confirmação:
+                    const bodyText = modalBody ? modalBody.innerText : "";
+                    const bodyLower = bodyText.toLowerCase();
+                    const btnYesText = btnYes ? (btnYes.innerText || '').trim().toLowerCase() : '';
+                    
+                    // Detecta se é o modal de uso de itens de raridade MAIOR ("Usar mesmo assim")
+                    const warnEl = document.querySelector('.cx-confirm-warn');
+                    const warnText = warnEl ? warnEl.innerText.trim().toLowerCase() : '';
+                    const isHigherRarity = !!(
+                        warnEl ||
+                        warnText.includes('raridade maior') ||
+                        warnText.includes('higher rarity') ||
+                        bodyLower.includes('raridade maior') ||
+                        bodyLower.includes('higher rarity') ||
+                        btnYesText.includes('usar mesmo assim') ||
+                        btnYesText.includes('use anyway')
+                    );
+                    
+                    // Indicadores de que itens requerem confirmação manual digitada (ex: forja, upgrade ou imbuement)
                     const inputConfirm = document.querySelector('.cx-confirm-input');
                     const warnDigite = document.querySelector('.cx-confirm-digite');
-                    const isYesDisabled = btnYes ? btnYes.disabled : false;
-                    
-                    const bodyText = modalBody ? modalBody.innerText : "";
-                    const hasDestroyWarn = bodyText.includes('DESTRUÍDOS') || bodyText.includes('destruídos') || bodyText.includes('destruidos');
-                    const hasConfirmPrompt = (
-                        bodyText.includes('CONFIRMAR') ||
-                        bodyText.includes('confirmar') ||
-                        bodyText.includes('forja, upgrade ou imbuement')
-                    );
-                    
-                    const requiresConfirmation = !!(
-                        inputConfirm ||
-                        warnDigite ||
-                        isYesDisabled ||
-                        (hasDestroyWarn && hasConfirmPrompt)
-                    );
+                    const hasSpecialItem = bodyLower.includes('forja') || bodyLower.includes('upgrade') || bodyLower.includes('imbuement');
+                    const hasTypeConfirmPrompt = bodyText.includes('CONFIRMAR') || (warnDigite && warnDigite.innerText.includes('CONFIRMAR'));
                     
                     // Extrai detalhes dos itens listados no modal
                     let items = [];
@@ -267,9 +270,26 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
                         if (desc) items.push(desc);
                     }
                     
+                    // Checa se algum item da lista tem indicação de imbuement/forja/upgrade
+                    const itemsHaveSpecial = items.some(it => {
+                        const itL = it.toLowerCase();
+                        return itL.includes('imbuement') || itL.includes('forja') || itL.includes('upgrade');
+                    });
+                    
+                    // Requer confirmação manual apenas se:
+                    // 1. Tem campo para digitar CONFIRMAR (.cx-confirm-input / .cx-confirm-digite)
+                    // 2. Ou contém item especial com forja/upgrade/imbuement que exige confirmação digitada ou botão desabilitado
+                    let requiresConfirmation = false;
+                    if (inputConfirm || warnDigite || ((hasSpecialItem || itemsHaveSpecial) && (hasTypeConfirmPrompt || (btnYes && btnYes.disabled)))) {
+                        requiresConfirmation = true;
+                    } else if (!isHigherRarity && (btnYes && btnYes.disabled)) {
+                        requiresConfirmation = true;
+                    }
+                    
                     return JSON.stringify({
                         opened: true,
                         requires_confirmation: requiresConfirmation,
+                        is_higher_rarity: isHigherRarity,
                         items: items
                     });
                 })()
@@ -341,24 +361,47 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
                     await asyncio.sleep(1.0)
                     continue
                 
-                # ENTREGA NORMAL:
+                # ENTREGA NORMAL OU COM RARIDADE MAIOR:
+                if modal_info.get("is_higher_rarity"):
+                    safe_print(f"Confirmando entrega de '{codex_name}' usando itens de raridade maior ('Usar mesmo assim')...")
+                
                 js_confirm = """
                 (() => {
                     const btn = document.getElementById('confirm-yes');
-                    if (btn && !btn.disabled) {
-                        btn.click();
-                    }
+                    if (!btn || btn.disabled) return false;
+                    try {
+                        btn.focus();
+                    } catch (e) {}
+                    try {
+                        btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                        btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                    } catch (e) {}
+                    btn.click();
                     document.querySelectorAll('[data-current-attempt="1"]').forEach(el => {
                         delete el.dataset.currentAttempt;
                     });
                     return true;
                 })()
                 """
-                await tab.execute_script(js_confirm)
+                res_c = await tab.execute_script(js_confirm)
+                confirmed_js = bool(extract_execute_result(res_c))
+                
+                # Fallback Pydoll se o clique JS não obteve retorno positivo
+                if not confirmed_js:
+                    try:
+                        btn_pydoll = await tab.find(id="confirm-yes", timeout=1)
+                        if btn_pydoll:
+                            await btn_pydoll.click()
+                    except Exception:
+                        pass
+                
                 await asyncio.sleep(1.5) # Aguarda a interface atualizar
                 
                 # Adiciona à lista de consolidação com o progresso anterior
-                delivered_entries.append(f"🔸 {codex_name} (Estava em: *{old_pct}*)")
+                if modal_info.get("is_higher_rarity"):
+                    delivered_entries.append(f"🔸 {codex_name} (Raridade maior - Estava em: *{old_pct}*)")
+                else:
+                    delivered_entries.append(f"🔸 {codex_name} (Estava em: *{old_pct}*)")
                 
             else:
                 safe_print("⚠️ Falha ao confirmar entrega do Codex (Provável interrupção do Cloudflare). O bot tentará novamente no próximo ciclo.")
