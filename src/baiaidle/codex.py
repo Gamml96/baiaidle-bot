@@ -219,11 +219,18 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
             print(f"Tentando entregar: {codex_name} (Progresso anterior: {old_pct})")
             
             # ESPERA INTELIGENTE PELO MODAL DE CONFIRMAÇÃO (Até 5 segundos)
+            # O elemento #confirm-modal existe estaticamente no HTML com class 'hidden'.
+            # Devemos esperar que ele realmente fique visível (!classList.contains('hidden')).
             modal_info = None
             for _ in range(10):
                 await asyncio.sleep(0.5)
                 js_check_modal = """
                 (() => {
+                    const confirmModal = document.getElementById('confirm-modal');
+                    if (!confirmModal || confirmModal.classList.contains('hidden')) {
+                        return JSON.stringify({ opened: false });
+                    }
+                    
                     const modalBody = document.getElementById('confirm-modal-body');
                     const btnYes = document.getElementById('confirm-yes');
                     const btnNo = document.getElementById('confirm-no');
@@ -240,7 +247,6 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
                     const warnEl = document.querySelector('.cx-confirm-warn');
                     const warnText = warnEl ? warnEl.innerText.trim().toLowerCase() : '';
                     const isHigherRarity = !!(
-                        warnEl ||
                         warnText.includes('raridade maior') ||
                         warnText.includes('higher rarity') ||
                         bodyLower.includes('raridade maior') ||
@@ -361,47 +367,130 @@ async def process_codex_routine(tab, current_hunt, on_message=None):
                     await asyncio.sleep(1.0)
                     continue
                 
-                # ENTREGA NORMAL OU COM RARIDADE MAIOR:
-                if modal_info.get("is_higher_rarity"):
-                    safe_print(f"Confirmando entrega de '{codex_name}' usando itens de raridade maior ('Usar mesmo assim')...")
+                # LOOP DE CONFIRMAÇÃO (Suporta confirmação em 1 ou 2 etapas, incluindo 'Usar mesmo assim'):
+                is_higher_rarity_used = modal_info.get("is_higher_rarity", False)
+                confirmed_successfully = False
                 
-                js_confirm = """
-                (() => {
-                    const btn = document.getElementById('confirm-yes');
-                    if (!btn || btn.disabled) return false;
-                    try {
-                        btn.focus();
-                    } catch (e) {}
-                    try {
-                        btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                        btn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                    } catch (e) {}
-                    btn.click();
-                    document.querySelectorAll('[data-current-attempt="1"]').forEach(el => {
-                        delete el.dataset.currentAttempt;
-                    });
-                    return true;
-                })()
-                """
-                res_c = await tab.execute_script(js_confirm)
-                confirmed_js = bool(extract_execute_result(res_c))
+                # Executa até 3 tentativas/etapas de confirmação (ex: 1º 'Entregar', 2º 'Usar mesmo assim')
+                for confirm_step in range(3):
+                    js_confirm_step = """
+                    (() => {
+                        const confirmModal = document.getElementById('confirm-modal');
+                        if (!confirmModal || confirmModal.classList.contains('hidden')) {
+                            return JSON.stringify({ isOpen: false });
+                        }
+                        const modalBody = document.getElementById('confirm-modal-body');
+                        const btnYes = document.getElementById('confirm-yes');
+                        if (!btnYes) {
+                            return JSON.stringify({ isOpen: true, canClick: false, reason: 'no_btn' });
+                        }
+                        
+                        const bodyText = modalBody ? modalBody.innerText : "";
+                        const bodyLower = bodyText.toLowerCase();
+                        const btnYesText = (btnYes.innerText || '').trim().toLowerCase();
+                        
+                        const warnEl = document.querySelector('.cx-confirm-warn');
+                        const warnText = warnEl ? warnEl.innerText.trim().toLowerCase() : '';
+                        const isHigherRarity = !!(
+                            warnText.includes('raridade maior') ||
+                            warnText.includes('higher rarity') ||
+                            bodyLower.includes('raridade maior') ||
+                            bodyLower.includes('higher rarity') ||
+                            btnYesText.includes('usar mesmo assim') ||
+                            btnYesText.includes('mesmo assim') ||
+                            btnYesText.includes('use anyway')
+                        );
+                        
+                        // Checagem de segurança para digitação manual (forja / imbuement)
+                        const inputConfirm = document.querySelector('.cx-confirm-input');
+                        const warnDigite = document.querySelector('.cx-confirm-digite');
+                        const hasSpecialItem = bodyLower.includes('forja') || bodyLower.includes('upgrade') || bodyLower.includes('imbuement');
+                        const hasTypeConfirmPrompt = bodyText.includes('CONFIRMAR') || (warnDigite && warnDigite.innerText.includes('CONFIRMAR'));
+                        
+                        if (inputConfirm || warnDigite || (hasSpecialItem && hasTypeConfirmPrompt)) {
+                            return JSON.stringify({ isOpen: true, requiresConfirmation: true });
+                        }
+                        
+                        if (btnYes.disabled) {
+                            return JSON.stringify({ isOpen: true, canClick: false, reason: 'disabled', btnYesText: btnYesText, isHigherRarity: isHigherRarity });
+                        }
+                        
+                        try { btnYes.focus(); } catch (e) {}
+                        try {
+                            btnYes.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+                            btnYes.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                            btnYes.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, cancelable: true }));
+                            btnYes.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                        } catch (e) {}
+                        btnYes.click();
+                        
+                        document.querySelectorAll('[data-current-attempt="1"]').forEach(el => {
+                            delete el.dataset.currentAttempt;
+                        });
+                        
+                        return JSON.stringify({
+                            isOpen: true,
+                            canClick: true,
+                            isHigherRarity: isHigherRarity,
+                            btnYesText: btnYesText
+                        });
+                    })()
+                    """
+                    res_c = await tab.execute_script(js_confirm_step)
+                    val_c = extract_execute_result(res_c)
+                    data_c = {}
+                    if isinstance(val_c, str):
+                        try:
+                            data_c = json.loads(val_c)
+                        except Exception:
+                            pass
+                    elif isinstance(val_c, dict):
+                        data_c = val_c
+                    
+                    if not data_c.get("isOpen"):
+                        confirmed_successfully = True
+                        break
+                    
+                    if data_c.get("requiresConfirmation"):
+                        safe_print(f"⚠️ Codex '{codex_name}' requer confirmação manual digitada. Cancelando entrega.")
+                        await tab.execute_script("document.getElementById('confirm-no')?.click();")
+                        skipped_entries.append(codex_name)
+                        break
+                    
+                    if data_c.get("isHigherRarity"):
+                        is_higher_rarity_used = True
+                        safe_print(f"Confirmando entrega de '{codex_name}' usando itens de raridade maior ('Usar mesmo assim')...")
+                    else:
+                        safe_print(f"Confirmando entrega de '{codex_name}' ({data_c.get('btnYesText', 'Entregar')})...")
+                    
+                    if not data_c.get("canClick"):
+                        try:
+                            btn_pydoll = await tab.find(id="confirm-yes", timeout=1)
+                            if btn_pydoll:
+                                await btn_pydoll.click()
+                        except Exception:
+                            pass
+                    
+                    # Aguarda atualização da interface e possível abertura do segundo modal ("Usar mesmo assim")
+                    await asyncio.sleep(1.0)
+                    
+                    # Checa se o modal já fechou
+                    check_closed = await tab.execute_script("(() => { const m = document.getElementById('confirm-modal'); return !m || m.classList.contains('hidden'); })()")
+                    if extract_execute_result(check_closed):
+                        confirmed_successfully = True
+                        break
                 
-                # Fallback Pydoll se o clique JS não obteve retorno positivo
-                if not confirmed_js:
-                    try:
-                        btn_pydoll = await tab.find(id="confirm-yes", timeout=1)
-                        if btn_pydoll:
-                            await btn_pydoll.click()
-                    except Exception:
-                        pass
+                # Garante limpeza de dataset
+                await tab.execute_script("document.querySelectorAll('[data-current-attempt=\"1\"]').forEach(el => { delete el.dataset.currentAttempt; });")
                 
-                await asyncio.sleep(1.5) # Aguarda a interface atualizar
-                
-                # Adiciona à lista de consolidação com o progresso anterior
-                if modal_info.get("is_higher_rarity"):
-                    delivered_entries.append(f"🔸 {codex_name} (Raridade maior - Estava em: *{old_pct}*)")
+                if confirmed_successfully:
+                    if is_higher_rarity_used:
+                        delivered_entries.append(f"🔸 {codex_name} (Raridade maior - Estava em: *{old_pct}*)")
+                    else:
+                        delivered_entries.append(f"🔸 {codex_name} (Estava em: *{old_pct}*)")
                 else:
-                    delivered_entries.append(f"🔸 {codex_name} (Estava em: *{old_pct}*)")
+                    # Se ainda ficou aberto após todas as etapas, fecha para não travar
+                    await tab.execute_script("document.getElementById('confirm-no')?.click();")
                 
             else:
                 safe_print("⚠️ Falha ao confirmar entrega do Codex (Provável interrupção do Cloudflare). O bot tentará novamente no próximo ciclo.")
