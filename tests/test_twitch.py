@@ -117,13 +117,15 @@ class TestTwitchStatusFormatting(unittest.TestCase):
             "state": "counting",
             "label": "Contando",
             "big": "Você está sendo contado na live de Foo",
-            "today_big": "12 min assistidos hoje",
-            "today_aside": "+120 hoje",
+            "notes": ["Visto no chat há 3 min. O chat é conferido de 5 em 5 min."],
+            "today_big": "285 min assistidos hoje",
+            "today_aside": "+50 hoje",
         }
         texto = twitch.format_twitch_status(status)
         self.assertIn("Contagem: Contando", texto)
         self.assertIn("live de Foo", texto)
-        self.assertIn("12 min assistidos hoje", texto)
+        self.assertIn("Visto no chat há 3 min", texto)
+        self.assertIn("285 min assistidos hoje", texto)
         self.assertTrue(twitch.status_is_counting(status))
 
     def test_starting_counts_as_ok(self):

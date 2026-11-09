@@ -417,6 +417,10 @@ def format_twitch_status(status: dict | None) -> str:
     if big:
         lines.append(f"Detalhe: {big}")
 
+    notes = [n for n in (status.get("notes") or []) if n]
+    if notes:
+        lines.append(f"Info: {notes[0]}")
+
     today = (status.get("today_big") or "").strip()
     aside = (status.get("today_aside") or "").strip()
     if today:
