@@ -290,6 +290,7 @@ class TelegramController:
             BotCommand("overlays", "🧩 Ver overlays ativos"),
             BotCommand("charms", "🔮 Ver charms e presets"),
             BotCommand("charmpreset", "🔮 Aplicar preset de charms"),
+            BotCommand("twitch", "📺 Twitch Streaming Coin"),
             BotCommand("reset", "🧹 Zerar estatísticas e Analyzer"),
             BotCommand("help", "❓ Mostrar lista de ajuda"),
             BotCommand("ajuda", "❓ Mostrar lista de ajuda"),
@@ -2963,6 +2964,37 @@ class TelegramController:
     # MÉTODOS AUXILIARES: TECLADOS INLINE & CONFIGURAÇÕES
     # ============================================================
 
+    # ============================================================
+    # TWITCH CHAT (recompensa de Streaming Coin)
+    # ============================================================
+    @authorized_only
+    @require_bot_running
+    async def twitch(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        args = context.args if context.args else []
+        sub = (args[0].lower() if args else "status")
+        if sub in ("start", "iniciar", "on"):
+            await update.message.reply_text("Iniciando chat da Twitch...", parse_mode="Markdown")
+            async with self.action_lock:
+                ok, msg = await self.bot.start_twitch(on_message=self.send_hunt_msg)
+                if ok:
+                    await self.reply_safe(update, "OK " + msg, parse_mode="Markdown")
+                else:
+                    await self.reply_safe(update, "AVISO " + msg, parse_mode="Markdown")
+        elif sub in ("stop", "parar", "off"):
+            async with self.action_lock:
+                ok, msg = await self.bot.stop_twitch(on_message=self.send_hunt_msg)
+                if ok:
+                    await self.reply_safe(update, "OK " + msg, parse_mode="Markdown")
+                else:
+                    await self.reply_safe(update, "AVISO " + msg, parse_mode="Markdown")
+        else:
+            from baiaidle.twitch import is_twitch_chat_running, get_current_channel
+            running = is_twitch_chat_running()
+            channel = get_current_channel()
+            status = "Rodando" if running else "Parado"
+            ch = channel or "automatico"
+            await self.reply_safe(update, "Twitch Chat\nStatus: " + status + "\nCanal: " + ch + "\n\nUso: /twitch start | /twitch stop", parse_mode="Markdown")
+
     def get_persistent_reply_keyboard(self) -> ReplyKeyboardMarkup:
         """Retorna o teclado fixo na barra inferior do Telegram para navegação rápida."""
         keyboard = [
@@ -3667,6 +3699,7 @@ async def main():
     application.add_handler(CommandHandler("overlays", controller.overlays))
     application.add_handler(CommandHandler("charms", controller.charms))
     application.add_handler(CommandHandler("charmpreset", controller.charmpreset))
+    application.add_handler(CommandHandler("twitch", controller.twitch))
     application.add_handler(CommandHandler("print", controller.print_screen))
     application.add_handler(CommandHandler("help", controller.help))
     application.add_handler(CommandHandler("ajuda", controller.help))

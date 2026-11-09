@@ -22,6 +22,7 @@ from baiaidle.recovery import (
     monitor_page_recovery,
     ensure_page_session,
 )
+from baiaidle.config import TWITCH_OAUTH_TOKEN, TWITCH_CHANNEL
 
 
 
@@ -60,6 +61,7 @@ class GameBot:
 
         self.auto_boss_instance = None
         self.telegram_controller = None
+        self.twitch_chat_running = False
 
     # ============================================================
     # VIGIA DE CLOUDFLARE SURPRESA (BACKGROUND)
@@ -381,6 +383,19 @@ class GameBot:
             # REGISTRO DE NÍVEIS INICIAIS DA PARTY
             # ====================================================
             await self.record_initial_party()
+            # ====================================================
+            # TWITCH CHAT (recompensa de Streaming Coin)
+            # ====================================================
+            if TWITCH_OAUTH_TOKEN:
+                try:
+                    ok, msg = await self.start_twitch(on_message=self.on_message)
+                    if ok:
+                        print(f"[Bot] {msg}")
+                    else:
+                        print(f"[Bot] Twitch não iniciado: {msg}")
+                except Exception as e:
+                    print(f"[Bot] Erro ao iniciar Twitch: {e}")
+
 
             if is_training:
                 mode_desc = "Casa (Dummies)" if train_type == "casa" else "Treino Online"
@@ -604,6 +619,62 @@ class GameBot:
             and self.hunt_task is not None
             and not self.hunt_task.done()
         )
+
+    # ============================================================
+    # TWITCH CHAT (recompensa de Streaming Coin)
+    # ============================================================
+    async def start_twitch(self, on_message=None) -> tuple[bool, str]:
+        from baiaidle.config import TWITCH_OAUTH_TOKEN, TWITCH_CHANNEL
+        if not TWITCH_OAUTH_TOKEN:
+            return False, "Token da Twitch não configurado."
+
+        channel = TWITCH_CHANNEL
+        if not channel:
+            try:
+                from baiaidle.twitch import choose_twitch_live
+                channel = await choose_twitch_live(self.tab)
+            except Exception as e:
+                print(f"[Twitch] Erro ao escolher live: {e}")
+
+        if not channel:
+            return False, "Nenhuma live disponível no jogo."
+
+        try:
+            from baiaidle.twitch import start_twitch_chat
+            ok = start_twitch_chat(channel, TWITCH_OAUTH_TOKEN)
+            if ok:
+                self.twitch_chat_running = True
+                msg = f"Chat da Twitch iniciado no canal: {channel}"
+                print(f"[Twitch] {msg}")
+                if on_message:
+                    try:
+                        r = on_message(f"📺 *Twitch:* {msg}")
+                        if asyncio.iscoroutine(r):
+                            await r
+                    except Exception:
+                        pass
+                return True, msg
+            return False, "Falha ao iniciar chat da Twitch."
+        except Exception as e:
+            return False, f"Erro ao iniciar chat da Twitch: {e}"
+
+    async def stop_twitch(self, on_message=None) -> tuple[bool, str]:
+        try:
+            from baiaidle.twitch import stop_twitch_chat
+            stop_twitch_chat()
+            self.twitch_chat_running = False
+            msg = "Chat da Twitch encerrado."
+            print(f"[Twitch] {msg}")
+            if on_message:
+                try:
+                    r = on_message(f"📺 *Twitch:* {msg}")
+                    if asyncio.iscoroutine(r):
+                        await r
+                except Exception:
+                    pass
+            return True, msg
+        except Exception as e:
+            return False, f"Erro ao encerrar chat da Twitch: {e}"
 
     # ============================================================
     # RECUPERAÇÃO MANUAL DE SESSÃO / FECHAR POPUPS
