@@ -7,6 +7,17 @@ name = "baiaidle-bot"
 version = "0.1.0"
 description = "Bot para Baiak Idle"
 requires-python = ">=3.11"
+dependencies = [
+    "pydoll>=2.0",
+    "python-telegram-bot>=22.0",
+    "python-dotenv>=1.0",
+    "pyvirtualdisplay>=3.0; sys_platform == 'linux'",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
