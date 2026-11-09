@@ -1339,6 +1339,40 @@ async def run_sell(
                     else:
                         stats.is_in_invasion = True
 
+                # ====================================================
+                # VERIFICAR OVERLAYS (CONEXÃO, FILA, MANUTENÇÃO)
+                # ====================================================
+                try:
+                    from baiaidle.overlays import (
+                        get_overlay_states,
+                        is_connection_lost,
+                        is_in_queue,
+                        is_maintenance,
+                        wait_for_connection_restore,
+                        wait_for_queue_exit,
+                    )
+                    _ov = await get_overlay_states(tab)
+                    if is_connection_lost(_ov):
+                        print("[Overlay] Conexão perdida detectada. Aguardando reconexão...")
+                        if on_message:
+                            await on_message("⚠️ *Conexão perdida!* Aguardando reconexão...")
+                        await wait_for_connection_restore(tab, timeout=60)
+                        continue
+                    if is_in_queue(_ov):
+                        print("[Overlay] Personagem na fila de entrada. Aguardando...")
+                        if on_message:
+                            await on_message("⏳ *Fila de entrada detectada.* Aguardando...")
+                        await wait_for_queue_exit(tab, timeout=300)
+                        continue
+                    if is_maintenance(_ov):
+                        print("[Overlay] Jogo em manutenção. Aguardando...")
+                        if on_message:
+                            await on_message("🛠️ *Jogo em manutenção!* Aguardando reabertura.")
+                        await asyncio.sleep(30)
+                        continue
+                except Exception:
+                    pass
+
                 success = await execute_sale(
                     tab,
                     stats,

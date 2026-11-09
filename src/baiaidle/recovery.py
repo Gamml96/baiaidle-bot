@@ -562,6 +562,84 @@ async def monitor_page_recovery(bot):
                     await asyncio.sleep(2.0)
                     continue
 
+                # ============================================================
+                # DETECÇÃO DE OVERLAYS (CONEXÃO, FILA, MANUTENÇÃO, EVENTOS)
+                # ============================================================
+                try:
+                    from baiaidle.overlays import (
+                        get_overlay_states,
+                        is_connection_lost,
+                        is_in_queue,
+                        is_maintenance,
+                        has_active_event,
+                        get_event_text,
+                        wait_for_connection_restore,
+                        wait_for_queue_exit,
+                    )
+                    states = await get_overlay_states(bot.tab)
+
+                    # Conexão perdida
+                    if is_connection_lost(states):
+                        log_recovery("\n⚠️ [OVERLAY] Conexão perdida detectada. Aguardando reconexão...")
+                        notifier = getattr(bot, "on_message", None)
+                        if notifier:
+                            try:
+                                r = notifier("⚠️ *Conexão perdida!* Aguardando reconexão automática...")
+                                if asyncio.iscoroutine(r):
+                                    await r
+                            except Exception:
+                                pass
+                        await wait_for_connection_restore(bot.tab, timeout=60)
+                        await asyncio.sleep(2.0)
+                        continue
+
+                    # Fila de entrada
+                    if is_in_queue(states):
+                        log_recovery("\n⚠️ [OVERLAY] Personagem na fila de entrada. Aguardando...")
+                        notifier = getattr(bot, "on_message", None)
+                        if notifier:
+                            try:
+                                r = notifier("⏳ *Fila de entrada detectada.* Aguardando sua vez...")
+                                if asyncio.iscoroutine(r):
+                                    await r
+                            except Exception:
+                                pass
+                        await wait_for_queue_exit(bot.tab, timeout=300)
+                        await asyncio.sleep(2.0)
+                        continue
+
+                    # Manutenção
+                    if is_maintenance(states):
+                        log_recovery("\n⚠️ [OVERLAY] Jogo em manutenção.")
+                        notifier = getattr(bot, "on_message", None)
+                        if notifier:
+                            try:
+                                r = notifier("🛠️ *Jogo em manutenção!* O bot aguardará a reabertura.")
+                                if asyncio.iscoroutine(r):
+                                    await r
+                            except Exception:
+                                pass
+                        await asyncio.sleep(30)
+                        continue
+
+                    # Evento ativo
+                    if has_active_event(states):
+                        event_text = get_event_text(states)
+                        last_event = getattr(bot, "_last_event_notified", None)
+                        if event_text and event_text != last_event:
+                            bot._last_event_notified = event_text
+                            log_recovery(f"\n🎉 [OVERLAY] Evento ativo detectado: {event_text[:120]}")
+                            notifier = getattr(bot, "on_message", None)
+                            if notifier:
+                                try:
+                                    r = notifier(f"🎉 *Evento detectado!*\n{event_text[:500]}")
+                                    if asyncio.iscoroutine(r):
+                                        await r
+                                except Exception:
+                                    pass
+                except Exception:
+                    pass
+
                 # 4. WATCHDOG DE CONGELAMENTO / INATIVIDADE (FREEZE WATCHDOG)
                 from baiaidle.settings import get_setting
                 watchdog_min = get_setting("watchdog_minutes", 10)

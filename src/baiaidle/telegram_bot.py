@@ -286,6 +286,8 @@ class TelegramController:
             BotCommand("daily", "🎁 Coletar recompensa diária"),
             BotCommand("print", "🖥️ Tirar print da tela do jogo"),
             BotCommand("recuperar", "🛠️ Fechar avisos e recuperar sessão"),
+            BotCommand("eventos", "🎉 Ver eventos ativos"),
+            BotCommand("overlays", "🧩 Ver overlays ativos"),
             BotCommand("reset", "🧹 Zerar estatísticas e Analyzer"),
             BotCommand("help", "❓ Mostrar lista de ajuda"),
             BotCommand("ajuda", "❓ Mostrar lista de ajuda"),
@@ -2866,6 +2868,45 @@ class TelegramController:
                 await update.message.reply_text(f"❌ Erro ao executar recuperação: {e}")
 
     # ============================================================
+    # EVENTOS E OVERLAYS
+    # ============================================================
+    @authorized_only
+    @require_bot_running
+    async def eventos(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Verificando eventos ativos...", parse_mode="Markdown")
+        async with self.action_lock:
+            try:
+                from baiaidle.overlays import get_overlay_states, has_active_event, get_event_text
+                states = await get_overlay_states(self.bot.tab)
+                if has_active_event(states):
+                    text = get_event_text(states)
+                    await self.reply_safe(update, f"🎉 *Evento ativo!*\n{text[:1000]}", parse_mode="Markdown")
+                else:
+                    await self.reply_safe(update, "Nenhum evento ativo no momento.", parse_mode="Markdown")
+            except Exception as e:
+                await self.reply_safe(update, f"Erro ao verificar eventos: {e}")
+
+    @authorized_only
+    @require_bot_running
+    async def overlays(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Verificando overlays...", parse_mode="Markdown")
+        async with self.action_lock:
+            try:
+                from baiaidle.overlays import get_overlay_states
+                states = await get_overlay_states(self.bot.tab)
+                lines = []
+                for key, info in states.items():
+                    if isinstance(info, dict) and info.get("visible"):
+                        txt = (info.get("text") or "").replace("\n", " ").strip()[:80]
+                        lines.append(f"• *{key}*: {txt}" if txt else f"• *{key}*: visível")
+                if lines:
+                    await self.reply_safe(update, "Overlays ativos:\n" + "\n".join(lines), parse_mode="Markdown")
+                else:
+                    await self.reply_safe(update, "Nenhum overlay ativo no momento.", parse_mode="Markdown")
+            except Exception as e:
+                await self.reply_safe(update, f"Erro ao verificar overlays: {e}")
+
+    # ============================================================
     # MÉTODOS AUXILIARES: TECLADOS INLINE & CONFIGURAÇÕES
     # ============================================================
 
@@ -3569,6 +3610,8 @@ async def main():
     application.add_handler(CommandHandler("setattrs", controller.setattrs))
     application.add_handler(CommandHandler("recuperar", controller.recover))
     application.add_handler(CommandHandler("fechar", controller.recover))
+    application.add_handler(CommandHandler("eventos", controller.eventos))
+    application.add_handler(CommandHandler("overlays", controller.overlays))
     application.add_handler(CommandHandler("print", controller.print_screen))
     application.add_handler(CommandHandler("help", controller.help))
     application.add_handler(CommandHandler("ajuda", controller.help))
