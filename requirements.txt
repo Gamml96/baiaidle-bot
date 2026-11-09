@@ -1,7 +1,5 @@
 pydoll>=2.0
 python-telegram-bot>=22.0
 python-dotenv>=1.0
-# Twitch chat (recompensa de Streaming Coin)
-twitchio>=2.0
 # Linux only (display virtual para evitar fingerprinting do Cloudflare):
 pyvirtualdisplay>=3.0; sys_platform == "linux"

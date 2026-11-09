@@ -2988,12 +2988,29 @@ class TelegramController:
                 else:
                     await self.reply_safe(update, "AVISO " + msg, parse_mode="Markdown")
         else:
-            from baiaidle.twitch import is_twitch_chat_running, get_current_channel
+            from baiaidle.twitch import (
+                get_current_channel,
+                get_current_nick,
+                get_last_error,
+                is_twitch_chat_running,
+            )
             running = is_twitch_chat_running()
             channel = get_current_channel()
+            nick = get_current_nick()
             status = "Rodando" if running else "Parado"
             ch = channel or "automatico"
-            await self.reply_safe(update, "Twitch Chat\nStatus: " + status + "\nCanal: " + ch + "\n\nUso: /twitch start | /twitch stop", parse_mode="Markdown")
+            conta = nick or "-"
+            erro = get_last_error()
+            texto = (
+                "Twitch Chat\n"
+                f"Status: {status}\n"
+                f"Canal: {ch}\n"
+                f"Conta: {conta}\n"
+            )
+            if erro and not running:
+                texto += f"Ultimo erro: {erro}\n"
+            texto += "\nUso: /twitch start | /twitch stop"
+            await self.reply_safe(update, texto)
 
     def get_persistent_reply_keyboard(self) -> ReplyKeyboardMarkup:
         """Retorna o teclado fixo na barra inferior do Telegram para navegação rápida."""

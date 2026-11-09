@@ -120,6 +120,18 @@ else:
 
 
 # ============================================================
+# TWITCH (recompensa de Streaming Coin)
+# ============================================================
+# Token OAuth da conta Twitch vinculada ao jogo (escopo chat:read).
+# Gere em: https://twitchtokengenerator.com
+TWITCH_OAUTH_TOKEN = os.getenv("TWITCH_OAUTH_TOKEN", "").strip()
+
+# Canal da live (opcional). Se vazio, o bot escolhe automaticamente
+# a partir da aba "Ao vivo" do jogo.
+TWITCH_CHANNEL = os.getenv("TWITCH_CHANNEL", "").strip()
+
+
+# ============================================================
 # VALIDAÇÃO
 # ============================================================
 

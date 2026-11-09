@@ -62,6 +62,7 @@ class GameBot:
         self.auto_boss_instance = None
         self.telegram_controller = None
         self.twitch_chat_running = False
+        self.twitch_task = None
 
     # ============================================================
     # VIGIA DE CLOUDFLARE SURPRESA (BACKGROUND)
@@ -517,6 +518,14 @@ class GameBot:
             pass
 
         # ========================================================
+        # ENCERRAR TWITCH CHAT
+        # ========================================================
+        try:
+            await self.stop_twitch()
+        except Exception:
+            pass
+
+        # ========================================================
         # TAB
         # ========================================================
 
@@ -625,42 +634,115 @@ class GameBot:
     # ============================================================
     async def start_twitch(self, on_message=None) -> tuple[bool, str]:
         from baiaidle.config import TWITCH_OAUTH_TOKEN, TWITCH_CHANNEL
+        from baiaidle.twitch import (
+            choose_twitch_live,
+            get_last_error,
+            start_twitch_chat,
+            validate_token,
+        )
+
         if not TWITCH_OAUTH_TOKEN:
             return False, "Token da Twitch não configurado."
+
+        # O NICK do IRC precisa ser o login da Twitch vinculada.
+        # Sem isso a conexão é anônima e não aparece na lista de chatters.
+        ok, login_or_error = await asyncio.to_thread(validate_token, TWITCH_OAUTH_TOKEN)
+        if not ok:
+            return False, login_or_error
+        nick = login_or_error
 
         channel = TWITCH_CHANNEL
         if not channel:
             try:
-                from baiaidle.twitch import choose_twitch_live
                 channel = await choose_twitch_live(self.tab)
             except Exception as e:
                 print(f"[Twitch] Erro ao escolher live: {e}")
 
         if not channel:
-            return False, "Nenhuma live disponível no jogo."
+            return False, "Nenhuma live com drop disponível no jogo."
 
         try:
-            from baiaidle.twitch import start_twitch_chat
-            ok = start_twitch_chat(channel, TWITCH_OAUTH_TOKEN)
-            if ok:
-                self.twitch_chat_running = True
-                msg = f"Chat da Twitch iniciado no canal: {channel}"
-                print(f"[Twitch] {msg}")
-                if on_message:
-                    try:
-                        r = on_message(f"📺 *Twitch:* {msg}")
-                        if asyncio.iscoroutine(r):
-                            await r
-                    except Exception:
-                        pass
-                return True, msg
-            return False, "Falha ao iniciar chat da Twitch."
+            ok = start_twitch_chat(channel, TWITCH_OAUTH_TOKEN, nick=nick)
+            if not ok:
+                return False, get_last_error() or "Falha ao iniciar chat da Twitch."
+
+            self.twitch_chat_running = True
+
+            if self.twitch_task is None or self.twitch_task.done():
+                self.twitch_task = asyncio.create_task(self.monitor_twitch_live())
+
+            msg = f"Chat da Twitch iniciado no canal: {channel} (conta: {nick})"
+            print(f"[Twitch] {msg}")
+            if on_message:
+                try:
+                    r = on_message(f"📺 *Twitch:* {msg}")
+                    if asyncio.iscoroutine(r):
+                        await r
+                except Exception:
+                    pass
+            return True, msg
         except Exception as e:
             return False, f"Erro ao iniciar chat da Twitch: {e}"
+
+    async def monitor_twitch_live(self, interval: int = 600):
+        """
+        A cada `interval` segundos relê a aba "Ao vivo" do jogo e troca de
+        canal se a live atual saiu do ar / esgotou o drop, ou se surgiu uma
+        live melhor. Só atua quando TWITCH_CHANNEL não está fixado no .env.
+        """
+        from baiaidle.config import TWITCH_CHANNEL
+        from baiaidle.twitch import (
+            choose_twitch_live,
+            get_current_channel,
+            switch_twitch_channel,
+        )
+
+        while not self.stop_event.is_set():
+            try:
+                await asyncio.wait_for(self.stop_event.wait(), timeout=interval)
+                break
+            except asyncio.TimeoutError:
+                pass
+            except asyncio.CancelledError:
+                break
+
+            if not self.twitch_chat_running or TWITCH_CHANNEL:
+                continue
+            if not self.tab:
+                continue
+
+            try:
+                best = await choose_twitch_live(self.tab)
+                current = get_current_channel()
+                if best and best.lower() != (current or "").lower():
+                    if switch_twitch_channel(best):
+                        msg = f"Live da Twitch trocada para: {best}"
+                        print(f"[Twitch] {msg}")
+                        if self.on_message:
+                            try:
+                                r = self.on_message(f"📺 *Twitch:* {msg}")
+                                if asyncio.iscoroutine(r):
+                                    await r
+                            except Exception:
+                                pass
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[Twitch] Erro no monitor de lives: {e}")
 
     async def stop_twitch(self, on_message=None) -> tuple[bool, str]:
         try:
             from baiaidle.twitch import stop_twitch_chat
+
+            if self.twitch_task:
+                if not self.twitch_task.done():
+                    self.twitch_task.cancel()
+                    try:
+                        await self.twitch_task
+                    except asyncio.CancelledError:
+                        pass
+                self.twitch_task = None
+
             stop_twitch_chat()
             self.twitch_chat_running = False
             msg = "Chat da Twitch encerrado."
