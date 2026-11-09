@@ -2987,8 +2987,28 @@ class TelegramController:
                     await self.reply_safe(update, "OK " + msg, parse_mode="Markdown")
                 else:
                     await self.reply_safe(update, "AVISO " + msg, parse_mode="Markdown")
+        elif sub in ("check", "verificar", "status"):
+            from baiaidle.twitch import (
+                format_twitch_status,
+                get_current_channel,
+                get_current_nick,
+                is_twitch_chat_running,
+            )
+            await update.message.reply_text("Verificando a contagem no jogo...")
+            async with self.action_lock:
+                ok, msg = await self.bot.check_twitch_status()
+            running = is_twitch_chat_running()
+            texto = (
+                "Twitch\n"
+                f"Chat: {'Rodando' if running else 'Parado'}\n"
+                f"Canal: {get_current_channel() or 'automatico'}\n"
+                f"Conta: {get_current_nick() or '-'}\n\n"
+                f"{msg}"
+            )
+            await self.reply_safe(update, texto)
         else:
             from baiaidle.twitch import (
+                format_twitch_status,
                 get_current_channel,
                 get_current_nick,
                 get_last_error,
@@ -3007,9 +3027,16 @@ class TelegramController:
                 f"Canal: {ch}\n"
                 f"Conta: {conta}\n"
             )
+            if self.bot.twitch_status:
+                texto += "\n" + format_twitch_status(self.bot.twitch_status) + "\n"
+            else:
+                texto += (
+                    "\nContagem: aguardando a primeira verificacao (a cada 5 min)."
+                    "\nUse /twitch check para ver agora.\n"
+                )
             if erro and not running:
                 texto += f"Ultimo erro: {erro}\n"
-            texto += "\nUso: /twitch start | /twitch stop"
+            texto += "\nUso: /twitch check | /twitch start | /twitch stop"
             await self.reply_safe(update, texto)
 
     def get_persistent_reply_keyboard(self) -> ReplyKeyboardMarkup:

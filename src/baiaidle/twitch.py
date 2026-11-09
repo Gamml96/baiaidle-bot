@@ -76,19 +76,23 @@ def extract_login_from_preview(src: str) -> str | None:
     return login or None
 
 
-def pick_live(lives: list) -> dict | None:
+def pick_live(lives: list, exclude: str | None = None) -> dict | None:
     """
     Escolhe a melhor live da lista lida do jogo.
 
     Regras:
       - Precisa ter login.
       - Descarta lives com drop encerrado hoje (off) — não rendem nada.
+      - Descarta `exclude` (login atual), quando informado.
       - Prefere lives não-AFK (o bônus diário não vale em AFK).
       - Mantém a ordem do jogo (parceiros oficiais primeiro).
     """
+    blocked = (exclude or "").strip().lower()
     candidates = [
         live for live in (lives or [])
-        if live.get("login") and not live.get("off")
+        if live.get("login")
+        and not live.get("off")
+        and live.get("login", "").lower() != blocked
     ]
     if not candidates:
         return None
@@ -202,6 +206,60 @@ _JS_CLOSE_MODAL = """
 })()
 """
 
+_JS_READ_STATUS = """
+(() => {
+    const modal = document.getElementById('twitch-modal');
+    if (!modal || modal.classList.contains('hidden')) {
+        return JSON.stringify({ found: false });
+    }
+
+    // Abre a aba "Hoje", onde fica o quadro "Sua contagem agora".
+    const todayTab = modal.querySelector('#twitch-tabs [data-tab="hoje"]');
+    if (todayTab) todayTab.click();
+
+    const result = { found: false };
+
+    const pres = modal.querySelector('section.tw-pres');
+    if (pres) {
+        const stateClass = Array.from(pres.classList).find(c => c.startsWith('is-')) || '';
+        result.found = true;
+        result.state = stateClass ? stateClass.slice(3) : 'unknown';
+        const chip = pres.querySelector('.tw-pres-chip');
+        result.label = chip ? (chip.textContent || '').trim() : '';
+        const big = pres.querySelector('.tw-big');
+        result.big = big ? (big.textContent || '').trim() : '';
+        result.notes = Array.from(pres.querySelectorAll('p.tw-note'))
+            .map(p => (p.textContent || '').trim())
+            .filter(Boolean);
+    }
+
+    // Quadro "Assistindo hoje".
+    for (const sec of modal.querySelectorAll('section.tw-sec')) {
+        const heading = sec.querySelector('.tw-sec-h > span');
+        if (heading && (heading.textContent || '').trim() === 'Assistindo hoje') {
+            const big = sec.querySelector('.tw-big');
+            const aside = sec.querySelector('.tw-sec-aside');
+            result.today_big = big ? (big.textContent || '').trim() : '';
+            result.today_aside = aside ? (aside.textContent || '').trim() : '';
+            break;
+        }
+    }
+
+    // Conta vinculada.
+    const who = modal.querySelector('.tw-link-who');
+    if (who) {
+        const name = who.querySelector('b');
+        result.linked_name = name ? (name.textContent || '').trim() : '';
+        const login = Array.from(who.querySelectorAll('span.muted'))
+            .map(s => (s.textContent || '').trim())
+            .find(t => t.startsWith('@'));
+        result.linked_login = login ? login.slice(1) : '';
+    }
+
+    return JSON.stringify(result);
+})()
+"""
+
 
 async def open_twitch_modal(tab, timeout: float = 4.0) -> bool:
     """Abre o modal de Twitch do jogo e espera ele ficar visível."""
@@ -274,11 +332,97 @@ async def get_twitch_lives(tab, timeout: float = 8.0) -> dict:
     return data
 
 
-async def choose_twitch_live(tab) -> str | None:
+async def choose_twitch_live(tab, exclude: str | None = None) -> str | None:
     """Abre o modal do jogo, lê as lives e devolve o login do melhor canal."""
     data = await get_twitch_lives(tab)
-    best = pick_live(data.get("lives", []))
+    best = pick_live(data.get("lives", []), exclude=exclude)
     return best["login"] if best else None
+
+
+# ============================================================
+# VERIFICADOR DA CONTAGEM ("Sua contagem agora")
+# ============================================================
+
+STATE_LABELS = {
+    "counting": "Contando",
+    "starting": "Começando",
+    "bot": "Live fora da contagem",
+    "away": "Fora da contagem",
+    "never": "Fora da contagem",
+}
+
+COUNTING_STATES = ("counting", "starting")
+PROBLEM_STATES = ("away", "never", "bot")
+
+
+async def get_twitch_status(tab, timeout: float = 8.0) -> dict:
+    """
+    Lê o quadro "Sua contagem agora" da aba "Hoje" do modal da Twitch.
+
+    Retorna:
+      {
+        found: bool,
+        state: "counting"|"starting"|"bot"|"away"|"never"|"unknown",
+        label, big, notes,
+        today_big, today_aside,
+        linked_name, linked_login
+      }
+    """
+    if not tab:
+        return {"found": False}
+
+    if not await open_twitch_modal(tab):
+        return {"found": False}
+
+    # jAe() dispara um refresh assíncrono do status (W5). Dá um tempo para
+    # o dado novo chegar antes de ler o painel.
+    await asyncio.sleep(1.2)
+
+    data = {"found": False}
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            value = extract_execute_result(await tab.execute_script(_JS_READ_STATUS))
+            if isinstance(value, str):
+                data = json.loads(value)
+            elif isinstance(value, dict):
+                data = value
+        except Exception:
+            data = {"found": False}
+
+        if data.get("found"):
+            break
+        if time.monotonic() >= deadline:
+            break
+        await asyncio.sleep(1.0)
+
+    await close_twitch_modal(tab)
+    return data
+
+
+def status_is_counting(status: dict | None) -> bool:
+    return (status or {}).get("state") in COUNTING_STATES
+
+
+def format_twitch_status(status: dict | None) -> str:
+    """Formata o snapshot da contagem para exibir no Telegram."""
+    if not status or not status.get("found"):
+        return "Contagem: não consegui ler a janela da Twitch no jogo."
+
+    state = status.get("state") or "unknown"
+    label = status.get("label") or STATE_LABELS.get(state, state)
+    lines = [f"Contagem: {label}"]
+
+    big = (status.get("big") or "").strip()
+    if big:
+        lines.append(f"Detalhe: {big}")
+
+    today = (status.get("today_big") or "").strip()
+    aside = (status.get("today_aside") or "").strip()
+    if today:
+        lines.append(f"Hoje: {today}" + (f" ({aside})" if aside else ""))
+
+    return "\n".join(lines)
 
 
 # ============================================================

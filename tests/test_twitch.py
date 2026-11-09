@@ -56,6 +56,17 @@ class TestPickLive(unittest.TestCase):
     def test_requires_login(self):
         self.assertIsNone(twitch.pick_live([{"login": "", "off": False}]))
 
+    def test_exclude_skips_current_channel(self):
+        lives = [
+            {"login": "atual", "off": False, "afk": False},
+            {"login": "outra", "off": False, "afk": False},
+        ]
+        self.assertEqual(twitch.pick_live(lives, exclude="ATUAL")["login"], "outra")
+
+    def test_exclude_returns_none_when_only_option(self):
+        lives = [{"login": "atual", "off": False, "afk": False}]
+        self.assertIsNone(twitch.pick_live(lives, exclude="atual"))
+
 
 class TestNormalizeToken(unittest.TestCase):
     def test_strips_oauth_prefix(self):
@@ -97,6 +108,38 @@ class FakeTab:
     async def execute_script(self, script):
         self.scripts.append(script)
         return {"result": {"result": {"value": self.value}}}
+
+
+class TestTwitchStatusFormatting(unittest.TestCase):
+    def test_counting_status(self):
+        status = {
+            "found": True,
+            "state": "counting",
+            "label": "Contando",
+            "big": "Você está sendo contado na live de Foo",
+            "today_big": "12 min assistidos hoje",
+            "today_aside": "+120 hoje",
+        }
+        texto = twitch.format_twitch_status(status)
+        self.assertIn("Contagem: Contando", texto)
+        self.assertIn("live de Foo", texto)
+        self.assertIn("12 min assistidos hoje", texto)
+        self.assertTrue(twitch.status_is_counting(status))
+
+    def test_starting_counts_as_ok(self):
+        status = {"found": True, "state": "starting", "label": "Começando"}
+        self.assertTrue(twitch.status_is_counting(status))
+        self.assertIn("Começando", twitch.format_twitch_status(status))
+
+    def test_problem_states_are_not_counting(self):
+        for state in ("away", "never", "bot"):
+            status = {"found": True, "state": state, "label": "Fora"}
+            self.assertFalse(twitch.status_is_counting(status))
+
+    def test_missing_panel(self):
+        texto = twitch.format_twitch_status({"found": False})
+        self.assertIn("não consegui ler", texto)
+        self.assertFalse(twitch.status_is_counting({"found": False}))
 
 
 class TestGetTwitchLives(unittest.IsolatedAsyncioTestCase):

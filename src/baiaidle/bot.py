@@ -63,6 +63,9 @@ class GameBot:
         self.telegram_controller = None
         self.twitch_chat_running = False
         self.twitch_task = None
+        self.twitch_status = None
+        self._twitch_last_state = None
+        self._twitch_bad_count = 0
 
     # ============================================================
     # VIGIA DE CLOUDFLARE SURPRESA (BACKGROUND)
@@ -667,6 +670,9 @@ class GameBot:
                 return False, get_last_error() or "Falha ao iniciar chat da Twitch."
 
             self.twitch_chat_running = True
+            self.twitch_status = None
+            self._twitch_last_state = None
+            self._twitch_bad_count = 0
 
             if self.twitch_task is None or self.twitch_task.done():
                 self.twitch_task = asyncio.create_task(self.monitor_twitch_live())
@@ -684,19 +690,53 @@ class GameBot:
         except Exception as e:
             return False, f"Erro ao iniciar chat da Twitch: {e}"
 
-    async def monitor_twitch_live(self, interval: int = 600):
+    async def _notify_twitch(self, text: str):
+        """Envia um aviso da Twitch no Telegram (se configurado)."""
+        print(f"[Twitch] {text.replace('*', '')}")
+        if not self.on_message:
+            return
+        try:
+            r = self.on_message(f"📺 *Twitch:* {text}")
+            if asyncio.iscoroutine(r):
+                await r
+        except Exception:
+            pass
+
+    async def check_twitch_status(self) -> tuple[bool, str]:
+        """Lê agora o quadro 'Sua contagem agora' no jogo."""
+        from baiaidle.twitch import format_twitch_status, get_twitch_status
+
+        if not self.tab:
+            return False, "O bot precisa estar rodando para verificar a contagem."
+
+        try:
+            status = await get_twitch_status(self.tab)
+        except Exception as e:
+            return False, f"Erro ao ler a contagem: {e}"
+
+        self.twitch_status = status
+        return bool(status.get("found")), format_twitch_status(status)
+
+    async def monitor_twitch_live(self, interval: int = 300):
         """
-        A cada `interval` segundos relê a aba "Ao vivo" do jogo e troca de
-        canal se a live atual saiu do ar / esgotou o drop, ou se surgiu uma
-        live melhor. Só atua quando TWITCH_CHANNEL não está fixado no .env.
+        Verificador da Twitch (roda a cada 5 min):
+          - Lê "Sua contagem agora" e avisa no Telegram quando o estado muda.
+          - Se a live sair da contagem (bot/away/never) ou o drop esgotar,
+            troca para outra live disponível.
+          - Se continuar fora da contagem por 2 verificações seguidas,
+            reinicia a conexão do chat.
+        Só troca de canal automaticamente se TWITCH_CHANNEL não estiver fixo.
         """
         from baiaidle.config import TWITCH_CHANNEL
         from baiaidle.twitch import (
             choose_twitch_live,
+            format_twitch_status,
             get_current_channel,
+            get_twitch_status,
             switch_twitch_channel,
         )
 
+        tick = 0
         while not self.stop_event.is_set():
             try:
                 await asyncio.wait_for(self.stop_event.wait(), timeout=interval)
@@ -706,29 +746,69 @@ class GameBot:
             except asyncio.CancelledError:
                 break
 
-            if not self.twitch_chat_running or TWITCH_CHANNEL:
-                continue
-            if not self.tab:
+            if not self.twitch_chat_running or not self.tab:
                 continue
 
+            tick += 1
+            state = None
+
+            # ----------------------------------------------------
+            # 1) Verificador da contagem
+            # ----------------------------------------------------
             try:
-                best = await choose_twitch_live(self.tab)
-                current = get_current_channel()
-                if best and best.lower() != (current or "").lower():
-                    if switch_twitch_channel(best):
-                        msg = f"Live da Twitch trocada para: {best}"
-                        print(f"[Twitch] {msg}")
-                        if self.on_message:
-                            try:
-                                r = self.on_message(f"📺 *Twitch:* {msg}")
-                                if asyncio.iscoroutine(r):
-                                    await r
-                            except Exception:
-                                pass
+                status = await get_twitch_status(self.tab)
+                self.twitch_status = status
+                state = (status or {}).get("state")
+
+                if status.get("found") and state != self._twitch_last_state:
+                    self._twitch_last_state = state
+                    texto = format_twitch_status(status)
+                    if state in ("counting", "starting"):
+                        await self._notify_twitch(f"contagem OK\n{texto}")
+                    elif state == "bot":
+                        await self._notify_twitch(f"live saiu da contagem\n{texto}")
+                    else:
+                        await self._notify_twitch(f"fora da contagem\n{texto}")
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                print(f"[Twitch] Erro no monitor de lives: {e}")
+                print(f"[Twitch] Erro ao verificar contagem: {e}")
+
+            # ----------------------------------------------------
+            # 2) Troca de live / auto-recuperação
+            # ----------------------------------------------------
+            if not TWITCH_CHANNEL:
+                should_check_lives = (tick % 2 == 0) or state in ("bot", "away", "never")
+                if should_check_lives:
+                    try:
+                        # Se a live atual saiu da contagem pela staff ("bot"),
+                        # procura outra live em vez de reconectar na mesma.
+                        exclude = get_current_channel() if state == "bot" else None
+                        best = await choose_twitch_live(self.tab, exclude=exclude)
+                        if best:
+                            current = get_current_channel() or ""
+                            mudou = best.lower() != current.lower()
+                            recomecar = self._twitch_bad_count >= 2
+                            if mudou or recomecar:
+                                if switch_twitch_channel(best):
+                                    self._twitch_bad_count = 0
+                                    self._twitch_last_state = None
+                                    motivo = "Live trocada" if mudou else "Conexão do chat reiniciada"
+                                    await self._notify_twitch(
+                                        f"{motivo} para: {best}"
+                                    )
+                    except asyncio.CancelledError:
+                        break
+                    except Exception as e:
+                        print(f"[Twitch] Erro no monitor de lives: {e}")
+
+            # ----------------------------------------------------
+            # 3) Contador de falhas consecutivas
+            # ----------------------------------------------------
+            if state in ("away", "never"):
+                self._twitch_bad_count += 1
+            elif state in ("counting", "starting", "bot"):
+                self._twitch_bad_count = 0
 
     async def stop_twitch(self, on_message=None) -> tuple[bool, str]:
         try:
