@@ -6,6 +6,8 @@ from baiaidle.autoboss import (
     confirm_boss_difficulty,
     close_boss_menu,
     click_fight_button,
+    parse_boss_indices,
+    parse_boss_indices_and_difficulties,
 )
 
 
@@ -212,6 +214,110 @@ class TestBossDifficulty(unittest.IsolatedAsyncioTestCase):
         mock_button.click.assert_called_once_with(humanize=True)
         mock_confirm_diff.assert_called_once_with(tab, "Goshnar's Greed", timeout=8)
         mock_wait_bossbar.assert_called_once_with(tab, "Goshnar's Greed", timeout=10)
+
+    @patch("baiaidle.autoboss.wait_for_bossbar_name", new_callable=AsyncMock)
+    @patch("baiaidle.autoboss.confirm_boss_difficulty", new_callable=AsyncMock)
+    @patch("baiaidle.autoboss.wait_for_click_target", new_callable=AsyncMock)
+    @patch("baiaidle.autoboss.debug_fight_button", new_callable=AsyncMock)
+    async def test_click_fight_button_with_target_difficulty(
+        self,
+        mock_debug,
+        mock_wait_target,
+        mock_confirm_diff,
+        mock_wait_bossbar,
+    ):
+        tab = AsyncMock()
+        mock_debug.return_value = {"button_found": True}
+        mock_wait_target.return_value = {"visible": True}
+        tab.execute_script.return_value = {
+            "result": {
+                "result": {
+                    "value": json.dumps({"success": True})
+                }
+            }
+        }
+        mock_confirm_diff.return_value = {
+            "success": True,
+            "action": "clicked_js",
+            "difficulty": 4,
+        }
+        mock_wait_bossbar.return_value = True
+
+        res = await click_fight_button(tab, "Mimar Haffar", target_difficulty=4, timeout=5)
+        self.assertTrue(res["success"])
+        self.assertEqual(res["difficulty"], 4)
+        mock_confirm_diff.assert_called_once_with(
+            tab, "Mimar Haffar", timeout=8, target_difficulty=4
+        )
+
+    async def test_confirm_boss_difficulty_waits_for_modal_to_become_visible(self):
+        tab = AsyncMock()
+
+        # 1ª verificação: modal ainda oculto (hidden)
+        hidden_response = {
+            "result": {
+                "result": {
+                    "value": json.dumps({
+                        "bossbar_matched": False,
+                        "has_bdiff": False,
+                        "confirm_yes_visible": False,
+                        "confirm_btn_text": "",
+                        "difficulty_value": None,
+                    })
+                }
+            }
+        }
+
+        # 2ª verificação: modal abriu e está visível
+        visible_response = {
+            "result": {
+                "result": {
+                    "value": json.dumps({
+                        "bossbar_matched": False,
+                        "has_bdiff": True,
+                        "confirm_yes_visible": True,
+                        "confirm_btn_text": "Iniciar luta",
+                        "difficulty_value": "4",
+                    })
+                }
+            }
+        }
+
+        # Resposta do clique em #confirm-yes
+        click_response = {
+            "result": {
+                "result": {
+                    "value": json.dumps({
+                        "success": True,
+                        "difficulty": 4,
+                    })
+                }
+            }
+        }
+
+        tab.execute_script.side_effect = [hidden_response, visible_response, click_response]
+
+        res = await confirm_boss_difficulty(tab, "Mimar Haffar", target_difficulty="max", timeout=2)
+        self.assertTrue(res["success"])
+        self.assertEqual(res["action"], "clicked_js")
+        self.assertEqual(res["difficulty"], 4)
+
+    def test_parse_boss_indices_and_difficulties(self):
+        indices, diffs = parse_boss_indices_and_difficulties("1, 2, 3")
+        self.assertEqual(indices, [1, 2, 3])
+        self.assertEqual(diffs, {})
+
+        indices, diffs = parse_boss_indices_and_difficulties("1:4, 2:max, 3:min, 4")
+        self.assertEqual(indices, [1, 2, 3, 4])
+        self.assertEqual(diffs, {1: 4, 2: "max", 3: "min"})
+
+        indices, diffs = parse_boss_indices_and_difficulties("1, 2, 5: 2")
+        self.assertEqual(indices, [1, 2, 5])
+        self.assertEqual(diffs, {5: 2})
+
+        # Teste de compatibilidade com parse_boss_indices
+        legacy_indices = parse_boss_indices("1:4, 2:max, 3")
+        self.assertEqual(legacy_indices, [1, 2, 3])
 
 
 if __name__ == "__main__":

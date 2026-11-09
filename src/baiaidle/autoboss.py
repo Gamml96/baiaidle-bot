@@ -516,26 +516,20 @@ async def close_boss_menu(
     js = """
     (() => {
 
+        const confirmModal =
+            document.getElementById(
+                "confirm-modal"
+            );
+
         const confirmNo =
             document.getElementById(
                 "confirm-no"
             );
 
-        const bdiff =
-            document.querySelector(
-                ".bdiff"
-            );
-
-        if (confirmNo && bdiff) {
-
+        if (confirmModal && !confirmModal.classList.contains("hidden") && confirmNo) {
             try {
-
                 confirmNo.click();
-
-            } catch (e) {
-
-            }
-
+            } catch (e) {}
         }
 
         const button =
@@ -690,62 +684,74 @@ def format_boss_list(
 
 
 # ================================================================
-# PARSE ÍNDICES
+# PARSE ÍNDICES E DIFICULDADES
 # ================================================================
+
+def parse_boss_indices_and_difficulties(
+    text: str,
+) -> tuple[list[int], dict[int, int | str]]:
+    """
+    Interpreta strings de índices de bosses com suporte opcional a dificuldade.
+    Exemplos:
+      '1, 2, 3' -> [1, 2, 3], {}
+      '1:4, 2:max, 3' -> [1, 2, 3], {1: 4, 2: 'max'}
+      '98:4, 97:min' -> [98, 97], {98: 4, 97: 'min'}
+    """
+    text = text.strip()
+    if not text:
+        raise ValueError("Nenhum índice informado.")
+
+    indices = []
+    difficulties = {}
+
+    for part in text.split(","):
+        part = part.strip()
+        if not part:
+            continue
+
+        diff_val = None
+        if ":" in part:
+            raw_idx, raw_diff = part.split(":", 1)
+            raw_idx = raw_idx.strip()
+            raw_diff = raw_diff.strip().lower()
+            if raw_diff in ("max", "maior"):
+                diff_val = "max"
+            elif raw_diff in ("min", "menor"):
+                diff_val = "min"
+            elif raw_diff.isdigit():
+                diff_val = int(raw_diff)
+            else:
+                raise ValueError(
+                    f"Dificuldade inválida '{raw_diff}' no item '{part}'. Use um número, 'max' ou 'min'."
+                )
+        else:
+            raw_idx = part
+
+        try:
+            index = int(raw_idx)
+        except ValueError:
+            raise ValueError(f"Índice inválido: {raw_idx}")
+
+        if index <= 0:
+            raise ValueError(f"Índice inválido: {index}")
+
+        if index not in indices:
+            indices.append(index)
+
+        if diff_val is not None:
+            difficulties[index] = diff_val
+
+    if not indices:
+        raise ValueError("Nenhum índice válido informado.")
+
+    return indices, difficulties
+
 
 def parse_boss_indices(
     text: str,
 ) -> list[int]:
-
-    text = text.strip()
-
-    if not text:
-
-        raise ValueError(
-            "Nenhum índice informado."
-        )
-
-    result = []
-
-    for part in text.split(","):
-
-        part = part.strip()
-
-        if not part:
-
-            continue
-
-        try:
-
-            index = int(
-                part
-            )
-
-        except ValueError:
-
-            raise ValueError(
-                f"Índice inválido: {part}"
-            )
-
-        if index <= 0:
-
-            raise ValueError(
-                f"Índice inválido: {index}"
-            )
-
-        if index not in result:
-
-            result.append(
-                index
-            )
-
-    if not result:
-
-        raise ValueError(
-            "Nenhum índice válido informado."
-        )
-
-    return result
+    indices, _ = parse_boss_indices_and_difficulties(text)
+    return indices
 
 
 # ================================================================
@@ -2018,15 +2024,18 @@ async def wait_for_bossbar_name(
 async def confirm_boss_difficulty(
     tab,
     boss_name: str,
-    timeout: float = 8,
+    target_difficulty: int | str | None = None,
+    timeout: float = 12,
 ) -> dict:
     """
     Aguarda e confirma a tela de seleção de dificuldade do boss.
     Após clicar em 'Enfrentar', o jogo exibe um modal de dificuldade:
-      - Container: #confirm-modal-body contendo .bdiff
+      - Container: #confirm-modal (sem class hidden) contendo .bdiff
+      - Stepper: .bdiff-stepper (.bdiff-value, .bdiff-dir-*)
       - Botão de confirmação: #confirm-yes (texto 'Iniciar luta')
 
-    Esta função verifica se o modal está presente e aciona o botão
+    Esta função aguarda o modal ficar visível, ajusta a dificuldade
+    se configurada (ou mantém a padrão que vier) e aciona o botão
     'Iniciar luta' (#confirm-yes). Se a Bossbar já tiver aparecido,
     reconhece que o combate já foi iniciado diretamente.
     """
@@ -2037,9 +2046,20 @@ async def confirm_boss_difficulty(
         "ou início da luta..."
     )
 
+    if target_difficulty is None:
+        try:
+            from baiaidle.autoboss_scheduler import get_boss_difficulty
+            target_difficulty = get_boss_difficulty(boss_name)
+        except Exception:
+            target_difficulty = None
+
     start = asyncio.get_running_loop().time()
     safe_name = json.dumps(
         boss_name,
+        ensure_ascii=False
+    )
+    safe_target = json.dumps(
+        target_difficulty,
         ensure_ascii=False
     )
 
@@ -2083,16 +2103,26 @@ async def confirm_boss_difficulty(
 
             }}
 
-            // 2. Verifica se o modal de dificuldade está presente
+            // 2. Verifica se o modal de confirmação está presente e VISÍVEL (não possui class 'hidden')
+            const confirmModal =
+                document.getElementById(
+                    "confirm-modal"
+                );
+
+            const isModalHidden =
+                !confirmModal
+                ||
+                confirmModal.classList.contains("hidden");
+
             const confirmBody =
                 document.getElementById(
                     "confirm-modal-body"
                 );
 
             const bdiff =
-                document.querySelector(
-                    ".bdiff"
-                );
+                confirmModal
+                    ? confirmModal.querySelector(".bdiff")
+                    : document.querySelector(".bdiff");
 
             const confirmYes =
                 document.getElementById(
@@ -2101,7 +2131,7 @@ async def confirm_boss_difficulty(
 
             const isVisible = (el) => {{
 
-                if (!el) return false;
+                if (!el || isModalHidden) return false;
 
                 const style =
                     window.getComputedStyle(el);
@@ -2123,9 +2153,9 @@ async def confirm_boss_difficulty(
             }};
 
             const hasBdiff = !!(
-                bdiff
-                ||
-                (confirmBody && confirmBody.querySelector(".bdiff"))
+                !isModalHidden
+                &&
+                (bdiff || (confirmBody && confirmBody.querySelector(".bdiff")))
             );
 
             const hasConfirmYes =
@@ -2168,6 +2198,7 @@ async def confirm_boss_difficulty(
 
             return JSON.stringify({{
                 bossbar_matched: false,
+                modal_hidden: isModalHidden,
                 has_bdiff: hasBdiff,
                 confirm_yes_visible: hasConfirmYes,
                 confirm_btn_text: btnText,
@@ -2210,7 +2241,7 @@ async def confirm_boss_difficulty(
                     "action": "already_started"
                 }
 
-            # Modal de dificuldade detectado ou botão Iniciar Luta visível
+            # Modal de dificuldade detectado e VISÍVEL na tela
             if (
                 data.get("has_bdiff")
                 or
@@ -2228,68 +2259,177 @@ async def confirm_boss_difficulty(
                 )
 
                 print(
-                    f"Modal de dificuldade detectado "
+                    f"Modal de dificuldade detectado para '{boss_name}' "
                     f"(dificuldade atual: {diff_val})."
                 )
+
+                if target_difficulty is not None:
+                    print(
+                        f"Dificuldade configurada para '{boss_name}': {target_difficulty}"
+                    )
 
                 print(
                     f"Clicando em '{btn_text}' "
                     f"(#confirm-yes)..."
                 )
 
-                # Tentativa 1: JavaScript
-                js_click = """
-                (() => {
+                # Tentativa 1: JavaScript (ajusta dificuldade no stepper se necessário e clica #confirm-yes)
+                js_click = f"""
+                (() => {{
+
+                    const confirmModal =
+                        document.getElementById(
+                            "confirm-modal"
+                        );
+
+                    if (
+                        confirmModal
+                        &&
+                        confirmModal.classList.contains("hidden")
+                    ) {{
+                        return JSON.stringify({{
+                            success: false,
+                            error: "Modal ainda está com classe hidden"
+                        }});
+                    }}
 
                     const btn =
                         document.getElementById(
                             "confirm-yes"
                         );
 
-                    if (!btn) {
+                    if (!btn) {{
 
-                        return JSON.stringify({
+                        return JSON.stringify({{
                             success: false,
                             error: "#confirm-yes não encontrado"
-                        });
+                        }});
 
-                    }
+                    }}
 
-                    try {
+                    const bdiff =
+                        document.querySelector(
+                            ".bdiff"
+                        );
+
+                    const valEl =
+                        document.querySelector(
+                            ".bdiff-value"
+                        );
+
+                    let initialDiff =
+                        valEl
+                            ? (valEl.innerText || valEl.textContent || "").trim()
+                            : "";
+
+                    let finalDiff = initialDiff;
+
+                    // Ajusta a dificuldade conforme solicitado
+                    const target = {safe_target};
+
+                    if (
+                        target !== null
+                        && target !== undefined
+                        && target !== ""
+                        && target !== "padrao"
+                        && target !== "default"
+                        && bdiff
+                        && valEl
+                    ) {{
+                        const strTarget =
+                            String(target).trim().toLowerCase();
+
+                        if (strTarget === "max" || strTarget === "maior") {{
+                            const lastBtn =
+                                bdiff.querySelector(".bdiff-dir-last");
+                            if (lastBtn && !lastBtn.disabled) {{
+                                lastBtn.click();
+                            }}
+                        }} else if (strTarget === "min" || strTarget === "menor") {{
+                            const firstBtn =
+                                bdiff.querySelector(".bdiff-dir-first");
+                            if (firstBtn && !firstBtn.disabled) {{
+                                firstBtn.click();
+                            }}
+                        }} else {{
+                            const targetNum = parseInt(strTarget, 10);
+                            if (!isNaN(targetNum)) {{
+                                let current = parseInt(valEl.innerText.trim(), 10);
+                                let guard = 0;
+                                while (current > targetNum && guard < 60) {{
+                                    guard++;
+                                    const prevBtn = bdiff.querySelector(".bdiff-dir-prev");
+                                    if (!prevBtn || prevBtn.disabled) break;
+                                    prevBtn.click();
+                                    current = parseInt(valEl.innerText.trim(), 10);
+                                }}
+                                while (current < targetNum && guard < 60) {{
+                                    guard++;
+                                    const nextBtn = bdiff.querySelector(".bdiff-dir-next");
+                                    if (!nextBtn || nextBtn.disabled) break;
+                                    nextBtn.click();
+                                    current = parseInt(valEl.innerText.trim(), 10);
+                                }}
+                            }}
+                        }}
+
+                        finalDiff =
+                            valEl
+                                ? (valEl.innerText || valEl.textContent || "").trim()
+                                : initialDiff;
+                    }}
+
+                    try {{
 
                         btn.focus();
 
-                    } catch (e) {
+                    }} catch (e) {{
 
-                    }
+                    }}
 
-                    try {
+                    try {{
+
+                        btn.dispatchEvent(
+                            new PointerEvent(
+                                "pointerdown",
+                                {{ bubbles: true, cancelable: true }}
+                            )
+                        );
 
                         btn.dispatchEvent(
                             new MouseEvent(
                                 "mousedown",
-                                { bubbles: true }
+                                {{ bubbles: true, cancelable: true }}
+                            )
+                        );
+
+                        btn.dispatchEvent(
+                            new PointerEvent(
+                                "pointerup",
+                                {{ bubbles: true, cancelable: true }}
                             )
                         );
 
                         btn.dispatchEvent(
                             new MouseEvent(
                                 "mouseup",
-                                { bubbles: true }
+                                {{ bubbles: true, cancelable: true }}
                             )
                         );
 
-                    } catch (e) {
+                    }} catch (e) {{
 
-                    }
+                    }}
 
                     btn.click();
 
-                    return JSON.stringify({
-                        success: true
-                    });
+                    return JSON.stringify({{
+                        success: true,
+                        initial_difficulty: initialDiff,
+                        difficulty: finalDiff
+                    }});
 
-                })()
+                }})()
                 """
 
                 try:
@@ -2313,15 +2453,21 @@ async def confirm_boss_difficulty(
 
                 if click_data and click_data.get("success"):
 
+                    final_diff = (
+                        click_data.get("difficulty")
+                        or diff_val
+                    )
+
                     print(
-                        "Clique JS em #confirm-yes executado."
+                        f"Clique JS em #confirm-yes executado (dificuldade: {final_diff})."
                     )
 
                     await asyncio.sleep(0.3)
 
                     return {
                         "success": True,
-                        "action": "clicked_js"
+                        "action": "clicked_js",
+                        "difficulty": final_diff
                     }
 
                 # Tentativa 2: Pydoll
@@ -2349,7 +2495,8 @@ async def confirm_boss_difficulty(
 
                         return {
                             "success": True,
-                            "action": "clicked_pydoll"
+                            "action": "clicked_pydoll",
+                            "difficulty": diff_val
                         }
 
                 except Exception as e:
@@ -2387,6 +2534,7 @@ async def confirm_boss_difficulty(
 async def click_fight_button(
     tab,
     boss_name: str,
+    target_difficulty: int | str | None = None,
     timeout: float = 120,
     on_message=None,
 ):
@@ -2648,10 +2796,24 @@ async def click_fight_button(
             "Clique JavaScript executado."
         )
 
-        await confirm_boss_difficulty(
-            tab,
-            boss_name,
-            timeout=8
+        if target_difficulty is not None:
+            diff_res = await confirm_boss_difficulty(
+                tab,
+                boss_name,
+                target_difficulty=target_difficulty,
+                timeout=8
+            )
+        else:
+            diff_res = await confirm_boss_difficulty(
+                tab,
+                boss_name,
+                timeout=8
+            )
+
+        used_diff = (
+            diff_res.get("difficulty")
+            if isinstance(diff_res, dict)
+            else None
         )
 
         confirmed = await wait_for_bossbar_name(
@@ -2671,7 +2833,8 @@ async def click_fight_button(
                 "success": True,
                 "boss_name": boss_name,
                 "method": "javascript",
-                "confirmed": True
+                "confirmed": True,
+                "difficulty": used_diff
             }
 
         print(
@@ -2773,10 +2936,24 @@ async def click_fight_button(
     # CONFIRMAR PYDOLL
     # ============================================================
 
-    await confirm_boss_difficulty(
-        tab,
-        boss_name,
-        timeout=8
+    if target_difficulty is not None:
+        diff_res = await confirm_boss_difficulty(
+            tab,
+            boss_name,
+            target_difficulty=target_difficulty,
+            timeout=8
+        )
+    else:
+        diff_res = await confirm_boss_difficulty(
+            tab,
+            boss_name,
+            timeout=8
+        )
+
+    used_diff = (
+        diff_res.get("difficulty")
+        if isinstance(diff_res, dict)
+        else None
     )
 
     confirmed = await wait_for_bossbar_name(
@@ -2797,7 +2974,8 @@ async def click_fight_button(
             "success": True,
             "boss_name": boss_name,
             "method": "pydoll",
-            "confirmed": True
+            "confirmed": True,
+            "difficulty": used_diff
         }
 
     print()
@@ -3162,10 +3340,12 @@ class AutoBoss:
         self,
         tab,
         bot=None,
+        difficulties: dict | None = None,
     ):
 
         self.tab = tab
         self.bot = bot
+        self.difficulties = dict(difficulties or {})
 
         self.state = AutoBossState()
 
@@ -3246,7 +3426,11 @@ class AutoBoss:
     async def start(
         self,
         indices: list[int],
+        difficulties: dict | None = None,
     ):
+
+        if difficulties:
+            self.difficulties.update(difficulties)
 
         if self.state.running:
 
@@ -3589,9 +3773,22 @@ class AutoBoss:
                 # DEBUG + ENFRENTAR
                 # =================================================
 
+                target_diff = (
+                    self.difficulties.get(index)
+                    or self.difficulties.get(boss.name)
+                    or self.difficulties.get(str(index))
+                )
+                if target_diff is None:
+                    try:
+                        from baiaidle.autoboss_scheduler import get_boss_difficulty
+                        target_diff = get_boss_difficulty(boss.name, index)
+                    except Exception:
+                        target_diff = None
+
                 fight = await click_fight_button(
                     self.tab,
                     boss.name,
+                    target_difficulty=target_diff,
                     timeout=120,
                     on_message=self.send_message
                 )
@@ -3626,14 +3823,17 @@ class AutoBoss:
 
                     continue
 
+                used_diff = fight.get("difficulty")
+                diff_str = f" (Dificuldade {used_diff})" if used_diff else ""
+
                 print(
                     f"Combate iniciado: "
-                    f"{boss.name}"
+                    f"{boss.name}{diff_str}"
                 )
 
                 # Notificação de início de combate enxuta
                 await self.send_message(
-                    f"⚔️ *{boss.name}*\n"
+                    f"⚔️ *{boss.name}*{diff_str}\n"
                     f"Combate iniciado!"
                 )
 

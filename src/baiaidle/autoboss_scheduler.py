@@ -11,11 +11,31 @@ PRESET_FILE = PROJECT_ROOT / "autoboss_preset.json"
 _autoboss_scheduler_task: asyncio.Task | None = None
 
 
+def normalize_difficulty(val) -> int | str | None:
+    """Normaliza o valor de dificuldade (número, 'max', 'min' ou None para padrão)."""
+    if val is None:
+        return None
+    val_str = str(val).strip().lower()
+    if val_str in ("", "none", "padrao", "padrão", "default", "null", "reset"):
+        return None
+    if val_str in ("max", "maior"):
+        return "max"
+    if val_str in ("min", "menor"):
+        return "min"
+    try:
+        num = int(val_str)
+        return num if num > 0 else None
+    except ValueError:
+        return None
+
+
 def load_autoboss_preset() -> dict:
-    """Carrega as configurações salvas da lista predefinida e do agendador noturno."""
+    """Carrega as configurações salvas da lista predefinida, dificuldades e do agendador noturno."""
     default_config = {
         "enabled": False,
         "boss_indices": [],
+        "boss_difficulties": {},
+        "default_difficulty": None,
         "last_run_date": None,
     }
     if not PRESET_FILE.exists():
@@ -31,9 +51,20 @@ def load_autoboss_preset() -> dict:
                         indices.append(int(x))
                     except (ValueError, TypeError):
                         pass
+
+                raw_diffs = data.get("boss_difficulties", {})
+                diffs = {}
+                if isinstance(raw_diffs, dict):
+                    for k, v in raw_diffs.items():
+                        norm_v = normalize_difficulty(v)
+                        if norm_v is not None:
+                            diffs[str(k).strip()] = norm_v
+
                 return {
                     "enabled": bool(data.get("enabled", False)),
                     "boss_indices": indices,
+                    "boss_difficulties": diffs,
+                    "default_difficulty": normalize_difficulty(data.get("default_difficulty")),
                     "last_run_date": data.get("last_run_date"),
                 }
     except Exception as e:
@@ -65,6 +96,75 @@ def set_preset_enabled(enabled: bool) -> dict:
     """Liga ou desliga o agendamento automático das 00h."""
     preset = load_autoboss_preset()
     preset["enabled"] = bool(enabled)
+    save_autoboss_preset(preset)
+    return preset
+
+
+def get_boss_difficulty(boss_name: str | None = None, boss_index: int | None = None) -> int | str | None:
+    """
+    Retorna a dificuldade configurada para o boss (ou None para usar a que vier por padrão).
+    Prioridade:
+    1. Nome exato do boss (ex: 'Mimar Haffar')
+    2. Nome case-insensitive
+    3. Índice do boss (ex: '98' ou 98)
+    4. Dificuldade padrão global (default_difficulty)
+    5. None (mantém o valor original que vier na interface)
+    """
+    preset = load_autoboss_preset()
+    diffs = preset.get("boss_difficulties", {})
+
+    if boss_name:
+        if boss_name in diffs:
+            return diffs[boss_name]
+        b_lower = boss_name.strip().lower()
+        for k, v in diffs.items():
+            if k.strip().lower() == b_lower:
+                return v
+
+    if boss_index is not None:
+        idx_str = str(boss_index)
+        if idx_str in diffs:
+            return diffs[idx_str]
+
+    return preset.get("default_difficulty")
+
+
+def set_boss_difficulty(boss_key: str | int, difficulty: int | str | None) -> dict:
+    """
+    Define a dificuldade desejada para um boss (por nome ou índice).
+    Se difficulty for None/'padrao'/'reset', remove a configuração específica para usar a que vier.
+    """
+    preset = load_autoboss_preset()
+    diffs = preset.get("boss_difficulties", {})
+    norm = normalize_difficulty(difficulty)
+    key_str = str(boss_key).strip()
+
+    if norm is None:
+        diffs.pop(key_str, None)
+        to_del = [k for k in diffs if k.strip().lower() == key_str.lower()]
+        for k in to_del:
+            diffs.pop(k, None)
+    else:
+        diffs[key_str] = norm
+
+    preset["boss_difficulties"] = diffs
+    save_autoboss_preset(preset)
+    return preset
+
+
+def set_default_boss_difficulty(difficulty: int | str | None) -> dict:
+    """Define a dificuldade padrão para todos os bosses que não possuírem regra específica."""
+    preset = load_autoboss_preset()
+    preset["default_difficulty"] = normalize_difficulty(difficulty)
+    save_autoboss_preset(preset)
+    return preset
+
+
+def clear_boss_difficulties() -> dict:
+    """Limpa todas as configurações de dificuldade de bosses."""
+    preset = load_autoboss_preset()
+    preset["boss_difficulties"] = {}
+    preset["default_difficulty"] = None
     save_autoboss_preset(preset)
     return preset
 
@@ -196,7 +296,9 @@ async def _start_boss_battle(controller, indices: list[int]):
     controller.bot.pause_hunt()
     await asyncio.sleep(1.5)
 
-    controller.auto_boss_instance = AutoBoss(controller.bot.tab, bot=controller.bot)
+    preset_data = load_autoboss_preset()
+    diffs = preset_data.get("boss_difficulties", {})
+    controller.auto_boss_instance = AutoBoss(controller.bot.tab, bot=controller.bot, difficulties=diffs)
     if controller.bot:
         controller.bot.auto_boss_instance = controller.auto_boss_instance
 

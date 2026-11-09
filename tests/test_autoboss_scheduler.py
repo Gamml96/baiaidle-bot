@@ -15,6 +15,11 @@ from baiaidle.autoboss_scheduler import (
     format_time_until_midnight,
     start_autoboss_scheduler,
     stop_autoboss_scheduler,
+    normalize_difficulty,
+    get_boss_difficulty,
+    set_boss_difficulty,
+    set_default_boss_difficulty,
+    clear_boss_difficulties,
 )
 
 
@@ -84,6 +89,51 @@ class TestAutoBossScheduler(unittest.IsolatedAsyncioTestCase):
         stop_autoboss_scheduler()
         await asyncio.sleep(0.01)
         self.assertTrue(task.done())
+
+    def test_normalize_difficulty(self):
+        self.assertEqual(normalize_difficulty(4), 4)
+        self.assertEqual(normalize_difficulty("4"), 4)
+        self.assertEqual(normalize_difficulty("max"), "max")
+        self.assertEqual(normalize_difficulty("MAX"), "max")
+        self.assertEqual(normalize_difficulty("maior"), "max")
+        self.assertEqual(normalize_difficulty("min"), "min")
+        self.assertEqual(normalize_difficulty("menor"), "min")
+        self.assertIsNone(normalize_difficulty("padrao"))
+        self.assertIsNone(normalize_difficulty("default"))
+        self.assertIsNone(normalize_difficulty("none"))
+        self.assertIsNone(normalize_difficulty(0))
+        self.assertIsNone(normalize_difficulty(-1))
+        self.assertIsNone(normalize_difficulty("invalid_foo"))
+
+    def test_boss_difficulty_management(self):
+        # Inicialmente sem dificuldades configuradas
+        self.assertIsNone(get_boss_difficulty("Goshnar's Greed", 1))
+
+        # Configurar por índice
+        set_boss_difficulty(1, 4)
+        self.assertEqual(get_boss_difficulty("Goshnar's Greed", 1), 4)
+
+        # Configurar por nome
+        set_boss_difficulty("Mimar Haffar", "max")
+        self.assertEqual(get_boss_difficulty("Mimar Haffar", 2), "max")
+
+        # Fallback para dificuldade padrão
+        set_default_boss_difficulty(2)
+        self.assertEqual(get_boss_difficulty("Other Boss", 99), 2)
+        # O boss com configuração específica mantém a sua
+        self.assertEqual(get_boss_difficulty("Goshnar's Greed", 1), 4)
+        self.assertEqual(get_boss_difficulty("Mimar Haffar", 2), "max")
+
+        # Limpar dificuldade de um boss específico usando "padrao"
+        set_boss_difficulty(1, "padrao")
+        # Agora o boss 1 recai na dificuldade padrão global (2)
+        self.assertEqual(get_boss_difficulty("Goshnar's Greed", 1), 2)
+
+        # Limpar todas as dificuldades
+        clear_boss_difficulties()
+        self.assertIsNone(get_boss_difficulty("Goshnar's Greed", 1))
+        self.assertIsNone(get_boss_difficulty("Mimar Haffar", 2))
+        self.assertIsNone(get_boss_difficulty("Other Boss", 99))
 
 
 if __name__ == "__main__":

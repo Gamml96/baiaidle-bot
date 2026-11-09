@@ -33,6 +33,7 @@ from baiaidle.autoboss import (
     get_boss_list,
     format_boss_list,
     parse_boss_indices,
+    parse_boss_indices_and_difficulties,
 )
 from baiaidle.autoboss_scheduler import (
     load_autoboss_preset,
@@ -41,6 +42,11 @@ from baiaidle.autoboss_scheduler import (
     format_time_until_midnight,
     start_autoboss_scheduler,
     stop_autoboss_scheduler,
+    get_boss_difficulty,
+    set_boss_difficulty,
+    set_default_boss_difficulty,
+    clear_boss_difficulties,
+    normalize_difficulty,
 )
 from baiaidle.bot import GameBot
 from baiaidle.config import (
@@ -266,6 +272,7 @@ class TelegramController:
             BotCommand("autoboss", "🚀 Iniciar AutoBoss"),
             BotCommand("stopautoboss", "⏹️ Parar AutoBoss"),
             BotCommand("setautoboss", "📋 Definir lista padrão de bosses"),
+            BotCommand("setbossdiff", "🎯 Dificuldade dos bosses"),
             BotCommand("autoboss_on", "⏰ Ligar agendamento 00h"),
             BotCommand("autoboss_off", "🔕 Desligar agendamento 00h"),
             BotCommand("treino", "🧘‍♂️ Forçar ida para Treino Online"),
@@ -844,11 +851,16 @@ class TelegramController:
         if not context.args:
             preset = load_autoboss_preset()
             indices = preset.get("boss_indices", [])
+            preset_diffs = preset.get("boss_difficulties", {})
             if indices:
                 indices_str = ", ".join(map(str, indices))
+                diff_info = ""
+                if preset_diffs:
+                    diff_items = [f"{k}:{v}" for k, v in preset_diffs.items()]
+                    diff_info = f"\n🎯 *Dificuldades:* {', '.join(diff_items)}"
                 await self.reply_safe(
                     update,
-                    f"🚀 *Iniciando AutoBoss na lista predefinida:* `[{indices_str}]`...",
+                    f"🚀 *Iniciando AutoBoss na lista predefinida:* `[{indices_str}]`...{diff_info}",
                     parse_mode="Markdown"
                 )
             else:
@@ -856,19 +868,25 @@ class TelegramController:
                     "ℹ️ *Nenhuma lista predefinida configurada.*\n\n"
                     "Uso:\n"
                     "• `/autoboss 1,2,3` - Inicia com a lista informada\n"
-                    "• `/setautoboss 1,2,3` - Define a lista predefinida permanente",
+                    "• `/autoboss 1:4, 2:max, 3` - Inicia com dificuldades customizadas\n"
+                    "• `/setautoboss 1,2,3` - Define a lista predefinida permanente\n"
+                    "• `/setbossdiff` - Configura dificuldades por boss",
                     parse_mode="Markdown"
                 )
                 return
+            diffs_to_use = preset_diffs
         else:
             argument = " ".join(context.args)
             try:
-                indices = parse_boss_indices(argument)
+                indices, inline_diffs = parse_boss_indices_and_difficulties(argument)
             except ValueError as e:
                 await update.message.reply_text(f"❌ {e}")
                 return
+            preset = load_autoboss_preset()
+            diffs_to_use = dict(preset.get("boss_difficulties", {}))
+            diffs_to_use.update(inline_diffs)
 
-        self.auto_boss_instance = AutoBoss(self.bot.tab, bot=self.bot)
+        self.auto_boss_instance = AutoBoss(self.bot.tab, bot=self.bot, difficulties=diffs_to_use)
         if self.bot:
             self.bot.auto_boss_instance = self.auto_boss_instance
             if hasattr(self.bot, "touch_activity"):
@@ -908,33 +926,145 @@ class TelegramController:
             enabled = preset.get("enabled", False)
             status_emoji = "🟢 Ativado" if enabled else "🔴 Desativado"
             indices_str = ", ".join(map(str, indices)) if indices else "Nenhum configurado"
+            diffs = preset.get("boss_difficulties", {})
+            default_diff = preset.get("default_difficulty")
+            def_str = f"`{default_diff}`" if default_diff is not None else "_Padrão do jogo_"
+            diffs_str = ", ".join([f"{k}:{v}" for k, v in diffs.items()]) if diffs else "_Nenhuma (usa padrão)_"
+
             await self.reply_safe(
                 update,
                 f"📋 *Configuração da Lista Predefinida do AutoBoss*\n\n"
                 f"• Bosses predefinidos: `[{indices_str}]`\n"
-                f"• Agendamento das 00h: {status_emoji}\n\n"
-                f"Para alterar a lista de bosses, use:\n`/setautoboss 1,2,3`",
+                f"• Agendamento das 00h: {status_emoji}\n"
+                f"• Dificuldade padrão: {def_str}\n"
+                f"• Dificuldades por boss: {diffs_str}\n\n"
+                f"Para alterar a lista de bosses:\n`/setautoboss 1,2,3` ou `/setautoboss 1:4, 2:max, 3`\n\n"
+                f"Para gerenciar dificuldades:\n`/setbossdiff`",
                 parse_mode="Markdown"
             )
             return
 
         argument = " ".join(context.args)
         try:
-            indices = parse_boss_indices(argument)
+            indices, inline_diffs = parse_boss_indices_and_difficulties(argument)
             preset = set_preset_indices(indices)
+            if inline_diffs:
+                for k, v in inline_diffs.items():
+                    set_boss_difficulty(k, v)
+                preset = load_autoboss_preset()
+
             indices_str = ", ".join(map(str, indices))
             enabled = preset.get("enabled", False)
             status_text = "🟢 Ativado (rodará às 00h)" if enabled else "🔴 Desativado (use /autoboss_on para ativar às 00h)"
+            diff_msg = ""
+            if inline_diffs:
+                diff_items_str = ", ".join([f"{k}:{v}" for k, v in inline_diffs.items()])
+                diff_msg = f"\n🎯 Dificuldades configuradas: `[{diff_items_str}]`"
+
             await self.reply_safe(
                 update,
                 f"✅ *Lista Predefinida de AutoBoss Atualizada!*\n\n"
-                f"📋 Bosses configurados: `[{indices_str}]`\n"
+                f"📋 Bosses configurados: `[{indices_str}]`{diff_msg}\n"
                 f"⏰ Agendamento das 00h: {status_text}\n\n"
                 f"Você pode iniciar essa lista a qualquer momento usando `/autoboss`.",
                 parse_mode="Markdown"
             )
         except ValueError as e:
-            await update.message.reply_text(f"❌ {e}\nExemplo de uso: `/setautoboss 1,2,3`", parse_mode="Markdown")
+            await update.message.reply_text(
+                f"❌ {e}\nExemplo de uso: `/setautoboss 1,2,3` ou `/setautoboss 1:4, 2:max, 3`",
+                parse_mode="Markdown"
+            )
+
+    @authorized_only
+    async def setbossdiff(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Configura a dificuldade de um boss específico ou padrão."""
+        if not context.args:
+            preset = load_autoboss_preset()
+            diffs = preset.get("boss_difficulties", {})
+            default_diff = preset.get("default_difficulty")
+            def_str = f"`{default_diff}`" if default_diff is not None else "_Padrão do jogo (a que vier)_"
+
+            diffs_lines = []
+            if diffs:
+                for k, v in diffs.items():
+                    diffs_lines.append(f"• Boss `{k}`: `{v}`")
+                diffs_str = "\n".join(diffs_lines)
+            else:
+                diffs_str = "_Nenhuma regra específica configurada (usam o padrão)._"
+
+            msg = (
+                "🎯 *CONFIGURAÇÃO DE DIFICULDADE DO AUTOBOSS*\n\n"
+                f"• Dificuldade padrão: {def_str}\n\n"
+                f"📋 *Dificuldades por Boss:*\n{diffs_str}\n\n"
+                "💡 *Como configurar:*\n"
+                "• `/setbossdiff 1 4` - Define dificuldade 4 para o boss índice 1\n"
+                "• `/setbossdiff Mimar Haffar 4` - Define dificuldade 4 por nome\n"
+                "• `/setbossdiff 1 max` - Maior dificuldade liberada\n"
+                "• `/setbossdiff 1 min` - Menor dificuldade\n"
+                "• `/setbossdiff 1 padrao` - Reseta boss para usar o padrão\n"
+                "• `/setbossdiff padrao 3` - Define padrão global (ex: 3)\n"
+                "• `/setbossdiff padrao reset` - Reseta padrão global para o jogo\n"
+                "• `/setbossdiff limpar` - Limpa todas as regras personalizadas\n\n"
+                "_Dica:_ você também pode definir direto na lista: `/autoboss 1:4, 2:max, 3`"
+            )
+            await self.reply_safe(update, msg, parse_mode="Markdown")
+            return
+
+        # /setbossdiff limpar
+        if len(context.args) == 1 and context.args[0].lower() in ("limpar", "clear"):
+            clear_boss_difficulties()
+            await self.reply_safe(
+                update,
+                "🧹 *Todas as dificuldades personalizadas foram limpas!*\n"
+                "O bot utilizará a dificuldade que vier por padrão no jogo para todos os bosses.",
+                parse_mode="Markdown"
+            )
+            return
+
+        # /setbossdiff padrao <valor>
+        if len(context.args) == 2 and context.args[0].lower() in ("padrao", "padrão", "default"):
+            val = context.args[1].lower()
+            norm = normalize_difficulty(val)
+            set_default_boss_difficulty(norm)
+            if norm is None:
+                await self.reply_safe(
+                    update,
+                    "✅ *Dificuldade padrão resetada!*\nO bot usará a que vier por padrão no jogo para bosses sem regra específica.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await self.reply_safe(
+                    update,
+                    f"✅ *Dificuldade padrão definida para:* `{norm}`\nBosses sem regra específica usarão esta dificuldade.",
+                    parse_mode="Markdown"
+                )
+            return
+
+        # /setbossdiff <boss_key> <dificuldade>
+        if len(context.args) >= 2:
+            val = context.args[-1].lower()
+            boss_key = " ".join(context.args[:-1]).strip()
+            norm = normalize_difficulty(val)
+            set_boss_difficulty(boss_key, norm)
+            if norm is None:
+                await self.reply_safe(
+                    update,
+                    f"✅ Dificuldade personalizada para *{boss_key}* foi removida (usará a padrão).",
+                    parse_mode="Markdown"
+                )
+            else:
+                await self.reply_safe(
+                    update,
+                    f"✅ *Dificuldade para '{boss_key}' definida para:* `{norm}`",
+                    parse_mode="Markdown"
+                )
+            return
+
+        await self.reply_safe(
+            update,
+            "❌ Formato inválido. Use:\n`/setbossdiff <boss/índice> <dificuldade>`\nExemplo: `/setbossdiff 1 4` ou `/setbossdiff Mimar Haffar 4`",
+            parse_mode="Markdown"
+        )
 
     @authorized_only
     async def autoboss_on(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -976,6 +1106,18 @@ class TelegramController:
         status_sched = "🟢 Ativado (rodará às 00h)" if enabled else "🔴 Desativado"
         time_left = format_time_until_midnight()
 
+        diffs = preset.get("boss_difficulties", {})
+        default_diff = preset.get("default_difficulty")
+        if diffs:
+            diff_items = [f"{k}:{v}" for k, v in list(diffs.items())[:5]]
+            if len(diffs) > 5:
+                diff_items.append(f"+{len(diffs) - 5} mais")
+            diffs_summary = ", ".join(diff_items)
+        elif default_diff is not None:
+            diffs_summary = f"Padrão: {default_diff}"
+        else:
+            diffs_summary = "Padrão do jogo"
+
         is_running = self.auto_boss_instance and self.auto_boss_instance.state.running
         status_current = "⚔️ Em combate" if is_running else "💤 Parado"
 
@@ -984,6 +1126,7 @@ class TelegramController:
             f"• Estado atual: {status_current}\n"
             f"• Agendamento (00h): {status_sched}\n"
             f"• Lista predefinida: `[{indices_str}]`\n"
+            f"• Dificuldades: `{diffs_summary}`\n"
             f"• Próximo reset das cargas em: {time_left} (00:00 Horário de Brasília)\n"
         )
 
@@ -998,6 +1141,7 @@ class TelegramController:
             f"\nComandos úteis:\n"
             f"• `/autoboss` - Executa a lista predefinida\n"
             f"• `/setautoboss 1,2,3` - Altera a lista predefinida\n"
+            f"• `/setbossdiff` - Configura dificuldades por boss\n"
             f"• `/autoboss_on` - Ativa agendamento das 00h\n"
             f"• `/autoboss_off` - Desativa agendamento das 00h\n"
             f"• `/stopautoboss` - Interrompe AutoBoss em andamento"
@@ -3110,11 +3254,24 @@ class TelegramController:
         indices_str = ", ".join(map(str, indices)) if indices else "Nenhum configurado"
         is_running = self.auto_boss_instance and self.auto_boss_instance.state.running
 
+        diffs = preset.get("boss_difficulties", {})
+        default_diff = preset.get("default_difficulty")
+        if diffs:
+            diff_items = [f"{k}:{v}" for k, v in list(diffs.items())[:3]]
+            if len(diffs) > 3:
+                diff_items.append(f"+{len(diffs) - 3} mais")
+            diffs_summary = ", ".join(diff_items)
+        elif default_diff is not None:
+            diffs_summary = f"Padrão: {default_diff}"
+        else:
+            diffs_summary = "Padrão do jogo"
+
         text = (
             "⚔️ *SISTEMA • PAINEL AUTOBOSS*\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"🤖 *Status:* {'⚔️ Em Execução' if is_running else 'Inativo'}\n"
             f"📋 *Preset Salvo:* `{indices_str}`\n"
+            f"🎯 *Dificuldades:* `{diffs_summary}`\n"
             f"⏰ *Agendamento 00h:* {status_auto}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "_Controle de caça a bosses:_"
@@ -3385,6 +3542,8 @@ async def main():
     application.add_handler(CommandHandler("stopautoboss", controller.stopautoboss))
     application.add_handler(CommandHandler("setautoboss", controller.setautoboss))
     application.add_handler(CommandHandler("autoboss_preset", controller.setautoboss))
+    application.add_handler(CommandHandler("setbossdiff", controller.setbossdiff))
+    application.add_handler(CommandHandler("bossdiff", controller.setbossdiff))
     application.add_handler(CommandHandler("autoboss_on", controller.autoboss_on))
     application.add_handler(CommandHandler("autoboss_off", controller.autoboss_off))
     application.add_handler(CommandHandler("autoboss_status", controller.autoboss_status))
