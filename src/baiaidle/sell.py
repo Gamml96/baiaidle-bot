@@ -93,6 +93,7 @@ class HuntStats:
     training_type: str = ""
     is_in_invasion: bool = False
     last_hunt: str = ""
+    last_charm_hunt: str = ""
 
     def reset(self):
         """Zera todos os dados da sessão."""
@@ -117,6 +118,7 @@ class HuntStats:
         self.session_platinum_coins = 0
         self.session_gold_coins = 0
         self.last_hunt = ""
+        self.last_charm_hunt = ""
         self.total_coin_gold = 0
         self.is_in_training = False
         self.training_type = ""
@@ -1226,6 +1228,28 @@ async def run_sell(
                     stats.training_type = ""
                     if current_loc and not is_city_location(current_loc) and current_loc.lower() not in ["hunt desconhecida", "carregando...", ""]:
                         stats.last_hunt = current_loc
+
+                        # ====================================================
+                        # APLICAR PRESET DE CHARMS CONFORME A HUNT
+                        # ====================================================
+                        try:
+                            from baiaidle.charms import apply_charm_preset, get_charm_presets
+                            if current_loc and current_loc != getattr(stats, "last_charm_hunt", ""):
+                                presets = await get_charm_presets(tab)
+                                preset_names = [p.get("name", "") for p in presets]
+                                if current_loc in preset_names:
+                                    print(f"[Charms] Aplicando preset '{current_loc}' para a hunt atual...")
+                                    if on_message:
+                                        await on_message(f"🔮 *Aplicando preset de Charms:* {current_loc}")
+                                    ok, msg = await apply_charm_preset(tab, current_loc)
+                                    if ok:
+                                        stats.last_charm_hunt = current_loc
+                                        if on_message:
+                                            await on_message(f"✅ {msg}")
+                                    else:
+                                        print(f"[Charms] {msg}")
+                        except Exception as e:
+                            print(f"[Charms] Aviso ao aplicar preset: {e}")
                 # ====================================================
 
                 if not pause_event.is_set():

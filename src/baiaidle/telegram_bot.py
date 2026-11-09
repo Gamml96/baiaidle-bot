@@ -288,6 +288,8 @@ class TelegramController:
             BotCommand("recuperar", "🛠️ Fechar avisos e recuperar sessão"),
             BotCommand("eventos", "🎉 Ver eventos ativos"),
             BotCommand("overlays", "🧩 Ver overlays ativos"),
+            BotCommand("charms", "🔮 Ver charms e presets"),
+            BotCommand("charmpreset", "🔮 Aplicar preset de charms"),
             BotCommand("reset", "🧹 Zerar estatísticas e Analyzer"),
             BotCommand("help", "❓ Mostrar lista de ajuda"),
             BotCommand("ajuda", "❓ Mostrar lista de ajuda"),
@@ -2907,6 +2909,57 @@ class TelegramController:
                 await self.reply_safe(update, f"Erro ao verificar overlays: {e}")
 
     # ============================================================
+    # CHARMS
+    # ============================================================
+    @authorized_only
+    @require_bot_running
+    async def charms(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text("Verificando charms...", parse_mode="Markdown")
+        async with self.action_lock:
+            try:
+                from baiaidle.charms import get_charm_status
+                status = await get_charm_status(self.bot.tab)
+                if not status.get("found"):
+                    await self.reply_safe(update, "Não foi possível ler o status dos charms.")
+                    return
+                presets = status.get("presets", [])
+                lines_msg = []
+                if status.get("slots"):
+                    s = status["slots"]
+                    lines_msg.append(f"Slots: {s['used']}/{s['total']}")
+                if status.get("points"):
+                    lines_msg.append(f"Pontos: {status['points']}")
+                if presets:
+                    lines_msg.append("\nPresets VIP:")
+                    for p in presets:
+                        mark = " (aplicado)" if p.get("applied") else ""
+                        lines_msg.append(f"• {p.get('name')}{mark} — {p.get('cost')}")
+                await self.reply_safe(update, "\n".join(lines_msg) if lines_msg else "Sem dados de charms.", parse_mode="Markdown")
+            except Exception as e:
+                await self.reply_safe(update, f"Erro ao verificar charms: {e}")
+
+    @authorized_only
+    @require_bot_running
+    async def charmpreset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        args = context.args if context.args else []
+        if not args:
+            await update.message.reply_text("Uso: /charmpreset <nome do preset>", parse_mode="Markdown")
+            return
+        name = " ".join(args)
+        await update.message.reply_text(f"Aplicando preset de charms: {name}...", parse_mode="Markdown")
+        async with self.action_lock:
+            try:
+                from baiaidle.charms import apply_charm_preset
+                ok, msg = await apply_charm_preset(self.bot.tab, name)
+                if ok:
+                    self.bot.hunt_stats.last_charm_hunt = name
+                    await self.reply_safe(update, f"✅ {msg}", parse_mode="Markdown")
+                else:
+                    await self.reply_safe(update, f"⚠️ {msg}", parse_mode="Markdown")
+            except Exception as e:
+                await self.reply_safe(update, f"Erro ao aplicar preset: {e}")
+
+    # ============================================================
     # MÉTODOS AUXILIARES: TECLADOS INLINE & CONFIGURAÇÕES
     # ============================================================
 
@@ -3612,6 +3665,8 @@ async def main():
     application.add_handler(CommandHandler("fechar", controller.recover))
     application.add_handler(CommandHandler("eventos", controller.eventos))
     application.add_handler(CommandHandler("overlays", controller.overlays))
+    application.add_handler(CommandHandler("charms", controller.charms))
+    application.add_handler(CommandHandler("charmpreset", controller.charmpreset))
     application.add_handler(CommandHandler("print", controller.print_screen))
     application.add_handler(CommandHandler("help", controller.help))
     application.add_handler(CommandHandler("ajuda", controller.help))
