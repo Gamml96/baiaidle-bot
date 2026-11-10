@@ -1,5 +1,6 @@
 import asyncio
 import functools
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 # pyrefly: ignore [missing-import]
@@ -275,6 +276,7 @@ class TelegramController:
             BotCommand("setbossdiff", "🎯 Dificuldade dos bosses"),
             BotCommand("autoboss_on", "⏰ Ligar agendamento 00h"),
             BotCommand("autoboss_off", "🔕 Desligar agendamento 00h"),
+            BotCommand("autoboss_status", "📊 Status do agendador AutoBoss"),
             BotCommand("treino", "🧘‍♂️ Forçar ida para Treino Online"),
             BotCommand("casa", "🏠 Forçar ida para Dummie da Casa"),
             BotCommand("guildtask", "🎯 Gerenciar tasks da Guilda"),
@@ -286,6 +288,7 @@ class TelegramController:
             BotCommand("daily", "🎁 Coletar recompensa diária"),
             BotCommand("print", "🖥️ Tirar print da tela do jogo"),
             BotCommand("recuperar", "🛠️ Fechar avisos e recuperar sessão"),
+            BotCommand("debughunt", "🐞 Salvar HTML das hunts para depuração"),
             BotCommand("eventos", "🎉 Ver eventos ativos"),
             BotCommand("overlays", "🧩 Ver overlays ativos"),
             BotCommand("charms", "🔮 Ver charms e presets"),
@@ -1842,6 +1845,58 @@ class TelegramController:
         elif data == "sub_defaulthunt":
             await self.show_defaulthunt_menu(update, context)
 
+        elif data == "sub_eventos":
+            await self.show_eventos_menu(update, context)
+
+        elif data == "sub_charms":
+            await self.show_charms_menu(update, context)
+
+        elif data == "sub_twitch":
+            await self.show_twitch_menu(update, context)
+
+        elif data.startswith("charm_apply_"):
+            try:
+                index = int(data.rsplit("_", 1)[1])
+            except (ValueError, IndexError):
+                await query.answer("Preset inválido.", show_alert=True)
+                return
+            from baiaidle.charms import apply_charm_preset, get_charm_presets
+            await query.answer("Aplicando preset...")
+            async with self.action_lock:
+                presets = await get_charm_presets(self.bot.tab)
+                if index < 0 or index >= len(presets):
+                    await query.message.reply_text("⚠️ Preset não encontrado. Atualize o painel de charms.")
+                    return
+                nome = presets[index].get("name") or ""
+                ok, msg = await apply_charm_preset(self.bot.tab, nome)
+                if ok:
+                    self.bot.hunt_stats.last_charm_hunt = nome
+                    await query.message.reply_text(f"✅ {msg}")
+                else:
+                    await query.message.reply_text(f"⚠️ {msg}")
+            await self.show_charms_menu(update, context)
+
+        elif data == "btn_twitch_start":
+            await query.answer("Iniciando chat da Twitch...")
+            async with self.action_lock:
+                ok, msg = await self.bot.start_twitch(on_message=self.send_hunt_msg)
+            await query.message.reply_text(("✅ " if ok else "⚠️ ") + msg)
+            await self.show_twitch_menu(update, context)
+
+        elif data == "btn_twitch_stop":
+            await query.answer("Parando chat da Twitch...")
+            async with self.action_lock:
+                ok, msg = await self.bot.stop_twitch(on_message=self.send_hunt_msg)
+            await query.message.reply_text(("✅ " if ok else "⚠️ ") + msg)
+            await self.show_twitch_menu(update, context)
+
+        elif data == "btn_twitch_check":
+            await query.answer("Verificando a contagem no jogo...")
+            async with self.action_lock:
+                ok, msg = await self.bot.check_twitch_status()
+            await query.message.reply_text(msg)
+            await self.show_twitch_menu(update, context)
+
         elif data == "btn_pause_toggle":
             if self.bot.is_hunt_running():
                 self.bot.pause_hunt()
@@ -2397,6 +2452,9 @@ class TelegramController:
                 await query.message.reply_text(f"❌ Erro no AutoBoss: {e}")
 
         # === PAINEL DE CONFIGURAÇÕES (CFG) ===
+        elif data == "btn_help":
+            await query.message.reply_text(self.get_help_text(), parse_mode="Markdown")
+
         elif data in ["btn_config", "cfg_menu", "cfg_refresh"]:
             settings = load_settings()
             text = self.format_config_message(settings)
@@ -2874,70 +2932,19 @@ class TelegramController:
     # EVENTOS E OVERLAYS
     # ============================================================
     @authorized_only
-    @require_bot_running
     async def eventos(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("Verificando eventos ativos...", parse_mode="Markdown")
-        async with self.action_lock:
-            try:
-                from baiaidle.overlays import get_overlay_states, has_active_event, get_event_text
-                states = await get_overlay_states(self.bot.tab)
-                if has_active_event(states):
-                    text = get_event_text(states)
-                    await self.reply_safe(update, f"🎉 *Evento ativo!*\n{text[:1000]}", parse_mode="Markdown")
-                else:
-                    await self.reply_safe(update, "Nenhum evento ativo no momento.", parse_mode="Markdown")
-            except Exception as e:
-                await self.reply_safe(update, f"Erro ao verificar eventos: {e}")
+        await self.show_eventos_menu(update, context)
 
     @authorized_only
-    @require_bot_running
     async def overlays(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("Verificando overlays...", parse_mode="Markdown")
-        async with self.action_lock:
-            try:
-                from baiaidle.overlays import get_overlay_states
-                states = await get_overlay_states(self.bot.tab)
-                lines = []
-                for key, info in states.items():
-                    if isinstance(info, dict) and info.get("visible"):
-                        txt = (info.get("text") or "").replace("\n", " ").strip()[:80]
-                        lines.append(f"• *{key}*: {txt}" if txt else f"• *{key}*: visível")
-                if lines:
-                    await self.reply_safe(update, "Overlays ativos:\n" + "\n".join(lines), parse_mode="Markdown")
-                else:
-                    await self.reply_safe(update, "Nenhum overlay ativo no momento.", parse_mode="Markdown")
-            except Exception as e:
-                await self.reply_safe(update, f"Erro ao verificar overlays: {e}")
+        await self.show_eventos_menu(update, context)
 
     # ============================================================
     # CHARMS
     # ============================================================
     @authorized_only
-    @require_bot_running
     async def charms(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await update.message.reply_text("Verificando charms...", parse_mode="Markdown")
-        async with self.action_lock:
-            try:
-                from baiaidle.charms import get_charm_status
-                status = await get_charm_status(self.bot.tab)
-                if not status.get("found"):
-                    await self.reply_safe(update, "Não foi possível ler o status dos charms.")
-                    return
-                presets = status.get("presets", [])
-                lines_msg = []
-                if status.get("slots"):
-                    s = status["slots"]
-                    lines_msg.append(f"Slots: {s['used']}/{s['total']}")
-                if status.get("points"):
-                    lines_msg.append(f"Pontos: {status['points']}")
-                if presets:
-                    lines_msg.append("\nPresets VIP:")
-                    for p in presets:
-                        mark = " (aplicado)" if p.get("applied") else ""
-                        lines_msg.append(f"• {p.get('name')}{mark} — {p.get('cost')}")
-                await self.reply_safe(update, "\n".join(lines_msg) if lines_msg else "Sem dados de charms.", parse_mode="Markdown")
-            except Exception as e:
-                await self.reply_safe(update, f"Erro ao verificar charms: {e}")
+        await self.show_charms_menu(update, context)
 
     @authorized_only
     @require_bot_running
@@ -3001,9 +3008,9 @@ class TelegramController:
             texto = (
                 "Twitch\n"
                 f"Chat: {'Rodando' if running else 'Parado'}\n"
-                f"Canal: {get_current_channel() or 'automatico'}\n"
-                f"Conta: {get_current_nick() or '-'}\n\n"
-                f"{msg}"
+                f"Canal: {self._md(get_current_channel() or 'automatico')}\n"
+                f"Conta: {self._md(get_current_nick() or '-')}\n\n"
+                f"{self._md(msg)}"
             )
             await self.reply_safe(update, texto)
         else:
@@ -3018,8 +3025,8 @@ class TelegramController:
             channel = get_current_channel()
             nick = get_current_nick()
             status = "Rodando" if running else "Parado"
-            ch = channel or "automatico"
-            conta = nick or "-"
+            ch = self._md(channel or "automatico")
+            conta = self._md(nick or "-")
             erro = get_last_error()
             texto = (
                 "Twitch Chat\n"
@@ -3028,14 +3035,14 @@ class TelegramController:
                 f"Conta: {conta}\n"
             )
             if self.bot.twitch_status:
-                texto += "\n" + format_twitch_status(self.bot.twitch_status) + "\n"
+                texto += "\n" + self._md(format_twitch_status(self.bot.twitch_status)) + "\n"
             else:
                 texto += (
                     "\nContagem: aguardando a primeira verificacao (a cada 5 min)."
                     "\nUse /twitch check para ver agora.\n"
                 )
             if erro and not running:
-                texto += f"Ultimo erro: {erro}\n"
+                texto += f"Ultimo erro: {self._md(erro)}\n"
             texto += "\nUso: /twitch check | /twitch start | /twitch stop"
             await self.reply_safe(update, texto)
 
@@ -3045,6 +3052,8 @@ class TelegramController:
             ["🎛️ Menu Principal", "📊 Status"],
             ["🗺️ Hunts", "🎯 Missões"],
             ["🧘‍♂️ Treino / Casa", "⚙️ Configurações"],
+            ["🔮 Charms", "🎉 Eventos"],
+            ["📺 Twitch", "❓ Ajuda"],
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -3151,6 +3160,14 @@ class TelegramController:
             [
                 InlineKeyboardButton("⚙️ Configurações", callback_data="btn_config"),
                 InlineKeyboardButton("⚡ Ações Rápidas", callback_data="sub_acoes"),
+            ],
+            [
+                InlineKeyboardButton("🔮 Charms", callback_data="sub_charms"),
+                InlineKeyboardButton("🎉 Eventos & Overlays", callback_data="sub_eventos"),
+            ],
+            [
+                InlineKeyboardButton("📺 Twitch", callback_data="sub_twitch"),
+                InlineKeyboardButton("❓ Ajuda", callback_data="btn_help"),
             ],
             [
                 InlineKeyboardButton("🔄 Atualizar Painel", callback_data="btn_menu"),
@@ -3521,6 +3538,196 @@ class TelegramController:
         ]
         await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
 
+    @asynccontextmanager
+    async def _try_action_lock(self, timeout: float = 0.5):
+        """
+        Tenta pegar o lock de ações sem travar a leitura de painéis.
+        Rende True quando conseguiu exclusividade, False se outra ação está ocupada.
+        """
+        acquired = False
+        try:
+            await asyncio.wait_for(self.action_lock.acquire(), timeout=timeout)
+            acquired = True
+        except (asyncio.TimeoutError, TimeoutError):
+            acquired = False
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                self.action_lock.release()
+
+    @staticmethod
+    def _md(text: str) -> str:
+        """Escapa os caracteres que quebrariam o Markdown do Telegram."""
+        return (text or "").replace("*", "\\*").replace("_", "\\_").replace("`", "'")
+
+    async def show_eventos_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Eventos ativos e overlays do jogo."""
+        states = {}
+        ocupado = False
+        if self.bot.tab:
+            async with self._try_action_lock() as free:
+                ocupado = not free
+                if free:
+                    try:
+                        from baiaidle.overlays import get_overlay_states
+                        states = await get_overlay_states(self.bot.tab)
+                    except Exception:
+                        states = {}
+
+        from baiaidle.overlays import get_event_text, has_active_event
+
+        if has_active_event(states):
+            evento = self._md(get_event_text(states)).replace("\n", " ").strip()
+            evento_txt = evento[:300] + ("..." if len(evento) > 300 else "")
+        else:
+            evento_txt = "Nenhum evento ativo."
+
+        overlays_visiveis = [
+            key for key, info in states.items()
+            if isinstance(info, dict) and info.get("visible")
+        ]
+        overlays_txt = ", ".join(overlays_visiveis) if overlays_visiveis else "Nenhum overlay ativo."
+
+        ocupado_txt = "⏳ *Outra ação em andamento — dados podem estar desatualizados.*\n" if ocupado else ""
+        text = (
+            "🎉 *SISTEMA • EVENTOS & OVERLAYS*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎊 *Evento:* {evento_txt}\n"
+            f"🧩 *Overlays visíveis:* {overlays_txt}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{ocupado_txt}"
+            "_O bot fecha/ignora esses avisos automaticamente. Use abaixo para agir:_"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("🔄 Atualizar", callback_data="sub_eventos"),
+                InlineKeyboardButton("🛠️ Recuperar / Limpar Popups", callback_data="btn_recuperar"),
+            ],
+            [
+                InlineKeyboardButton("📺 Painel Twitch", callback_data="sub_twitch"),
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+            ],
+        ]
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def show_charms_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Slots, pontos e presets VIP de charms."""
+        status = {}
+        ocupado = False
+        if self.bot.tab:
+            async with self._try_action_lock() as free:
+                ocupado = not free
+                if free:
+                    try:
+                        from baiaidle.charms import get_charm_status
+                        status = await get_charm_status(self.bot.tab)
+                    except Exception:
+                        status = {}
+
+        if not status.get("found"):
+            aviso = "⏳ Outra ação está em andamento. Tente de novo em instantes." if ocupado else (
+                "Não consegui ler o status dos charms.\n"
+                "Verifique se o bot está rodando e com a aba do jogo aberta."
+            )
+            text = (
+                "🔮 *SISTEMA • CHARMS*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"{aviso}"
+            )
+            keyboard = [
+                [InlineKeyboardButton("🔄 Tentar de Novo", callback_data="sub_charms")],
+                [InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu")],
+            ]
+            await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+            return
+
+        presets = status.get("presets", [])
+        linhas = []
+        slots = status.get("slots")
+        if slots:
+            linhas.append(f"🔹 *Slots:* `{slots['used']}/{slots['total']}`")
+        if status.get("points"):
+            linhas.append(f"💠 *Pontos:* `{status['points']}`")
+        if presets:
+            linhas.append("\n*Presets VIP:*")
+            for p in presets:
+                nome = self._md(p.get("name") or "?")
+                marca = " ✅" if p.get("applied") else ""
+                custo = f" — {self._md(p.get('cost'))}" if p.get("cost") else ""
+                linhas.append(f"• {nome}{marca}{custo}")
+        else:
+            linhas.append("\n_Nenhum preset VIP encontrado._")
+
+        text = (
+            "🔮 *SISTEMA • CHARMS*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            + "\n".join(linhas)
+            + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_O bot aplica o preset com o nome exato da hunt ao trocar de hunt._\n"
+            "_Toque em um preset para aplicar agora ou use /charmpreset <nome>:_"
+        )
+
+        keyboard = []
+        for i, p in enumerate(presets[:10]):
+            nome = p.get("name") or f"Preset {i + 1}"
+            if p.get("applied"):
+                label = f"✅ {nome} (aplicado)"
+            elif p.get("apply_disabled"):
+                label = f"🔒 {nome}"
+            else:
+                label = f"🔮 {nome}"
+            keyboard.append([InlineKeyboardButton(label, callback_data=f"charm_apply_{i}")])
+        keyboard.append([
+            InlineKeyboardButton("🔄 Atualizar", callback_data="sub_charms"),
+            InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+        ])
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def show_twitch_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Chat e verificador da contagem da Twitch."""
+        from baiaidle.twitch import (
+            format_twitch_status,
+            get_current_channel,
+            get_current_nick,
+            is_twitch_chat_running,
+        )
+
+        running = is_twitch_chat_running()
+        canal = get_current_channel() or "automático"
+        conta = get_current_nick() or "-"
+
+        if self.bot.twitch_status:
+            contagem = self._md(format_twitch_status(self.bot.twitch_status))
+        else:
+            contagem = "Contagem: aguardando a primeira verificação (a cada 5 min)."
+
+        text = (
+            "📺 *SISTEMA • TWITCH STREAMING COIN*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"💬 *Chat:* {'🟢 Rodando' if running else '🔴 Parado'}\n"
+            f"📡 *Canal:* `{self._md(canal)}`\n"
+            f"👤 *Conta:* `{self._md(conta)}`\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{contagem}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_O verificador confere a contagem a cada 5 min e avisa aqui._"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("▶️ Iniciar Chat", callback_data="btn_twitch_start"),
+                InlineKeyboardButton("⏹️ Parar Chat", callback_data="btn_twitch_stop"),
+            ],
+            [
+                InlineKeyboardButton("🔍 Verificar Contagem Agora", callback_data="btn_twitch_check"),
+            ],
+            [
+                InlineKeyboardButton("🔄 Atualizar", callback_data="sub_twitch"),
+                InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+            ],
+        ]
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
     @authorized_only
     async def text_menu_router(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Roteador para a barra de botões persistente inferior (Dock)."""
@@ -3542,6 +3749,14 @@ class TelegramController:
             await self.config(update, context)
         elif text in ["📖 Codex", "Codex", "codex"]:
             await self.show_codex_menu(update, context)
+        elif text in ["🔮 Charms", "Charms", "charms"]:
+            await self.show_charms_menu(update, context)
+        elif text in ["🎉 Eventos", "Eventos", "Eventos & Overlays", "eventos", "overlays"]:
+            await self.show_eventos_menu(update, context)
+        elif text in ["📺 Twitch", "Twitch", "twitch"]:
+            await self.show_twitch_menu(update, context)
+        elif text in ["❓ Ajuda", "Ajuda", "ajuda", "help"]:
+            await self.help(update, context)
 
     def format_config_message(self, settings: dict) -> str:
         """Formata o texto de apresentação do Painel de Configurações."""
@@ -3617,9 +3832,9 @@ class TelegramController:
         text = self.format_config_message(settings)
         await self.show_or_edit_menu(update, text, self.get_config_keyboard(settings))
 
-    @authorized_only
-    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        text = """
+    def get_help_text(self) -> str:
+        """Texto do guia de comandos (/help e botão Ajuda)."""
+        return """
 🤖 BAIAK IDLE BOT • GUIA DE COMANDOS
 
 🎛️ Painel e Controle:
@@ -3638,6 +3853,7 @@ class TelegramController:
 • /autoboss [ids] - Inicia sequência de AutoBoss
 • /stopautoboss - Interrompe o AutoBoss e retorna à Hunt
 • /setautoboss <ids> (ou /autoboss_preset) - Salva lista padrão permanente
+• /setbossdiff <facil|media|dificil> (ou /bossdiff) - Define a dificuldade dos bosses
 • /autoboss_on - Ativa agendamento diário automático às 00h
 • /autoboss_off - Desativa agendamento diário às 00h
 • /autoboss_status - Exibe painel e status do agendador
@@ -3650,6 +3866,23 @@ class TelegramController:
 • /automissoes [on|off] - Liga/desliga missões automáticas pós-boss
 • /halloween [on|off|entrar] (ou /invasao) - Gerencia Invasão de Halloween
 • /daily - Coleta a recompensa diária
+
+🎉 Eventos & Overlays do Jogo:
+• /eventos - Mostra eventos ativos no jogo (banner, modal, avisos)
+• /overlays - Lista os overlays visíveis (conexão, fila, manutenção, treino, etc.)
+• /recuperar (ou /fechar) - Fecha modais/avisos e recupera a sessão
+
+🔮 Charms:
+• /charms - Mostra slots, pontos e presets VIP de charms
+• /charmpreset <nome> - Aplica um preset VIP de charms pelo nome
+• O bot também aplica o preset com o nome exato da hunt ao trocar de hunt
+
+📺 Twitch (Streaming Coin):
+• /twitch - Mostra status do chat e a última contagem lida
+• /twitch start - Inicia o chat da Twitch (conta vinculada)
+• /twitch stop - Para o chat da Twitch
+• /twitch check - Lê agora "Sua contagem agora" no jogo
+• O verificador confere a contagem a cada 5 min e avisa quando o estado muda
 
 🌳 Progressão & Treino:
 • /arvore [on|off|run] - Gerencia e aloca pontos da Árvore de Habilidades
@@ -3664,11 +3897,13 @@ class TelegramController:
 • /setattrs <atributos> - Salva itens com atributos específicos (ex: /setattrs exp, onslaught)
 
 🛠️ Manutenção & Diagnóstico:
-• /recuperar (ou /fechar) - Fecha modais/avisos e recupera sessão pós-refresh
 • /reset - Zera o Hunt Analyzer no jogo e estatísticas do bot
 • /debughunt - Salva o HTML das hunts para depuração
 """
-        await self.reply_safe(update, text.strip())
+
+    @authorized_only
+    async def help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        await self.reply_safe(update, self.get_help_text().strip())
 
 
 # ================================================================
