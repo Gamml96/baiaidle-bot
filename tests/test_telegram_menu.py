@@ -39,6 +39,11 @@ class TestMenusExposure(unittest.TestCase):
         for expected in ("sub_charms", "sub_eventos", "sub_twitch", "btn_help"):
             self.assertIn(expected, callbacks)
 
+    def test_boss_difficulty_panel_is_routed(self):
+        source = _source()
+        for cb in ("sub_bossdiff", "bossdiff_set_1", "bossdiff_set_max", "bossdiff_clear"):
+            self.assertIn(f'"{cb}"', source, f"{cb} nao tem handler")
+
     def test_every_panel_callback_is_routed(self):
         callbacks = self._callbacks(TelegramController.get_quick_action_keyboard(None))
         source = _source()

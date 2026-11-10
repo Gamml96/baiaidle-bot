@@ -1839,6 +1839,24 @@ class TelegramController:
         elif data == "sub_autoboss":
             await self.show_autoboss_menu(update, context)
 
+        elif data == "sub_bossdiff":
+            await self.show_bossdiff_menu(update, context)
+
+        elif data.startswith("bossdiff_set_"):
+            val = data.split("_")[-1]
+            norm = normalize_difficulty(val)
+            set_default_boss_difficulty(norm)
+            if norm is None:
+                await query.answer("Padrão do jogo restaurado.", show_alert=False)
+            else:
+                await query.answer(f"Dificuldade padrão: {norm}", show_alert=False)
+            await self.show_bossdiff_menu(update, context)
+
+        elif data == "bossdiff_clear":
+            clear_boss_difficulties()
+            await query.answer("Todas as dificuldades personalizadas foram limpas.", show_alert=False)
+            await self.show_bossdiff_menu(update, context)
+
         elif data == "sub_acoes":
             await self.show_acoes_menu(update, context)
 
@@ -3432,6 +3450,59 @@ class TelegramController:
         ]
         await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
 
+    async def show_bossdiff_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Dificuldade dos bosses (padrão global e limpar regras)."""
+        preset = load_autoboss_preset()
+        diffs = preset.get("boss_difficulties", {})
+        default_diff = preset.get("default_difficulty")
+
+        def_str = f"`{default_diff}`" if default_diff is not None else "Padrão do jogo (a que vier)"
+        if diffs:
+            diff_items = [f"• Boss `{k}`: `{v}`" for k, v in list(diffs.items())[:6]]
+            if len(diffs) > 6:
+                diff_items.append(f"• _+{len(diffs) - 6} mais_")
+            diffs_str = "\n".join(diff_items)
+        else:
+            diffs_str = "_Nenhuma regra específica — todos usam o padrão._"
+
+        text = (
+            "🎯 *SISTEMA • DIFICULDADE DOS BOSSES*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎛️ *Padrão Global:* {def_str}\n\n"
+            f"📋 *Por Boss (específico):*\n{diffs_str}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_Escolha a dificuldade padrão que valerá para bosses sem regra própria._\n"
+            "_Use /setbossdiff <boss> <valor> para ajustar um boss individual._"
+        )
+
+        keyboard = [
+            [
+                InlineKeyboardButton("1", callback_data="bossdiff_set_1"),
+                InlineKeyboardButton("2", callback_data="bossdiff_set_2"),
+                InlineKeyboardButton("3", callback_data="bossdiff_set_3"),
+            ],
+            [
+                InlineKeyboardButton("4", callback_data="bossdiff_set_4"),
+                InlineKeyboardButton("5", callback_data="bossdiff_set_5"),
+                InlineKeyboardButton("6", callback_data="bossdiff_set_6"),
+            ],
+            [
+                InlineKeyboardButton("🆙 Máxima", callback_data="bossdiff_set_max"),
+                InlineKeyboardButton("🆗 Mínima", callback_data="bossdiff_set_min"),
+            ],
+            [
+                InlineKeyboardButton("🔄 Padrão do Jogo", callback_data="bossdiff_set_padrao"),
+            ],
+            [
+                InlineKeyboardButton("🧹 Limpar Tudo", callback_data="bossdiff_clear"),
+            ],
+            [
+                InlineKeyboardButton("🔙 Menu AutoBoss", callback_data="sub_autoboss"),
+                InlineKeyboardButton("🏠 Menu Principal", callback_data="btn_menu"),
+            ],
+        ]
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
     async def show_autoboss_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
         """Submenu: Painel Completo de AutoBoss."""
         preset = load_autoboss_preset()
@@ -3474,6 +3545,9 @@ class TelegramController:
             ],
             [
                 InlineKeyboardButton("📋 Ver Bosses Disponíveis", callback_data="btn_bosses_list"),
+                InlineKeyboardButton("🎯 Dificuldades", callback_data="sub_bossdiff"),
+            ],
+            [
                 InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
             ],
         ]
