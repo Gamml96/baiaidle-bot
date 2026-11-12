@@ -1,4 +1,4 @@
-pydoll>=2.0
+pydoll-python
 python-telegram-bot>=22.0
 python-dotenv>=1.0
 # Linux only (display virtual para evitar fingerprinting do Cloudflare):
