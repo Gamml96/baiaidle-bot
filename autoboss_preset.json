@@ -1,6 +1,7 @@
 {
   "enabled": true,
   "boss_indices": [
+    99,
     98,
     97,
     96,
@@ -42,5 +43,10 @@
     28,
     24
   ],
+  "boss_difficulties": {
+    "98": 3,
+    "97": 3
+  },
+  "default_difficulty": null,
   "last_run_date": null
 }

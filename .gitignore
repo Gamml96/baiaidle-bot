@@ -37,3 +37,6 @@ graphify-out/
 
 #scratch dumps
 /scratch_*
+
+/config_user.json
+/autoboss_preset.json
