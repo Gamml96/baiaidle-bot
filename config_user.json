@@ -12,5 +12,6 @@
   "codex_focus_enabled": false,
   "codex_focus_attribute": "critDmg",
   "codex_focus_hunt": null,
-  "default_hunt": "Infernal Demon"
+  "default_hunt": "Infernal Demon",
+  "expedition_default_character": ""
 }

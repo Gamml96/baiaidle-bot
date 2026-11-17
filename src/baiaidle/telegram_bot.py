@@ -1882,6 +1882,9 @@ class TelegramController:
         elif data == "sub_twitch":
             await self.show_twitch_menu(update, context)
 
+        elif data == "sub_expedicao":
+            await self.show_expedicao_menu(update, context)
+
         elif data.startswith("charm_apply_"):
             try:
                 index = int(data.rsplit("_", 1)[1])
@@ -2144,49 +2147,24 @@ class TelegramController:
                 finally:
                     self.bot.resume_hunt()
 
-        elif data == "btn_action_expedicao_status":
-            await query.answer("🔄 Atualizando status da expedição...", show_alert=False)
+        elif data in ["sub_expedicao", "btn_action_expedicao_status"]:
+            await self.show_expedicao_menu(update, context)
+
+        elif data == "btn_expedicao_leave":
+            await query.answer("Saindo do grupo de expedição...")
             async with self.action_lock:
                 self.bot.pause_hunt()
                 try:
-                    st = await get_expedition_status(self.bot.tab)
+                    res = await leave_expedition_lobby(self.bot.tab)
+                    if res.get("success"):
+                        await query.message.reply_text(f"🚪 {res.get('message')}")
+                    else:
+                        await query.message.reply_text(f"⚠️ {res.get('message')}")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao sair: {e}")
                 finally:
                     self.bot.resume_hunt()
-
-            daily_map = st.get("daily_map") or "Não identificado"
-            max_lvl = st.get("max_available_level", "N/A")
-            ladder = st.get("ladder_label") or "N/A"
-            can_create = "🟢 Disponível" if st.get("can_create") else "🔴 Em Cooldown"
-            cd_note = f"\n🕒 *Aviso:* `{st.get('cooldown_note')}`" if st.get("cooldown_note") else ""
-            def_char = get_setting("expedition_default_character", "")
-            def_char_str = f"*{def_char}*" if def_char else "_Ativo no jogo_"
-
-            text = (
-                f"🗺️ *Salão de Expedição — Status*\n\n"
-                f"📅 *{daily_map}*\n"
-                f"👤 *Personagem no Salão:* {st.get('current_character', 'N/A')}\n"
-                f"📌 *Personagem Padrão:* {def_char_str}\n"
-                f"🏆 *Maior Nível da Run:* `{max_lvl}`\n"
-                f"🪜 *Escada:* {ladder}\n"
-                f"⚡ *Status de Criação:* {can_create}{cd_note}\n\n"
-                f"Comandos:\n"
-                f"• `/criarsala` - Cria sala com 'Go 10' e nível máximo\n"
-                f"• `/expedicao char` - Escolhe o personagem padrão\n"
-                f"• `/expedicao sair` - Sai do grupo atual"
-            )
-            keyboard = [
-                [
-                    InlineKeyboardButton("🚀 Criar Sala (Go 10 / Max)", callback_data="btn_action_expedicao_create"),
-                    InlineKeyboardButton("🔄 Atualizar", callback_data="btn_action_expedicao_status"),
-                ],
-                [
-                    InlineKeyboardButton(f"👤 Trocar Personagem ({def_char or 'Ativo'})", callback_data="sub_expedicao_chars"),
-                ],
-            ]
-            try:
-                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-            except Exception:
-                await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            await self.show_expedicao_menu(update, context)
 
         elif data == "sub_expedicao_chars":
             await query.answer("Carregando personagens...", show_alert=False)
@@ -2214,17 +2192,14 @@ class TelegramController:
             if row:
                 kb.append(row)
             kb.append([InlineKeyboardButton("❌ Limpar Padrão", callback_data="btn_set_expchar_clear")])
-            kb.append([InlineKeyboardButton("🔙 Voltar à Expedição", callback_data="btn_action_expedicao_status")])
+            kb.append([InlineKeyboardButton("🔙 Voltar à Expedição", callback_data="sub_expedicao")])
 
             text = (
                 f"👤 *Selecione o Personagem Padrão para Expedições*\n\n"
                 f"📌 *Padrão Atual:* {def_str}\n\n"
                 f"Clique em um personagem abaixo para fixá-lo como o padrão:"
             )
-            try:
-                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
-            except Exception:
-                await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(kb))
 
         elif data.startswith("btn_set_expchar_"):
             val = data.replace("btn_set_expchar_", "")
@@ -2235,48 +2210,7 @@ class TelegramController:
                 set_setting("expedition_default_character", val)
                 await query.answer(f"Personagem padrão definido: {val}!", show_alert=True)
 
-            # Atualiza para o menu da expedição
-            async with self.action_lock:
-                self.bot.pause_hunt()
-                try:
-                    st = await get_expedition_status(self.bot.tab)
-                finally:
-                    self.bot.resume_hunt()
-
-            daily_map = st.get("daily_map") or "Não identificado"
-            max_lvl = st.get("max_available_level", "N/A")
-            ladder = st.get("ladder_label") or "N/A"
-            can_create = "🟢 Disponível" if st.get("can_create") else "🔴 Em Cooldown"
-            cd_note = f"\n🕒 *Aviso:* `{st.get('cooldown_note')}`" if st.get("cooldown_note") else ""
-            def_char = get_setting("expedition_default_character", "")
-            def_char_str = f"*{def_char}*" if def_char else "_Ativo no jogo_"
-
-            text = (
-                f"🗺️ *Salão de Expedição — Status*\n\n"
-                f"📅 *{daily_map}*\n"
-                f"👤 *Personagem no Salão:* {st.get('current_character', 'N/A')}\n"
-                f"📌 *Personagem Padrão:* {def_char_str}\n"
-                f"🏆 *Maior Nível da Run:* `{max_lvl}`\n"
-                f"🪜 *Escada:* {ladder}\n"
-                f"⚡ *Status de Criação:* {can_create}{cd_note}\n\n"
-                f"Comandos:\n"
-                f"• `/criarsala` - Cria sala com 'Go 10' e nível máximo\n"
-                f"• `/expedicao char` - Escolhe o personagem padrão\n"
-                f"• `/expedicao sair` - Sai do grupo atual"
-            )
-            keyboard = [
-                [
-                    InlineKeyboardButton("🚀 Criar Sala (Go 10 / Max)", callback_data="btn_action_expedicao_create"),
-                    InlineKeyboardButton("🔄 Atualizar", callback_data="btn_action_expedicao_status"),
-                ],
-                [
-                    InlineKeyboardButton(f"👤 Trocar Personagem ({def_char or 'Ativo'})", callback_data="sub_expedicao_chars"),
-                ],
-            ]
-            try:
-                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-            except Exception:
-                await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            await self.show_expedicao_menu(update, context)
 
         elif data == "sub_codex":
             await self.show_codex_menu(update, context)
@@ -3103,56 +3037,8 @@ class TelegramController:
                     self.bot.resume_hunt()
             return
 
-        # Status geral da expedição
-        async with self.action_lock:
-            self.bot.pause_hunt()
-            try:
-                st = await get_expedition_status(self.bot.tab)
-            finally:
-                self.bot.resume_hunt()
-
-        if st.get("in_lobby"):
-            members_str = ", ".join(st.get("members", [])) or "Aguardando..."
-            text = (
-                f"👥 *Você está em uma Sala de Expedição!*\n\n"
-                f"🏷️ *Sala:* {st.get('room_name')}\n"
-                f"👥 *Jogadores:* {st.get('members_count')}\n"
-                f"📋 *Membros:* {members_str}\n\n"
-                f"Para sair, use `/expedicao sair`."
-            )
-        else:
-            daily_map = st.get("daily_map") or "Não identificado"
-            max_lvl = st.get("max_available_level", "N/A")
-            ladder = st.get("ladder_label") or "N/A"
-            can_create = "🟢 Disponível" if st.get("can_create") else "🔴 Em Cooldown"
-            cd_note = f"\n🕒 *Aviso:* `{st.get('cooldown_note')}`" if st.get("cooldown_note") else ""
-            def_char = get_setting("expedition_default_character", "")
-            def_char_str = f"*{def_char}*" if def_char else "_Ativo no jogo_"
-
-            text = (
-                f"🗺️ *Salão de Expedição — Status*\n\n"
-                f"📅 *{daily_map}*\n"
-                f"👤 *Personagem no Salão:* {st.get('current_character', 'N/A')}\n"
-                f"📌 *Personagem Padrão:* {def_char_str}\n"
-                f"🏆 *Maior Nível da Run:* `{max_lvl}` (Dinâmico)\n"
-                f"🪜 *Escada:* {ladder}\n"
-                f"⚡ *Status de Criação:* {can_create}{cd_note}\n\n"
-                f"Comandos:\n"
-                f"• `/criarsala` - Cria sala com 'Go 10' e maior nível dinâmico\n"
-                f"• `/expedicao char` - Escolhe o personagem padrão\n"
-                f"• `/expedicao sair` - Sai do grupo atual"
-            )
-
-        keyboard = [
-            [
-                InlineKeyboardButton("🚀 Criar Sala (Go 10 / Max)", callback_data="btn_action_expedicao_create"),
-                InlineKeyboardButton("🔄 Atualizar", callback_data="btn_action_expedicao_status"),
-            ],
-            [
-                InlineKeyboardButton(f"👤 Personagem ({def_char or 'Ativo'})", callback_data="sub_expedicao_chars"),
-            ],
-        ]
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        # Abre o painel/menu da expedição
+        await self.show_expedicao_menu(update, context)
 
     @authorized_only
     @require_bot_running
@@ -3447,9 +3333,10 @@ class TelegramController:
         keyboard = [
             ["🎛️ Menu Principal", "📊 Status"],
             ["🗺️ Hunts", "🎯 Missões"],
-            ["🧘‍♂️ Treino / Casa", "⚙️ Configurações"],
+            ["⚔️ Expedição", "🧘‍♂️ Treino / Casa"],
             ["🔮 Charms", "🎉 Eventos"],
-            ["📺 Twitch", "❓ Ajuda"],
+            ["📺 Twitch", "⚙️ Configurações"],
+            ["❓ Ajuda"],
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -3546,27 +3433,28 @@ class TelegramController:
                 InlineKeyboardButton("🎯 Missões & Passe", callback_data="sub_missoes"),
             ],
             [
+                InlineKeyboardButton("⚔️ Expedição", callback_data="sub_expedicao"),
                 InlineKeyboardButton("📖 Auto Codex", callback_data="sub_codex"),
-                InlineKeyboardButton("👥 Party & Status", callback_data="sub_party"),
             ],
             [
                 InlineKeyboardButton("⚔️ AutoBoss", callback_data="sub_autoboss"),
-                InlineKeyboardButton("🧘‍♂️ Treino & Stamina", callback_data="sub_treino"),
+                InlineKeyboardButton("👥 Party & Status", callback_data="sub_party"),
             ],
             [
+                InlineKeyboardButton("🧘‍♂️ Treino & Stamina", callback_data="sub_treino"),
                 InlineKeyboardButton("⚙️ Configurações", callback_data="btn_config"),
-                InlineKeyboardButton("⚡ Ações Rápidas", callback_data="sub_acoes"),
             ],
             [
                 InlineKeyboardButton("🔮 Charms", callback_data="sub_charms"),
-                InlineKeyboardButton("🎉 Eventos & Overlays", callback_data="sub_eventos"),
+                InlineKeyboardButton("⚡ Ações Rápidas", callback_data="sub_acoes"),
             ],
             [
                 InlineKeyboardButton("📺 Twitch", callback_data="sub_twitch"),
-                InlineKeyboardButton("❓ Ajuda", callback_data="btn_help"),
+                InlineKeyboardButton("🎉 Eventos & Overlays", callback_data="sub_eventos"),
             ],
             [
                 InlineKeyboardButton("🔄 Atualizar Painel", callback_data="btn_menu"),
+                InlineKeyboardButton("❓ Ajuda", callback_data="btn_help"),
             ],
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -3676,10 +3564,13 @@ class TelegramController:
             ],
             [
                 InlineKeyboardButton("🎁 Coletar Daily", callback_data="btn_action_daily"),
-                InlineKeyboardButton("📖 Painel do Codex", callback_data="sub_codex"),
+                InlineKeyboardButton("⚔️ Expedição", callback_data="sub_expedicao"),
             ],
             [
+                InlineKeyboardButton("📖 Painel do Codex", callback_data="sub_codex"),
                 InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+            ],
+            [
                 InlineKeyboardButton("🔄 Atualizar", callback_data="sub_missoes"),
             ],
         ]
@@ -3951,10 +3842,13 @@ class TelegramController:
             ],
             [
                 InlineKeyboardButton("🎁 Daily", callback_data="btn_action_daily"),
-                InlineKeyboardButton("🌳 Alocar Árvore", callback_data="btn_arvore_run"),
+                InlineKeyboardButton("⚔️ Expedição", callback_data="sub_expedicao"),
             ],
             [
+                InlineKeyboardButton("🌳 Alocar Árvore", callback_data="btn_arvore_run"),
                 InlineKeyboardButton(pause_label, callback_data="btn_pause_toggle"),
+            ],
+            [
                 InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
             ],
         ]
@@ -4180,6 +4074,73 @@ class TelegramController:
         ]
         await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
 
+    async def show_expedicao_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
+        """Submenu: Painel e Controle da Expedição."""
+        st = {}
+        if self.bot.tab:
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    st = await get_expedition_status(self.bot.tab)
+                except Exception as e:
+                    st = {"error": str(e)}
+                finally:
+                    self.bot.resume_hunt()
+
+        if st.get("in_lobby"):
+            members_str = ", ".join(st.get("members", [])) or "Aguardando..."
+            text = (
+                "🗺️ *SISTEMA • SALA DE EXPEDIÇÃO*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"🏷️ *Sala:* `{st.get('room_name')}`\n"
+                f"👥 *Jogadores:* `{st.get('members_count')}`\n"
+                f"📋 *Membros:* {members_str}\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "_Você está aguardando no lobby da sala._"
+            )
+            keyboard = [
+                [
+                    InlineKeyboardButton("🚪 Sair do Grupo / Desfazer", callback_data="btn_expedicao_leave"),
+                    InlineKeyboardButton("🔄 Atualizar", callback_data="sub_expedicao"),
+                ],
+                [
+                    InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+                ],
+            ]
+        else:
+            daily_map = st.get("daily_map") or "Não identificado"
+            max_lvl = st.get("max_available_level", "N/A")
+            ladder = st.get("ladder_label") or "N/A"
+            can_create = "🟢 Disponível" if st.get("can_create") else "🔴 Em Cooldown"
+            cd_note = f"\n🕒 *Aviso:* `{st.get('cooldown_note')}`" if st.get("cooldown_note") else ""
+            def_char = get_setting("expedition_default_character", "")
+            def_char_str = f"*{def_char}*" if def_char else "_Ativo no jogo_"
+
+            text = (
+                "🗺️ *SISTEMA • EXPEDIÇÃO DO DIA*\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📅 *{daily_map}*\n"
+                f"👤 *Personagem no Salão:* {st.get('current_character', 'N/A')}\n"
+                f"📌 *Personagem Padrão:* {def_char_str}\n"
+                f"🏆 *Maior Nível da Run:* `{max_lvl}` (Dinâmico)\n"
+                f"🪜 *Escada:* {ladder}\n"
+                f"⚡ *Criação de Sala:* {can_create}{cd_note}\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "_Crie uma sala 'Go 10' com o maior nível liberado ou configure o personagem:_"
+            )
+            keyboard = [
+                [
+                    InlineKeyboardButton("🚀 Criar Sala (Go 10 / Max)", callback_data="btn_action_expedicao_create"),
+                    InlineKeyboardButton(f"👤 Personagem ({def_char or 'Ativo'})", callback_data="sub_expedicao_chars"),
+                ],
+                [
+                    InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
+                    InlineKeyboardButton("🔄 Atualizar", callback_data="sub_expedicao"),
+                ],
+            ]
+
+        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
     @authorized_only
     async def text_menu_router(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Roteador para a barra de botões persistente inferior (Dock)."""
@@ -4195,6 +4156,8 @@ class TelegramController:
             await self.show_hunts_menu(update, context)
         elif text in ["🎯 Missões", "Missões", "Missoes", "missoes"]:
             await self.show_missoes_menu(update, context)
+        elif text in ["⚔️ Expedição", "🗺️ Expedição", "Expedição", "expedicao", "Expedicao"]:
+            await self.show_expedicao_menu(update, context)
         elif text in ["🧘‍♂️ Treino / Casa", "Treino", "Casa"]:
             await self.show_treino_menu(update, context)
         elif text in ["⚙️ Configurações", "Configurações", "Configs", "config"]:
@@ -4320,6 +4283,7 @@ class TelegramController:
 • /daily - Coleta a recompensa diária
 • /expedicao - Status do salão de expedição do dia e cooldown
 • /criarsala - Cria sala de expedição ('Go 10' com maior nível dinâmico)
+• /setexpchar <nome/voc> - Define o personagem padrão para expedições
 • /expedicao criar [nome] [auto_start] [nivel] - Cria sala personalizada
 • /expedicao sair - Sai ou desfaz o grupo da expedição
 
