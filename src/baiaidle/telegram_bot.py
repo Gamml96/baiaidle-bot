@@ -75,6 +75,13 @@ from baiaidle.codex import (
     CODEX_ATTRIBUTES,
 )
 from baiaidle.daily import collect_daily_reward, cancel_daily_schedule
+from baiaidle.expedition import (
+    get_expedition_status,
+    create_expedition_room,
+    leave_expedition_lobby,
+    list_expedition_characters,
+    select_expedition_character,
+)
 from baiaidle.tree import get_tree_status, run_auto_tree
 from baiaidle.halloween import (
     get_halloween_status,
@@ -286,6 +293,9 @@ class TelegramController:
             BotCommand("arvore", "🌳 Gerenciar Árvore de Habilidades"),
             BotCommand("codex", "📖 Gerenciar auto-completar do Codex"),
             BotCommand("daily", "🎁 Coletar recompensa diária"),
+            BotCommand("expedicao", "🗺️ Salão e criação de salas de Expedição"),
+            BotCommand("criarsala", "🚀 Criar sala de expedição (Go 10 / Nível Max)"),
+            BotCommand("setexpchar", "👤 Definir personagem padrão da expedição"),
             BotCommand("print", "🖥️ Tirar print da tela do jogo"),
             BotCommand("recuperar", "🛠️ Fechar avisos e recuperar sessão"),
             BotCommand("debughunt", "🐞 Salvar HTML das hunts para depuração"),
@@ -2092,6 +2102,182 @@ class TelegramController:
                 finally:
                     self.bot.resume_hunt()
 
+        elif data == "btn_action_expedicao_create":
+            if self.action_lock.locked():
+                await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            await query.answer("🚀 Criando sala de expedição...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    res = await create_expedition_room(
+                        self.bot.tab,
+                        room_name="Go 10",
+                        auto_start=10,
+                        target_level=None,
+                        action_lock=None,
+                    )
+                    if res.get("status") == "created":
+                        lvl = res.get("level_selected")
+                        await query.message.reply_text(
+                            f"✅ *Sala de Expedição Criada!*\n\n"
+                            f"🏷️ *Nome:* `Go 10`\n"
+                            f"🏆 *Nível da Run:* `{lvl}` (Maior disponível)\n"
+                            f"👥 *Início Automático:* `10 jogadores`\n"
+                            f"📊 *Escada:* {res.get('ladder_label', 'N/A')}",
+                            parse_mode="Markdown",
+                        )
+                    elif res.get("status") == "cooldown":
+                        cd = res.get("cooldown_note", "Em cooldown.")
+                        lvl = res.get("level_selected")
+                        await query.message.reply_text(
+                            f"⏳ *Expedição em Cooldown*\n\n"
+                            f"⚠️ A sala *Go 10* foi configurada no nível *{lvl}*, mas o botão *Criar e entrar* está desabilitado:\n"
+                            f"🕒 `{cd}`\n\n"
+                            f"A run de hoje já foi utilizada ou está em espera até a meia-noite.",
+                            parse_mode="Markdown",
+                        )
+                    else:
+                        await query.message.reply_text(f"❌ Erro ao criar sala: {res.get('message', 'Erro desconhecido')}")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro na expedição: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif data == "btn_action_expedicao_status":
+            await query.answer("🔄 Atualizando status da expedição...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    st = await get_expedition_status(self.bot.tab)
+                finally:
+                    self.bot.resume_hunt()
+
+            daily_map = st.get("daily_map") or "Não identificado"
+            max_lvl = st.get("max_available_level", "N/A")
+            ladder = st.get("ladder_label") or "N/A"
+            can_create = "🟢 Disponível" if st.get("can_create") else "🔴 Em Cooldown"
+            cd_note = f"\n🕒 *Aviso:* `{st.get('cooldown_note')}`" if st.get("cooldown_note") else ""
+            def_char = get_setting("expedition_default_character", "")
+            def_char_str = f"*{def_char}*" if def_char else "_Ativo no jogo_"
+
+            text = (
+                f"🗺️ *Salão de Expedição — Status*\n\n"
+                f"📅 *{daily_map}*\n"
+                f"👤 *Personagem no Salão:* {st.get('current_character', 'N/A')}\n"
+                f"📌 *Personagem Padrão:* {def_char_str}\n"
+                f"🏆 *Maior Nível da Run:* `{max_lvl}`\n"
+                f"🪜 *Escada:* {ladder}\n"
+                f"⚡ *Status de Criação:* {can_create}{cd_note}\n\n"
+                f"Comandos:\n"
+                f"• `/criarsala` - Cria sala com 'Go 10' e nível máximo\n"
+                f"• `/expedicao char` - Escolhe o personagem padrão\n"
+                f"• `/expedicao sair` - Sai do grupo atual"
+            )
+            keyboard = [
+                [
+                    InlineKeyboardButton("🚀 Criar Sala (Go 10 / Max)", callback_data="btn_action_expedicao_create"),
+                    InlineKeyboardButton("🔄 Atualizar", callback_data="btn_action_expedicao_status"),
+                ],
+                [
+                    InlineKeyboardButton(f"👤 Trocar Personagem ({def_char or 'Ativo'})", callback_data="sub_expedicao_chars"),
+                ],
+            ]
+            try:
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
+        elif data == "sub_expedicao_chars":
+            await query.answer("Carregando personagens...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    chars = await list_expedition_characters(self.bot.tab)
+                finally:
+                    self.bot.resume_hunt()
+
+            def_char = get_setting("expedition_default_character", "")
+            def_str = f"*{def_char}*" if def_char else "_Nenhum (usa o ativo no jogo)_"
+
+            kb = []
+            row = []
+            for c in chars:
+                voc = c.get('vocation', '')
+                tip = c.get('tip', '')
+                name_clean = tip.split('(')[0].strip() if tip else voc
+                lbl = f"{voc} - {name_clean}"
+                row.append(InlineKeyboardButton(lbl, callback_data=f"btn_set_expchar_{voc}"))
+                if len(row) == 2:
+                    kb.append(row)
+                    row = []
+            if row:
+                kb.append(row)
+            kb.append([InlineKeyboardButton("❌ Limpar Padrão", callback_data="btn_set_expchar_clear")])
+            kb.append([InlineKeyboardButton("🔙 Voltar à Expedição", callback_data="btn_action_expedicao_status")])
+
+            text = (
+                f"👤 *Selecione o Personagem Padrão para Expedições*\n\n"
+                f"📌 *Padrão Atual:* {def_str}\n\n"
+                f"Clique em um personagem abaixo para fixá-lo como o padrão:"
+            )
+            try:
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+            except Exception:
+                await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb), parse_mode="Markdown")
+
+        elif data.startswith("btn_set_expchar_"):
+            val = data.replace("btn_set_expchar_", "")
+            if val == "clear":
+                set_setting("expedition_default_character", "")
+                await query.answer("Personagem padrão limpo!", show_alert=True)
+            else:
+                set_setting("expedition_default_character", val)
+                await query.answer(f"Personagem padrão definido: {val}!", show_alert=True)
+
+            # Atualiza para o menu da expedição
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    st = await get_expedition_status(self.bot.tab)
+                finally:
+                    self.bot.resume_hunt()
+
+            daily_map = st.get("daily_map") or "Não identificado"
+            max_lvl = st.get("max_available_level", "N/A")
+            ladder = st.get("ladder_label") or "N/A"
+            can_create = "🟢 Disponível" if st.get("can_create") else "🔴 Em Cooldown"
+            cd_note = f"\n🕒 *Aviso:* `{st.get('cooldown_note')}`" if st.get("cooldown_note") else ""
+            def_char = get_setting("expedition_default_character", "")
+            def_char_str = f"*{def_char}*" if def_char else "_Ativo no jogo_"
+
+            text = (
+                f"🗺️ *Salão de Expedição — Status*\n\n"
+                f"📅 *{daily_map}*\n"
+                f"👤 *Personagem no Salão:* {st.get('current_character', 'N/A')}\n"
+                f"📌 *Personagem Padrão:* {def_char_str}\n"
+                f"🏆 *Maior Nível da Run:* `{max_lvl}`\n"
+                f"🪜 *Escada:* {ladder}\n"
+                f"⚡ *Status de Criação:* {can_create}{cd_note}\n\n"
+                f"Comandos:\n"
+                f"• `/criarsala` - Cria sala com 'Go 10' e nível máximo\n"
+                f"• `/expedicao char` - Escolhe o personagem padrão\n"
+                f"• `/expedicao sair` - Sai do grupo atual"
+            )
+            keyboard = [
+                [
+                    InlineKeyboardButton("🚀 Criar Sala (Go 10 / Max)", callback_data="btn_action_expedicao_create"),
+                    InlineKeyboardButton("🔄 Atualizar", callback_data="btn_action_expedicao_status"),
+                ],
+                [
+                    InlineKeyboardButton(f"👤 Trocar Personagem ({def_char or 'Ativo'})", callback_data="sub_expedicao_chars"),
+                ],
+            ]
+            try:
+                await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            except Exception:
+                await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+
         elif data == "sub_codex":
             await self.show_codex_menu(update, context)
 
@@ -2775,6 +2961,198 @@ class TelegramController:
                 await update.message.reply_text(f"❌ Erro ao coletar a daily: {e}")
             finally:
                 self.bot.resume_hunt()
+
+    @authorized_only
+    @require_bot_running
+    async def criarsala(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Atalho direto para criar sala de expedição ('Go 10' com o maior nível dinâmico)."""
+        context.args = ["criar"] + (context.args or [])
+        await self.expedicao(update, context)
+
+    @authorized_only
+    @require_bot_running
+    async def setexpchar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Define o personagem padrão para as runs de expedição."""
+        context.args = ["char"] + (context.args or [])
+        await self.expedicao(update, context)
+
+    @authorized_only
+    @require_bot_running
+    async def expedicao(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if self.auto_boss_instance and self.auto_boss_instance.state.running:
+            await update.message.reply_text("⚠️ O AutoBoss está em execução. Aguarde finalizar ou use /stopautoboss.")
+            return
+
+        if self.action_lock.locked():
+            await update.message.reply_text("⏳ Há outra ação em andamento no jogo. Aguarde um instante.")
+            return
+
+        args = context.args or []
+        subcmd = args[0].lower() if args else "status"
+
+        if subcmd in ["char", "personagem", "setchar"]:
+            if len(args) > 1:
+                target_char = " ".join(args[1:]).strip()
+                set_setting("expedition_default_character", target_char)
+                await update.message.reply_text(
+                    f"✅ Personagem padrão para expedição definido como: *{target_char}*",
+                    parse_mode="Markdown",
+                )
+                return
+
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    chars = await list_expedition_characters(self.bot.tab)
+                finally:
+                    self.bot.resume_hunt()
+
+            def_char = get_setting("expedition_default_character", "")
+            def_str = f"*{def_char}*" if def_char else "_Nenhum (usa o ativo no jogo)_"
+
+            kb = []
+            row = []
+            for c in chars:
+                voc = c.get("vocation", "")
+                tip = c.get("tip", "")
+                name_clean = tip.split("(")[0].strip() if tip else voc
+                lbl = f"{voc} - {name_clean}"
+                row.append(InlineKeyboardButton(lbl, callback_data=f"btn_set_expchar_{voc}"))
+                if len(row) == 2:
+                    kb.append(row)
+                    row = []
+            if row:
+                kb.append(row)
+            kb.append([InlineKeyboardButton("❌ Limpar Padrão", callback_data="btn_set_expchar_clear")])
+            kb.append([InlineKeyboardButton("🔙 Voltar à Expedição", callback_data="btn_action_expedicao_status")])
+
+            char_list_str = "\n".join([f"• `{c.get('vocation')}`: {c.get('tip', 'N/A')}" for c in chars]) or "Nenhum personagem encontrado."
+            await update.message.reply_text(
+                f"👤 *Configuração de Personagem da Expedição*\n\n"
+                f"📌 *Padrão Atual:* {def_str}\n\n"
+                f"📋 *Personagens Disponíveis:*\n{char_list_str}\n\n"
+                f"Clique em um personagem abaixo para fixá-lo como o padrão nas runs:",
+                reply_markup=InlineKeyboardMarkup(kb),
+                parse_mode="Markdown",
+            )
+            return
+
+        if subcmd in ["criar", "create", "start", "sala"]:
+            room_name = args[1] if len(args) > 1 else "Go 10"
+            auto_start = int(args[2]) if len(args) > 2 and args[2].isdigit() else 10
+            target_level = int(args[3]) if len(args) > 3 and args[3].isdigit() else None
+
+            await update.message.reply_text(
+                f"⏳ Abrindo Salão e preparando sala *{room_name}* (Início auto: {auto_start} jogs, Nível: {'Maior Dinâmico' if target_level is None else target_level})...",
+                parse_mode="Markdown",
+            )
+
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    res = await create_expedition_room(
+                        self.bot.tab,
+                        room_name=room_name,
+                        auto_start=auto_start,
+                        target_level=target_level,
+                        action_lock=None,
+                    )
+                    if res.get("status") == "created":
+                        lvl = res.get("level_selected")
+                        char_used = res.get("character") or "Atual"
+                        await update.message.reply_text(
+                            f"✅ *Sala de Expedição Criada!*\n\n"
+                            f"🏷️ *Nome:* `{res.get('room_name')}`\n"
+                            f"👤 *Personagem:* {char_used}\n"
+                            f"🏆 *Nível da Run:* `{lvl}` (Maior disponível analisado)\n"
+                            f"👥 *Início Automático:* `{res.get('auto_start')} jogadores`\n"
+                            f"📊 *Escada:* {res.get('ladder_label', 'N/A')}",
+                            parse_mode="Markdown",
+                        )
+                    elif res.get("status") == "cooldown":
+                        cd = res.get("cooldown_note", "Em cooldown.")
+                        lvl = res.get("level_selected")
+                        char_used = res.get("character") or "Atual"
+                        await update.message.reply_text(
+                            f"⏳ *Expedição em Cooldown*\n\n"
+                            f"⚠️ A sala *{room_name}* foi configurada para *{char_used}* no nível *{lvl}*, mas o botão *Criar e entrar* está desabilitado:\n"
+                            f"🕒 `{cd}`\n\n"
+                            f"A run de hoje já foi utilizada ou está em espera até a meia-noite.",
+                            parse_mode="Markdown",
+                        )
+                    else:
+                        await update.message.reply_text(f"❌ Erro ao criar sala: {res.get('message', 'Erro desconhecido')}")
+                except Exception as e:
+                    await update.message.reply_text(f"❌ Erro na expedição: {e}")
+                finally:
+                    self.bot.resume_hunt()
+            return
+
+        if subcmd in ["sair", "leave", "desfazer"]:
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    res = await leave_expedition_lobby(self.bot.tab)
+                    if res.get("success"):
+                        await update.message.reply_text(f"🚪 {res.get('message')}")
+                    else:
+                        await update.message.reply_text(f"⚠️ {res.get('message')}")
+                except Exception as e:
+                    await update.message.reply_text(f"❌ Erro ao sair da expedição: {e}")
+                finally:
+                    self.bot.resume_hunt()
+            return
+
+        # Status geral da expedição
+        async with self.action_lock:
+            self.bot.pause_hunt()
+            try:
+                st = await get_expedition_status(self.bot.tab)
+            finally:
+                self.bot.resume_hunt()
+
+        if st.get("in_lobby"):
+            members_str = ", ".join(st.get("members", [])) or "Aguardando..."
+            text = (
+                f"👥 *Você está em uma Sala de Expedição!*\n\n"
+                f"🏷️ *Sala:* {st.get('room_name')}\n"
+                f"👥 *Jogadores:* {st.get('members_count')}\n"
+                f"📋 *Membros:* {members_str}\n\n"
+                f"Para sair, use `/expedicao sair`."
+            )
+        else:
+            daily_map = st.get("daily_map") or "Não identificado"
+            max_lvl = st.get("max_available_level", "N/A")
+            ladder = st.get("ladder_label") or "N/A"
+            can_create = "🟢 Disponível" if st.get("can_create") else "🔴 Em Cooldown"
+            cd_note = f"\n🕒 *Aviso:* `{st.get('cooldown_note')}`" if st.get("cooldown_note") else ""
+            def_char = get_setting("expedition_default_character", "")
+            def_char_str = f"*{def_char}*" if def_char else "_Ativo no jogo_"
+
+            text = (
+                f"🗺️ *Salão de Expedição — Status*\n\n"
+                f"📅 *{daily_map}*\n"
+                f"👤 *Personagem no Salão:* {st.get('current_character', 'N/A')}\n"
+                f"📌 *Personagem Padrão:* {def_char_str}\n"
+                f"🏆 *Maior Nível da Run:* `{max_lvl}` (Dinâmico)\n"
+                f"🪜 *Escada:* {ladder}\n"
+                f"⚡ *Status de Criação:* {can_create}{cd_note}\n\n"
+                f"Comandos:\n"
+                f"• `/criarsala` - Cria sala com 'Go 10' e maior nível dinâmico\n"
+                f"• `/expedicao char` - Escolhe o personagem padrão\n"
+                f"• `/expedicao sair` - Sai do grupo atual"
+            )
+
+        keyboard = [
+            [
+                InlineKeyboardButton("🚀 Criar Sala (Go 10 / Max)", callback_data="btn_action_expedicao_create"),
+                InlineKeyboardButton("🔄 Atualizar", callback_data="btn_action_expedicao_status"),
+            ],
+            [
+                InlineKeyboardButton(f"👤 Personagem ({def_char or 'Ativo'})", callback_data="sub_expedicao_chars"),
+            ],
+        ]
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
     @authorized_only
     @require_bot_running
@@ -3940,6 +4318,10 @@ class TelegramController:
 • /automissoes [on|off] - Liga/desliga missões automáticas pós-boss
 • /halloween [on|off|entrar] (ou /invasao) - Gerencia Invasão de Halloween
 • /daily - Coleta a recompensa diária
+• /expedicao - Status do salão de expedição do dia e cooldown
+• /criarsala - Cria sala de expedição ('Go 10' com maior nível dinâmico)
+• /expedicao criar [nome] [auto_start] [nivel] - Cria sala personalizada
+• /expedicao sair - Sai ou desfaz o grupo da expedição
 
 🎉 Eventos & Overlays do Jogo:
 • /eventos - Mostra eventos ativos no jogo (banner, modal, avisos)
@@ -4039,6 +4421,9 @@ async def main():
     application.add_handler(CommandHandler("codex", controller.codex))
     application.add_handler(CommandHandler("reset", controller.reset))
     application.add_handler(CommandHandler("daily", controller.daily))
+    application.add_handler(CommandHandler("expedicao", controller.expedicao))
+    application.add_handler(CommandHandler("criarsala", controller.criarsala))
+    application.add_handler(CommandHandler("setexpchar", controller.setexpchar))
     application.add_handler(CommandHandler("menu", controller.menu))
     application.add_handler(CommandHandler("atalhos", controller.menu))
     application.add_handler(CommandHandler("config", controller.config))

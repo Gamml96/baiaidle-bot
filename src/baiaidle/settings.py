@@ -19,6 +19,7 @@ DEFAULT_SETTINGS = {
     "codex_focus_attribute": "critDmg",# Atributo alvo do Codex (ex: critDmg, atkPct, spellDmgPct)
     "codex_focus_hunt": None,          # Hunt atual sendo focada pelo Codex
     "default_hunt": "Infernal Demon",  # Hunt padrão de segurança pós-treino e término do Codex
+    "expedition_default_character": "",# Personagem padrão para expedições (ex: 'ED', 'MS', 'Royal Health')
 }
 
 _cached_settings = None
