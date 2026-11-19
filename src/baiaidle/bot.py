@@ -849,6 +849,14 @@ class GameBot:
         """
         return await ensure_page_session(self, on_message=self.on_message)
 
+    async def restart_page_session(self) -> tuple[bool, str]:
+        """
+        Força o recarregamento completo da página (/jogar), refaz login se necessário,
+        coleta recompensas offline, fecha popups e retoma a hunt.
+        """
+        from baiaidle.recovery import restart_game_session
+        return await restart_game_session(self, on_message=self.on_message)
+
     def touch_activity(self):
         """Atualiza o timestamp de atividade para o Watchdog Antitravamento."""
         import time

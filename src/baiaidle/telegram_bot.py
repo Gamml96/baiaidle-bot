@@ -8,11 +8,9 @@ from telegram import (
     Update,
     BotCommand,
     BotCommandScopeDefault,
-    BotCommandScopeAllPrivateChats,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
-    KeyboardButton,
 )
 
 # pyrefly: ignore [missing-import]
@@ -33,7 +31,6 @@ from baiaidle.autoboss import (
     AutoBoss,
     get_boss_list,
     format_boss_list,
-    parse_boss_indices,
     parse_boss_indices_and_difficulties,
 )
 from baiaidle.autoboss_scheduler import (
@@ -80,7 +77,6 @@ from baiaidle.expedition import (
     create_expedition_room,
     leave_expedition_lobby,
     list_expedition_characters,
-    select_expedition_character,
 )
 from baiaidle.tree import get_tree_status, run_auto_tree
 from baiaidle.halloween import (
@@ -95,7 +91,7 @@ from baiaidle.actions import (
     get_loot_analyzer_coins,
     get_hud_data,
 )
-from baiaidle.sell import format_number, format_duration, is_training_location
+from baiaidle.sell import format_number, format_duration, is_training_location, DEFAULT_HUNT
 
 
 
@@ -298,6 +294,7 @@ class TelegramController:
             BotCommand("setexpchar", "👤 Definir personagem padrão da expedição"),
             BotCommand("print", "🖥️ Tirar print da tela do jogo"),
             BotCommand("recuperar", "🛠️ Fechar avisos e recuperar sessão"),
+            BotCommand("reiniciar", "🔄 Recarregar e reiniciar a página do jogo"),
             BotCommand("debughunt", "🐞 Salvar HTML das hunts para depuração"),
             BotCommand("eventos", "🎉 Ver eventos ativos"),
             BotCommand("overlays", "🧩 Ver overlays ativos"),
@@ -2424,6 +2421,18 @@ class TelegramController:
                 except Exception as e:
                     await query.message.reply_text(f"❌ Erro ao executar recuperação: {e}")
 
+        elif data == "btn_restart_game":
+            await query.message.reply_text("🔄 *Recarregando a página do jogo e reiniciando a sessão...*", parse_mode="Markdown")
+            async with self.action_lock:
+                try:
+                    success, msg_rec = await self.bot.restart_page_session()
+                    if success:
+                        await query.message.reply_text(f"✅ *Página reiniciada com sucesso!*\n{msg_rec}", parse_mode="Markdown")
+                    else:
+                        await query.message.reply_text(f"⚠️ *Aviso ao reiniciar:*\n{msg_rec}", parse_mode="Markdown")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao reiniciar página: {e}")
+
         elif data == "btn_party":
             await self._reply_party_details(query.message)
 
@@ -3210,6 +3219,32 @@ class TelegramController:
             except Exception as e:
                 await update.message.reply_text(f"❌ Erro ao executar recuperação: {e}")
 
+    @authorized_only
+    async def reiniciar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Força o recarregamento da página (/jogar) e reinicia a sessão do jogo."""
+        if not self.bot.tab:
+            await update.message.reply_text("❌ Navegador não iniciado.")
+            return
+
+        msg = await update.message.reply_text("🔄 *Recarregando a página do jogo e reiniciando a sessão...*", parse_mode="Markdown")
+        async with self.action_lock:
+            try:
+                success, msg_rec = await self.bot.restart_page_session()
+                if success:
+                    await self.reply_safe(
+                        update,
+                        f"✅ *Página reiniciada com sucesso!*\n{msg_rec}",
+                        parse_mode="Markdown",
+                    )
+                else:
+                    await self.reply_safe(
+                        update,
+                        f"⚠️ *Aviso ao reiniciar página:*\n{msg_rec}",
+                        parse_mode="Markdown",
+                    )
+            except Exception as e:
+                await update.message.reply_text(f"❌ Erro ao reiniciar página: {e}")
+
     # ============================================================
     # EVENTOS E OVERLAYS
     # ============================================================
@@ -3921,7 +3956,7 @@ class TelegramController:
                     except Exception:
                         states = {}
 
-        from baiaidle.overlays import get_event_text, has_active_event
+        from baiaidle.overlays import get_event_text, has_active_event, OVERLAY_FRIENDLY_NAMES
 
         if has_active_event(states):
             evento = self._md(get_event_text(states)).replace("\n", " ").strip()
@@ -3930,28 +3965,36 @@ class TelegramController:
             evento_txt = "Nenhum evento ativo."
 
         overlays_visiveis = [
-            key for key, info in states.items()
+            OVERLAY_FRIENDLY_NAMES.get(key, key)
+            for key, info in states.items()
             if isinstance(info, dict) and info.get("visible")
         ]
-        overlays_txt = ", ".join(overlays_visiveis) if overlays_visiveis else "Nenhum overlay ativo."
+        if overlays_visiveis:
+            overlays_txt = "\n• " + "\n• ".join(overlays_visiveis)
+        else:
+            overlays_txt = "Nenhum overlay ativo."
 
         ocupado_txt = "⏳ *Outra ação em andamento — dados podem estar desatualizados.*\n" if ocupado else ""
         text = (
             "🎉 *SISTEMA • EVENTOS & OVERLAYS*\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🎊 *Evento:* {evento_txt}\n"
-            f"🧩 *Overlays visíveis:* {overlays_txt}\n"
+            f"🎊 *Evento:* {evento_txt}\n\n"
+            f"🧩 *Overlays detectados:*\n{overlays_txt}\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             f"{ocupado_txt}"
-            "_O bot fecha/ignora esses avisos automaticamente. Use abaixo para agir:_"
+            "_O bot monitora automaticamente conexão perdida, fila e manutenção, reiniciando se necessário._\n"
+            "_Você também pode forçar o reinício da página ou recuperar a sessão abaixo:_"
         )
         keyboard = [
             [
-                InlineKeyboardButton("🔄 Atualizar", callback_data="sub_eventos"),
-                InlineKeyboardButton("🛠️ Recuperar / Limpar Popups", callback_data="btn_recuperar"),
+                InlineKeyboardButton("🔄 Atualizar Status", callback_data="sub_eventos"),
+                InlineKeyboardButton("♻️ Reiniciar Página / Jogo", callback_data="btn_restart_game"),
             ],
             [
+                InlineKeyboardButton("🛠️ Limpar Popups / Avisos", callback_data="btn_recuperar"),
                 InlineKeyboardButton("📺 Painel Twitch", callback_data="sub_twitch"),
+            ],
+            [
                 InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
             ],
         ]
@@ -4170,6 +4213,8 @@ class TelegramController:
             await self.show_eventos_menu(update, context)
         elif text in ["📺 Twitch", "Twitch", "twitch"]:
             await self.show_twitch_menu(update, context)
+        elif text.lower() in ["reiniciar", "restart", "reiniciar jogo", "reiniciar sessão", "reiniciar pagina"]:
+            await self.reiniciar(update, context)
         elif text in ["❓ Ajuda", "Ajuda", "ajuda", "help"]:
             await self.help(update, context)
 
@@ -4291,6 +4336,7 @@ class TelegramController:
 • /eventos - Mostra eventos ativos no jogo (banner, modal, avisos)
 • /overlays - Lista os overlays visíveis (conexão, fila, manutenção, treino, etc.)
 • /recuperar (ou /fechar) - Fecha modais/avisos e recupera a sessão
+• /reiniciar (ou /restart) - Recarrega a página (/jogar) e reinicia a sessão
 
 🔮 Charms:
 • /charms - Mostra slots, pontos e presets VIP de charms
@@ -4397,6 +4443,8 @@ async def main():
     application.add_handler(CommandHandler("setattrs", controller.setattrs))
     application.add_handler(CommandHandler("recuperar", controller.recover))
     application.add_handler(CommandHandler("fechar", controller.recover))
+    application.add_handler(CommandHandler("reiniciar", controller.reiniciar))
+    application.add_handler(CommandHandler("restart", controller.reiniciar))
     application.add_handler(CommandHandler("eventos", controller.eventos))
     application.add_handler(CommandHandler("overlays", controller.overlays))
     application.add_handler(CommandHandler("charms", controller.charms))

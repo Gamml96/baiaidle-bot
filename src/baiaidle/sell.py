@@ -9,7 +9,6 @@ from baiaidle.actions import (
     get_sell_button_state,
     open_sale_confirmation,
     confirm_sale,
-    wait_for_cloudflare,
     wait_for_sell_cooldown,
     get_hud_data,
     stash_valuable_items,

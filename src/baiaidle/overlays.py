@@ -1,6 +1,30 @@
 import asyncio
 import json
 
+OVERLAY_FRIENDLY_NAMES = {
+    "conn-overlay": "🔌 Conexão Perdida",
+    "queue-overlay": "⏳ Fila de Entrada",
+    "maint-overlay": "🛠️ Manutenção do Servidor",
+    "training-overlay": "🧘‍♂️ Treino Online",
+    "halloween-overlay": "🎃 Invasão Halloween",
+    "guildtask-overlay": "🎯 Task da Guilda",
+    "bestiarytrack-overlay": "📖 Bestiário",
+    "bptrack-overlay": "🎟️ Battle Pass",
+    "autocollect-overlay": "🎒 Auto-Coleta",
+    "fishing-overlay": "🎣 Pesca",
+    "event-banner": "🎉 Banner de Evento",
+    "events-group": "🎊 Grupo de Eventos",
+    "events-list": "📋 Lista de Eventos",
+    "daily-notice": "🎁 Recompensa Diária",
+    "event-modal": "📢 Modal de Evento",
+}
+
+
+def get_friendly_overlay_name(overlay_id: str) -> str:
+    """Retorna um nome amigável e legível para o identificador do overlay."""
+    return OVERLAY_FRIENDLY_NAMES.get(overlay_id, overlay_id)
+
+
 def extract_execute_result(result):
     try:
         return result["result"]["result"].get("value")

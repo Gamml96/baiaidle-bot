@@ -512,6 +512,52 @@ async def ensure_page_session(bot, on_message=None) -> tuple[bool, str]:
 
 
 # ================================================================
+# RESTAURAÇÃO DE LOCALIZAÇÃO E REINÍCIO COMPLETO DA SESSÃO
+# ================================================================
+
+async def restore_hunt_location(bot):
+    """Retorna o personagem para a hunt correta após reload/recuperação se necessário."""
+    if hasattr(bot, "hunt_stats") and bot.tab:
+        try:
+            from baiaidle.sell import resolve_target_hunt
+            from baiaidle.hunts import change_hunt
+            target_hunt = await resolve_target_hunt(bot.tab, bot.hunt_stats)
+            if target_hunt:
+                log_recovery(f"[Recovery] Retornando personagem para a hunt: {target_hunt}")
+                await change_hunt(bot.tab, target_hunt)
+                bot.hunt_stats.force_sell = True
+        except Exception as eh:
+            log_recovery(f"[Recovery] Erro ao retornar para hunt pós-recuperação: {eh}")
+
+
+async def restart_game_session(bot, on_message=None) -> tuple[bool, str]:
+    """
+    Força o recarregamento completo da página (/jogar),
+    executa login se necessário, fecha popups, coleta recompensa offline e retoma hunt.
+    """
+    if not bot or not bot.tab:
+        return False, "Bot ou aba inexistente."
+
+    jogar_url = BAIAKIDLE_URL.rstrip("/") + "/jogar"
+    log_recovery(f"[Recovery] Forçando recarregamento da página {jogar_url}...")
+    try:
+        await bot.tab.go_to(jogar_url)
+        await asyncio.sleep(3.0)
+    except Exception as e:
+        log_recovery(f"[Recovery] Erro ao navegar para {jogar_url}: {e}")
+
+    success, msg = await ensure_page_session(bot, on_message=on_message or getattr(bot, "on_message", None))
+    if success:
+        await restore_hunt_location(bot)
+        if hasattr(bot, "touch_activity"):
+            bot.touch_activity()
+        if hasattr(bot, "ensure_hunt_running"):
+            bot.ensure_hunt_running(force_restart=False)
+
+    return success, msg
+
+
+# ================================================================
 # VIGIA DE REFRESH E POPUPS EM SEGUNDO PLANO
 # ================================================================
 
@@ -521,8 +567,8 @@ async def monitor_page_recovery(bot):
       - Se a página deu refresh (o rastreador foi limpo)
       - Se a sessão deslogou
       - Se apareceu tela de boas-vindas ou recompensa offline
-      - Se houve queda de conexão
-    Ao detectar qualquer um desses eventos, dispara a rotina de recuperação automaticamente.
+      - Se houve queda de conexão, fila travada ou manutenção
+    Ao detectar qualquer um desses eventos, dispara a rotina de recuperação/reinício automaticamente.
     """
     log_recovery("Vigia de Recuperação de Página (Refresh / Boas-Vindas) iniciado em segundo plano.")
 
@@ -573,54 +619,90 @@ async def monitor_page_recovery(bot):
                         is_maintenance,
                         has_active_event,
                         get_event_text,
-                        wait_for_connection_restore,
                         wait_for_queue_exit,
                     )
                     states = await get_overlay_states(bot.tab)
 
-                    # Conexão perdida
+                    # 1. Conexão perdida: recarregar a página imediatamente, relogar e retomar hunt
                     if is_connection_lost(states):
-                        log_recovery("\n⚠️ [OVERLAY] Conexão perdida detectada. Aguardando reconexão...")
+                        log_recovery("\n⚠️ [OVERLAY] Conexão perdida detectada! Reiniciando página (/jogar)...")
                         notifier = getattr(bot, "on_message", None)
                         if notifier:
                             try:
-                                r = notifier("⚠️ *Conexão perdida!* Aguardando reconexão automática...")
+                                r = notifier("⚠️ *Conexão perdida detectada!* Reiniciando página do jogo e reconectando...")
                                 if asyncio.iscoroutine(r):
                                     await r
                             except Exception:
                                 pass
-                        await wait_for_connection_restore(bot.tab, timeout=60)
+                        await restart_game_session(bot, on_message=bot.on_message)
                         await asyncio.sleep(2.0)
                         continue
 
-                    # Fila de entrada
+                    # 2. Fila de entrada: aguardar na fila (limite 2 min) e reiniciar página se travar
                     if is_in_queue(states):
-                        log_recovery("\n⚠️ [OVERLAY] Personagem na fila de entrada. Aguardando...")
+                        log_recovery("\n⚠️ [OVERLAY] Personagem na fila de entrada. Aguardando até 2 minutos...")
                         notifier = getattr(bot, "on_message", None)
                         if notifier:
                             try:
-                                r = notifier("⏳ *Fila de entrada detectada.* Aguardando sua vez...")
+                                r = notifier("⏳ *Fila de entrada detectada.* Aguardando sua vez (limite de 2 min)...")
                                 if asyncio.iscoroutine(r):
                                     await r
                             except Exception:
                                 pass
-                        await wait_for_queue_exit(bot.tab, timeout=300)
+                        exited = await wait_for_queue_exit(bot.tab, timeout=120)
+                        if exited:
+                            log_recovery("✅ [OVERLAY] Saiu da fila de entrada com sucesso!")
+                            await ensure_page_session(bot, on_message=bot.on_message)
+                        else:
+                            log_recovery("\n⚠️ [OVERLAY] Tempo limite na fila de entrada excedido (2 min)! Reiniciando página...")
+                            if notifier:
+                                try:
+                                    r = notifier("⚠️ *Fila de entrada travada (2 min).* Reiniciando página do jogo...")
+                                    if asyncio.iscoroutine(r):
+                                        await r
+                                except Exception:
+                                    pass
+                            await restart_game_session(bot, on_message=bot.on_message)
                         await asyncio.sleep(2.0)
                         continue
 
-                    # Manutenção
+                    # 3. Manutenção: aguardar ciclos de 45s e recarregar periodicamente até voltar
                     if is_maintenance(states):
-                        log_recovery("\n⚠️ [OVERLAY] Jogo em manutenção.")
-                        notifier = getattr(bot, "on_message", None)
-                        if notifier:
-                            try:
-                                r = notifier("🛠️ *Jogo em manutenção!* O bot aguardará a reabertura.")
-                                if asyncio.iscoroutine(r):
-                                    await r
-                            except Exception:
-                                pass
-                        await asyncio.sleep(30)
+                        was_in_maint = getattr(bot, "_in_maintenance", False) is True
+                        if not was_in_maint:
+                            bot._in_maintenance = True
+                            log_recovery("\n⚠️ [OVERLAY] Jogo em manutenção! O bot aguardará e recarregará a cada 45s...")
+                            notifier = getattr(bot, "on_message", None)
+                            if notifier:
+                                try:
+                                    r = notifier("🛠️ *Jogo em manutenção detectado!* O bot aguardará e recarregará a cada 45s até reabrir...")
+                                    if asyncio.iscoroutine(r):
+                                        await r
+                                except Exception:
+                                    pass
+                        await asyncio.sleep(45)
+                        try:
+                            jogar_url = BAIAKIDLE_URL.rstrip("/") + "/jogar"
+                            await bot.tab.go_to(jogar_url)
+                            await asyncio.sleep(3.0)
+                        except Exception:
+                            pass
                         continue
+                    else:
+                        if getattr(bot, "_in_maintenance", False) is True:
+                            bot._in_maintenance = False
+                            log_recovery("\n🎉 [OVERLAY] Servidor reaberto após manutenção! Retomando sessão...")
+                            notifier = getattr(bot, "on_message", None)
+                            if notifier:
+                                try:
+                                    r = notifier("🎉 *Manutenção concluída! Servidor online.* Reconectando e retomando o jogo...")
+                                    if asyncio.iscoroutine(r):
+                                        await r
+                                except Exception:
+                                    pass
+                            await restart_game_session(bot, on_message=bot.on_message)
+                            await asyncio.sleep(2.0)
+                            continue
 
                     # Evento ativo
                     if has_active_event(states):

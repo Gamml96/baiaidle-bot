@@ -7,8 +7,11 @@ from baiaidle.recovery import (
     check_page_state,
     dismiss_welcome_and_popups,
     ensure_page_session,
+    restart_game_session,
+    restore_hunt_location,
     extract_execute_result,
 )
+from baiaidle.overlays import get_friendly_overlay_name
 
 
 class TestRecovery(unittest.IsolatedAsyncioTestCase):
@@ -175,6 +178,29 @@ class TestRecovery(unittest.IsolatedAsyncioTestCase):
         success, msg = await ensure_page_session(bot)
         self.assertTrue(success)
         mock_login.assert_called_once()
+
+    @patch("baiaidle.recovery.ensure_page_session", new_callable=AsyncMock)
+    @patch("baiaidle.recovery.restore_hunt_location", new_callable=AsyncMock)
+    async def test_restart_game_session(self, mock_restore, mock_ensure):
+        mock_ensure.return_value = (True, "OK")
+        bot = MagicMock()
+        bot.tab = AsyncMock()
+        bot.touch_activity = MagicMock()
+        bot.ensure_hunt_running = MagicMock()
+
+        success, msg = await restart_game_session(bot)
+        self.assertTrue(success)
+        self.assertIn("OK", msg)
+        bot.tab.go_to.assert_called_once()
+        mock_ensure.assert_called_once_with(bot, on_message=bot.on_message)
+        mock_restore.assert_called_once_with(bot)
+        bot.touch_activity.assert_called_once()
+
+    def test_friendly_overlay_names(self):
+        self.assertEqual(get_friendly_overlay_name("conn-overlay"), "🔌 Conexão Perdida")
+        self.assertEqual(get_friendly_overlay_name("queue-overlay"), "⏳ Fila de Entrada")
+        self.assertEqual(get_friendly_overlay_name("maint-overlay"), "🛠️ Manutenção do Servidor")
+        self.assertEqual(get_friendly_overlay_name("unknown-id"), "unknown-id")
 
 
 if __name__ == "__main__":
