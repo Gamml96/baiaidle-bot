@@ -53,9 +53,12 @@ from baiaidle.config import (
 )
 from baiaidle.hunts import (
     get_current_hunt,
+    get_current_hunt_with_tier,
     get_hunts_list,
     change_hunt,
     debug_hunts_dom,
+    normalize_tier,
+    TIER_LABELS,
 )
 from baiaidle.settings import get_setting, set_setting, load_settings
 from baiaidle.guild import process_guild_tasks, accept_specific_task, get_tracked_task_progress, auto_select_best_guild_task
@@ -637,7 +640,7 @@ class TelegramController:
         current_hunt = "Desconhecida"
         if self.bot.tab:
             try:
-                current_hunt = await get_current_hunt(self.bot.tab)
+                current_hunt = await get_current_hunt_with_tier(self.bot.tab)
             except Exception:
                 current_hunt = "Desconhecida"
 
@@ -737,27 +740,26 @@ class TelegramController:
             await update.message.reply_text("⏳ Há outra ação em andamento no jogo. Aguarde um instante.")
             return
 
-        await update.message.reply_text("⏳ Capturando lista atual de Hunts disponíveis...")
+        arg_tier = None
+        if context.args:
+            raw_t = context.args[0].strip().lower()
+            if raw_t in ("normal", "nightmare", "nm", "hell", "hl"):
+                arg_tier = normalize_tier(raw_t)
+
+        await update.message.reply_text("⏳ Capturando lista atual de Hunts disponíveis (Normal, Nightmare e Hell)...")
 
         async with self.action_lock:
             self.bot.pause_hunt()
             try:
-                current = await get_current_hunt(self.bot.tab)
+                current = await get_current_hunt_with_tier(self.bot.tab)
                 hunts_data = await get_hunts_list(self.bot.tab, force_refresh=True)
 
                 if not hunts_data:
                     await update.message.reply_text("❌ Nenhuma hunt encontrada ou ocorreu falha ao abrir o menu.")
+                elif arg_tier:
+                    await self._send_hunts_tier_list(update, hunts_data, current, arg_tier, page=0)
                 else:
-                    lines = [f"🗺️ HUNTS DISPONÍVEIS (Atualizadas)\n\n📍 Atual: {current}\n"]
-                    for h in hunts_data:
-                        lvl_str = f" [lvl {h['level']}]" if h.get("level") is not None else ""
-                        lines.append(f"{h['index']} - {h['name']}{lvl_str}")
-                    lines.append("\nPara mudar digite: /hunt <numero> ou /hunt <nome da hunt>")
-
-                    msg = "\n".join(lines)
-                    # Divide em blocos caso a lista seja muito longa para o Telegram (limite de 4096 chars)
-                    for chunk in [msg[i:i + 4000] for i in range(0, len(msg), 4000)]:
-                        await update.message.reply_text(chunk)
+                    await self._send_hunts_tier_menu(update, hunts_data, current)
             except Exception as e:
                 await update.message.reply_text(f"❌ Erro ao listar hunts: {e}")
             finally:
@@ -767,7 +769,11 @@ class TelegramController:
     @require_bot_running
     async def hunt(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not context.args:
-            await update.message.reply_text("Uso: /hunt <numero> ou /hunt <nome da hunt>")
+            await update.message.reply_text(
+                "Uso: `/hunt <numero>` ou `/hunt <nome> [normal|nightmare|hell]`\n"
+                "Exemplo: `/hunt Kongra nightmare` ou `/hunt Catacomb hell`",
+                parse_mode="Markdown",
+            )
             return
 
         if self.auto_boss_instance and self.auto_boss_instance.state.running:
@@ -1337,7 +1343,7 @@ class TelegramController:
         async with self.action_lock:
             self.bot.pause_hunt()
             try:
-                hunt_de_inicio = await get_current_hunt(self.bot.tab)
+                hunt_de_inicio = await get_current_hunt_with_tier(self.bot.tab)
                 success, msg = await process_battlepass(self.bot.tab, self.bot.on_message)
 
                 if msg in ["finalizado", "nenhuma_nova", "aguardando_escolha"]:
@@ -1933,8 +1939,8 @@ class TelegramController:
                     self.bot.resume_hunt()
 
         elif data == "set_defhunt_current":
-            current = await get_current_hunt(self.bot.tab) if self.bot.tab else ""
-            if current and current.lower() not in ["hunt desconhecida", "treino online", "casa"]:
+            current = await get_current_hunt_with_tier(self.bot.tab) if self.bot.tab else ""
+            if current and current.lower() not in ["hunt desconhecida", "treino online", "casa", "cidade"]:
                 self.bot.hunt_stats.default_hunt = current
                 set_setting("default_hunt", current)
                 await query.answer(f"✅ Hunt padrão definida: {current}", show_alert=True)
@@ -1957,7 +1963,7 @@ class TelegramController:
             async with self.action_lock:
                 self.bot.pause_hunt()
                 try:
-                    hunt_de_inicio = await get_current_hunt(self.bot.tab)
+                    hunt_de_inicio = await get_current_hunt_with_tier(self.bot.tab)
                     success, msg = await process_battlepass(self.bot.tab, self.bot.on_message)
                     if msg in ["finalizado", "nenhuma_nova", "aguardando_escolha"]:
                         if msg != "aguardando_escolha":
@@ -2520,25 +2526,61 @@ class TelegramController:
             if self.action_lock.locked():
                 await query.answer("⏳ Há outra ação em andamento. Aguarde.", show_alert=True)
                 return
-            await query.message.reply_text("⏳ Capturando lista de Hunts...")
+            await query.message.reply_text("⏳ Capturando lista de Hunts (Normal, Nightmare e Hell)...")
             async with self.action_lock:
                 self.bot.pause_hunt()
                 try:
-                    current = await get_current_hunt(self.bot.tab)
+                    current = await get_current_hunt_with_tier(self.bot.tab)
                     hunts_data = await get_hunts_list(self.bot.tab, force_refresh=True)
                     if not hunts_data:
                         await query.message.reply_text("❌ Nenhuma hunt encontrada.")
                     else:
-                        lines = [f"🗺️ *HUNTS DISPONÍVEIS (Atualizadas)*\n\n📍 Atual: *{current}*\n"]
-                        for h in hunts_data:
-                            lvl_str = f" `[lvl {h['level']}]`" if h.get("level") is not None else ""
-                            lines.append(f"`{h['index']}` - {h['name']}{lvl_str}")
-                        lines.append("\nPara mudar digite: `/hunt <numero>` ou `/hunt <nome>`")
-                        msg = "\n".join(lines)
-                        for chunk in [msg[i:i + 4000] for i in range(0, len(msg), 4000)]:
-                            await self._send_safe_message(self.chat_id, chunk, parse_mode="Markdown")
+                        await self._send_hunts_tier_menu(update, hunts_data, current, edit=False)
                 except Exception as e:
                     await query.message.reply_text(f"❌ Erro ao listar hunts: {e}")
+                finally:
+                    self.bot.resume_hunt()
+
+        elif data == "hunts_tiers_menu":
+            current = await get_current_hunt_with_tier(self.bot.tab) if self.bot.tab else "Desconhecida"
+            hunts_data = await get_hunts_list(self.bot.tab, force_refresh=False)
+            await self._send_hunts_tier_menu(update, hunts_data, current, edit=True)
+
+        elif data.startswith("hunts_tier_"):
+            parts = data.split("_")
+            # hunts_tier_<tier>_<page>
+            tier_key = normalize_tier(parts[2] if len(parts) > 2 else "normal")
+            page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+            current = await get_current_hunt_with_tier(self.bot.tab) if self.bot.tab else "Desconhecida"
+            hunts_data = await get_hunts_list(self.bot.tab, force_refresh=False)
+            await self._send_hunts_tier_list(update, hunts_data, current, tier_key, page=page, edit=True)
+
+        elif data.startswith("hunts_go_"):
+            if self.auto_boss_instance and self.auto_boss_instance.state.running:
+                await query.answer("⚠️ AutoBoss em execução.", show_alert=True)
+                return
+            if self.action_lock.locked():
+                await query.answer("⏳ Há outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            idx_str = data.replace("hunts_go_", "").strip()
+            await query.answer(f"⏳ Indo para hunt #{idx_str}...")
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    success, msg = await change_hunt(self.bot.tab, idx_str)
+                    if success:
+                        await self._reset_hunt_analyzer()
+                        if hasattr(self.bot, "hunt_stats"):
+                            self.bot.hunt_stats.is_in_training = False
+                            self.bot.hunt_stats.training_type = ""
+                            self.bot.hunt_stats.force_sell = True
+                            self.bot.hunt_stats.force_action = None
+                            self.bot.hunt_stats.manual_hunt_override = True
+                        await query.message.reply_text(f"✅ {msg}\n🔄 Estatísticas e Analyzer resetados!\n⚡ Venda automática retomada.")
+                    else:
+                        await query.message.reply_text(f"❌ {msg}")
+                except Exception as e:
+                    await query.message.reply_text(f"❌ Erro ao mudar de hunt: {e}")
                 finally:
                     self.bot.resume_hunt()
 
@@ -3333,7 +3375,7 @@ class TelegramController:
         gold_hud = "0"
         if self.bot.tab:
             try:
-                current_hunt = await get_current_hunt(self.bot.tab)
+                current_hunt = await get_current_hunt_with_tier(self.bot.tab)
                 hud = await get_hud_data(self.bot.tab)
                 stamina_pct = hud.get("stamina_pct", "") or "N/D"
                 stamina_time = hud.get("stamina_time", "")
@@ -3489,6 +3531,108 @@ class TelegramController:
             ],
         ]
         await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def _send_hunts_tier_menu(self, update: Update, hunts_data: list, current: str, edit: bool = False):
+        """Exibe seleção de dificuldade (Normal, Nightmare, Hell) com contagem de hunts desbloqueadas."""
+        counts = {"normal": 0, "nm": 0, "hl": 0}
+        for h in hunts_data or []:
+            t = normalize_tier(h.get("tier"))
+            counts[t] = counts.get(t, 0) + 1
+
+        text = (
+            "🗺️ *HUNTS DISPONÍVEIS POR DIFICULDADE*\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📍 *Atual:* `{current}`\n\n"
+            f"🟢 *Normal:* `{counts['normal']}` hunts\n"
+            f"🟣 *Nightmare:* `{counts['nm']}` desbloqueadas\n"
+            f"🔥 *Hell:* `{counts['hl']}` desbloqueadas\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "_Escolha a dificuldade abaixo ou digite `/hunt <nome> [nightmare|hell]`:_"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton(f"🟢 Normal ({counts['normal']})", callback_data="hunts_tier_normal_0"),
+                InlineKeyboardButton(f"🟣 Nightmare ({counts['nm']})", callback_data="hunts_tier_nm_0"),
+            ],
+            [
+                InlineKeyboardButton(f"🔥 Hell ({counts['hl']})", callback_data="hunts_tier_hl_0"),
+                InlineKeyboardButton("🔄 Atualizar Lista", callback_data="btn_hunts"),
+            ],
+            [
+                InlineKeyboardButton("🔙 Voltar", callback_data="sub_hunts"),
+            ],
+        ]
+        markup = InlineKeyboardMarkup(keyboard)
+        if edit:
+            await self.show_or_edit_menu(update, text, markup)
+        elif update.callback_query and update.callback_query.message:
+            await update.callback_query.message.reply_text(text, reply_markup=markup, parse_mode="Markdown")
+        elif update.message:
+            await update.message.reply_text(text, reply_markup=markup, parse_mode="Markdown")
+
+    async def _send_hunts_tier_list(
+        self,
+        update: Update,
+        hunts_data: list,
+        current: str,
+        tier_key: str,
+        page: int = 0,
+        edit: bool = False,
+    ):
+        """Exibe as hunts disponíveis (desbloqueadas) da dificuldade selecionada com paginação."""
+        t_key = normalize_tier(tier_key)
+        t_label = TIER_LABELS.get(t_key, "Normal")
+        t_icon = {"normal": "🟢", "nm": "🟣", "hl": "🔥"}.get(t_key, "🗺️")
+        tier_hunts = [h for h in (hunts_data or []) if normalize_tier(h.get("tier")) == t_key]
+
+        per_page = 12
+        total = len(tier_hunts)
+        max_page = max(0, (total - 1) // per_page) if total else 0
+        page = max(0, min(page, max_page))
+        slice_hunts = tier_hunts[page * per_page:(page + 1) * per_page]
+
+        lines = [
+            f"{t_icon} *HUNTS • {t_label.upper()}* (Pág. {page + 1}/{max_page + 1})",
+            f"📍 *Atual:* `{current}`\n",
+        ]
+        if not slice_hunts:
+            lines.append("_Nenhuma hunt desbloqueada disponível nesta dificuldade._")
+        else:
+            for h in slice_hunts:
+                lvl_str = f" `[lvl {h['level']}]`" if h.get("level") is not None else ""
+                veil_str = f" · {h['veil']}" if h.get("veil") else ""
+                lines.append(f"`{h['index']}` - {h['name']}{lvl_str}{veil_str}")
+            lines.append("\n_Toque em uma hunt abaixo para ir caçar ou use `/hunt <número>`:_")
+
+        keyboard = []
+        for i in range(0, len(slice_hunts), 2):
+            row = []
+            for h in slice_hunts[i:i + 2]:
+                lvl_b = f" ({h['level']})" if h.get("level") is not None else ""
+                row.append(InlineKeyboardButton(f"{h['name']}{lvl_b}", callback_data=f"hunts_go_{h['index']}"))
+            keyboard.append(row)
+
+        nav = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("⬅️ Anterior", callback_data=f"hunts_tier_{t_key}_{page - 1}"))
+        if page < max_page:
+            nav.append(InlineKeyboardButton("➡️ Próxima", callback_data=f"hunts_tier_{t_key}_{page + 1}"))
+        if nav:
+            keyboard.append(nav)
+
+        keyboard.append([
+            InlineKeyboardButton("🎚️ Dificuldades", callback_data="hunts_tiers_menu"),
+            InlineKeyboardButton("🔄 Atualizar", callback_data="btn_hunts"),
+        ])
+
+        markup = InlineKeyboardMarkup(keyboard)
+        text = "\n".join(lines)
+        if edit:
+            await self.show_or_edit_menu(update, text, markup)
+        elif update.callback_query and update.callback_query.message:
+            await update.callback_query.message.reply_text(text, reply_markup=markup, parse_mode="Markdown")
+        elif update.message:
+            await update.message.reply_text(text, reply_markup=markup, parse_mode="Markdown")
 
     async def show_missoes_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
         """Submenu: Missões, Passe de Batalha, Tasks e Invasões."""

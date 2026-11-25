@@ -18,6 +18,7 @@ from baiaidle.actions import (
 # === IMPORTANDO FUNÇÕES DE HUNT E TREINO ===
 from baiaidle.hunts import (
     get_current_hunt,
+    get_current_hunt_with_tier,
     change_hunt,
     go_to_training,
     go_to_house,
@@ -442,12 +443,12 @@ async def resolve_target_hunt(tab, stats: HuntStats | None = None) -> str:
     except Exception:
         pass
 
-    # Garante que fallback seja sempre o nome canônico oficial se estiver no cache
+    # Garante que fallback preserve o tier (ex: 'Kongra · Nightmare') caso tenha sido informado
     info_fb = get_hunt_info(fallback)
     if info_fb and info_fb.get("name"):
-        fallback = info_fb["name"]
+        fallback = info_fb.get("display_name") or info_fb["name"]
 
-    current = await get_current_hunt(tab)
+    current = await get_current_hunt_with_tier(tab)
     if not current or not isinstance(current, str):
         return fallback
     current = current.strip()

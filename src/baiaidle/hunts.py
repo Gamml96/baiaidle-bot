@@ -7,6 +7,76 @@ from baiaidle.config import PROJECT_ROOT
 HUNTS_CACHE_FILE = PROJECT_ROOT / "hunts_cache.json"
 _cached_hunts = None
 
+HUNT_TIERS = ("normal", "nm", "hl")
+TIER_LABELS = {
+    "normal": "Normal",
+    "nm": "Nightmare",
+    "hl": "Hell",
+}
+
+
+def normalize_tier(raw_tier: str | None) -> str:
+    """Normaliza o identificador de dificuldade para 'normal', 'nm' ou 'hl'."""
+    t = str(raw_tier or "").strip().lower()
+    if t in ("nm", "nightmare"):
+        return "nm"
+    if t in ("hl", "hell"):
+        return "hl"
+    return "normal"
+
+
+def format_hunt_with_tier(hunt_name: str, tier: str | None = "normal") -> str:
+    """Formata o nome da hunt com sua dificuldade quando for Nightmare ou Hell."""
+    name = (hunt_name or "").strip()
+    t = normalize_tier(tier)
+    if not name or t == "normal":
+        return name
+    return f"{name} · {TIER_LABELS[t]}"
+
+
+def parse_hunt_and_tier(hunt_identifier, tier: str | None = None) -> tuple[str, str]:
+    """
+    Extrai (nome_da_hunt, tier) de identificadores como:
+      - "Kongra · Nightmare" / "Kongra (Nightmare)" / "Kongra [Hell]"
+      - "nightmare:Kongra" / "nm:Kongra" / "hell:Kongra"
+      - "Kongra nightmare" / "Kongra hell"
+      - {"name": "Kongra", "tier": "nm"}
+    """
+    explicit_tier = normalize_tier(tier) if tier is not None else None
+    if isinstance(hunt_identifier, dict):
+        name = str(hunt_identifier.get("name") or hunt_identifier.get("hunt_name") or "").strip()
+        d_tier = explicit_tier or normalize_tier(hunt_identifier.get("tier"))
+        return name, d_tier
+
+    raw = str(hunt_identifier or "").strip()
+    detected_tier = None
+
+    # Prefixos: "nm:Kongra", "nightmare:Kongra", "hell:Kongra"
+    m_pref = re.match(r"^(normal|nightmare|nm|hell|hl)\s*[:|]\s*(.+)$", raw, re.IGNORECASE)
+    if m_pref:
+        detected_tier = normalize_tier(m_pref.group(1))
+        raw = m_pref.group(2).strip()
+    else:
+        # Separador " · Nightmare" / " - Hell"
+        m_dot = re.match(r"^(.+?)\s*[·\-–]\s*(normal|nightmare|hell)\s*$", raw, re.IGNORECASE)
+        if m_dot:
+            detected_tier = normalize_tier(m_dot.group(2))
+            raw = m_dot.group(1).strip()
+        else:
+            # Sufixo entre parênteses/colchetes: "Kongra (Nightmare)" / "Kongra [Hell]"
+            m_par = re.match(r"^(.+?)\s*[\(\[]\s*(normal|nightmare|hell)\s*[\)\]]\s*$", raw, re.IGNORECASE)
+            if m_par:
+                detected_tier = normalize_tier(m_par.group(2))
+                raw = m_par.group(1).strip()
+            else:
+                # Palavra no final: "Kongra nightmare" / "Kongra hell"
+                m_word = re.match(r"^(.+?)\s+(nightmare|hell)\s*$", raw, re.IGNORECASE)
+                if m_word:
+                    detected_tier = normalize_tier(m_word.group(2))
+                    raw = m_word.group(1).strip()
+
+    return raw, (explicit_tier or detected_tier or "normal")
+
 
 def load_hunts_cache() -> list[dict]:
     """Carrega as hunts do cache JSON em disco ou retorna a lista em memória."""
@@ -40,62 +110,73 @@ def save_hunts_cache(hunts: list[dict]) -> bool:
         return False
 
 
-def get_hunt_info(hunt_name: str | int) -> dict | None:
-    """Busca os dados de uma hunt (índice, level, tipo) a partir do nome ou índice no cache."""
+def get_hunt_info(hunt_name: str | int, tier: str | None = None) -> dict | None:
+    """Busca os dados de uma hunt (índice, level, tipo, tier) a partir do nome ou índice no cache."""
     if hunt_name is None:
         return None
     hunts = load_hunts_cache()
 
     # Se for numérico (índice 1-based da hunt na lista)
-    if isinstance(hunt_name, int) or (isinstance(hunt_name, str) and hunt_name.isdigit()):
+    if isinstance(hunt_name, int) or (isinstance(hunt_name, str) and hunt_name.strip().isdigit()):
         idx = int(hunt_name)
         return next((h for h in hunts if h.get("index") == idx), None)
 
-    target = str(hunt_name).strip().lower()
+    parsed_name, parsed_tier = parse_hunt_and_tier(hunt_name, tier)
+    target = parsed_name.strip().lower()
     if not target:
         return None
 
-    # 1. Correspondência exata
-    for h in hunts:
-        if h.get("name", "").strip().lower() == target:
-            return h
+    # Se houve indicação de tier, prioriza entradas daquele tier; caso contrário, prioriza 'normal'
+    tier_pools = [
+        [h for h in hunts if normalize_tier(h.get("tier")) == parsed_tier],
+    ]
+    if tier is None and parsed_tier == "normal":
+        tier_pools.append(hunts)
 
-    # 2. Se contiver parênteses ou sufixos (ex: "Elf (facil)" -> "Elf")
-    clean = re.sub(r"\(.*?\)", "", target).strip()
-    if clean and clean != target:
-        for h in hunts:
-            if h.get("name", "").strip().lower() == clean:
+    for pool in tier_pools:
+        if not pool:
+            continue
+        # 1. Correspondência exata
+        for h in pool:
+            if h.get("name", "").strip().lower() == target:
                 return h
 
-    # 3. Tratamento de separadores como traços/underscores (ex: "amazon-camp")
-    clean_sep = clean.replace("-", " ").replace("_", " ").strip()
-    if clean_sep and clean_sep != clean:
-        for h in hunts:
-            if h.get("name", "").strip().lower() == clean_sep:
-                return h
+        # 2. Se contiver parênteses ou sufixos (ex: "Elf (facil)" -> "Elf")
+        clean = re.sub(r"\(.*?\)", "", target).strip()
+        if clean and clean != target:
+            for h in pool:
+                if h.get("name", "").strip().lower() == clean:
+                    return h
 
-    # 4. Correspondência alfanumérica direta (ex: "darkthais" -> "Dark Thais")
-    norm_target = re.sub(r"[^a-z0-9]", "", target)
-    if norm_target:
-        for h in hunts:
-            h_norm = re.sub(r"[^a-z0-9]", "", h.get("name", "").lower())
-            if h_norm == norm_target:
-                return h
+        # 3. Tratamento de separadores como traços/underscores (ex: "amazon-camp")
+        clean_sep = clean.replace("-", " ").replace("_", " ").strip()
+        if clean_sep and clean_sep != clean:
+            for h in pool:
+                if h.get("name", "").strip().lower() == clean_sep:
+                    return h
 
-    # 5. Correspondência por contenção (ex: "Amazon Camp" vs "Amazon")
-    search_term = clean_sep or clean or target
-    if len(search_term) >= 3:
-        for h in hunts:
-            h_name = h.get("name", "").strip().lower()
-            if h_name and (h_name in search_term or search_term in h_name):
-                return h
+        # 4. Correspondência alfanumérica direta (ex: "darkthais" -> "Dark Thais")
+        norm_target = re.sub(r"[^a-z0-9]", "", target)
+        if norm_target:
+            for h in pool:
+                h_norm = re.sub(r"[^a-z0-9]", "", h.get("name", "").lower())
+                if h_norm == norm_target:
+                    return h
 
-    # 6. Contenção alfanumérica (ex: "amazoncamp" contém "amazon")
-    if norm_target and len(norm_target) >= 4:
-        for h in hunts:
-            h_norm = re.sub(r"[^a-z0-9]", "", h.get("name", "").lower())
-            if h_norm and (h_norm in norm_target or norm_target in h_norm):
-                return h
+        # 5. Correspondência por contenção (ex: "Amazon Camp" vs "Amazon")
+        search_term = clean_sep or clean or target
+        if len(search_term) >= 3:
+            for h in pool:
+                h_name = h.get("name", "").strip().lower()
+                if h_name and (h_name in search_term or search_term in h_name):
+                    return h
+
+        # 6. Contenção alfanumérica (ex: "amazoncamp" contém "amazon")
+        if norm_target and len(norm_target) >= 4:
+            for h in pool:
+                h_norm = re.sub(r"[^a-z0-9]", "", h.get("name", "").lower())
+                if h_norm and (h_norm in norm_target or norm_target in h_norm):
+                    return h
 
     return None
 
@@ -155,6 +236,34 @@ async def get_current_hunt(tab, timeout: float = 0):
             return val or ""
         await asyncio.sleep(0.3)
 
+async def get_current_hunt_tier(tab) -> str:
+    """Lê a dificuldade atual ('normal', 'nm', 'hl') a partir de #wave-title[data-kind]."""
+    js = """
+    (() => {
+        const el = document.getElementById('wave-title');
+        return el ? (el.dataset.kind || '') : '';
+    })()
+    """
+    kind = str(extract_execute_result(await tab.execute_script(js)) or "").lower()
+    if "nightmare" in kind:
+        return "nm"
+    if "hell" in kind:
+        return "hl"
+    return "normal"
+
+
+async def get_current_hunt_with_tier(tab, timeout: float = 0) -> str:
+    """Retorna o nome da hunt atual formatado com a dificuldade (ex: 'Kongra · Nightmare')."""
+    name = await get_current_hunt(tab, timeout=timeout)
+    if not name:
+        return ""
+    low = name.strip().lower()
+    if any(k in low for k in ("treino", "casa", "cidade", "expedi", "desconhecida", "carregando", "world boss")):
+        return name
+    tier = await get_current_hunt_tier(tab)
+    return format_hunt_with_tier(name, tier)
+
+
 async def open_hunts_menu(tab):
     """Abre o menu de teleportes e clica em Hunts com fechamento de modais residuais."""
     print("Abrindo menu de teleportes para Hunts...")
@@ -195,62 +304,142 @@ async def open_hunts_menu(tab):
     print("Falha ao abrir menu de Hunts.")
     return False
 
-async def get_hunts_list(tab, force_refresh: bool = False):
+async def _select_picker_tier_tab(tab, tier: str) -> tuple[bool, str]:
+    """Seleciona a aba de dificuldade (normal, nm, hl) dentro do #picker-modal-body."""
+    target_tier = normalize_tier(tier)
+    js_click = f"""
+    (() => {{
+        const modal = document.getElementById('picker-modal-body');
+        if (!modal) return JSON.stringify({{ ok: false, reason: 'modal_absent' }});
+        const tierBox = modal.querySelector('.pick-tiers');
+        if (!tierBox) {{
+            return JSON.stringify({{
+                ok: {json.dumps(target_tier == 'normal')},
+                reason: {json.dumps('ok' if target_tier == 'normal' else 'tier_tabs_absent')}
+            }});
+        }}
+
+        let btn = null;
+        if ({json.dumps(target_tier)} === 'nm') {{
+            btn = tierBox.querySelector('button.pick-leanbtn.tier.nm');
+        }} else if ({json.dumps(target_tier)} === 'hl') {{
+            btn = tierBox.querySelector('button.pick-leanbtn.tier.hl');
+        }} else {{
+            btn = tierBox.querySelector('button.pick-leanbtn.tier:not(.nm):not(.hl)');
+        }}
+
+        if (!btn) return JSON.stringify({{ ok: false, reason: 'tab_not_found' }});
+        if (!btn.classList.contains('on')) {{
+            btn.click();
+        }}
+        return JSON.stringify({{ ok: true, reason: 'ok' }});
+    }})()
     """
-    Retorna todas as hunts disponíveis.
-    Se force_refresh=False e houver cache em disco, retorna o cache sem abrir modal.
-    Se force_refresh=True ou o cache estiver vazio, abre o modal, extrai e atualiza o cache.
+    res = parse_json_result(await tab.execute_script(js_click)) or {"ok": False, "reason": "unknown"}
+    if res.get("ok"):
+        await asyncio.sleep(0.6)
+    return bool(res.get("ok")), str(res.get("reason") or "")
+
+
+async def get_hunts_list(tab, force_refresh: bool = False, tier: str | None = None):
     """
+    Retorna as hunts disponíveis em Normal, Nightmare e Hell.
+    Para Nightmare e Hell, ignora hunts bloqueadas (onde o botão Caçar não está disponível).
+    Se force_refresh=False e houver cache em disco, retorna do cache.
+    """
+    filter_tier = normalize_tier(tier) if tier and str(tier).lower() != "all" else None
+
     if not force_refresh:
         cached = load_hunts_cache()
         if cached:
+            if filter_tier:
+                return [h for h in cached if normalize_tier(h.get("tier")) == filter_tier]
             return cached
 
     if not await open_hunts_menu(tab):
-        return load_hunts_cache()
+        cached = load_hunts_cache()
+        if filter_tier:
+            return [h for h in cached if normalize_tier(h.get("tier")) == filter_tier]
+        return cached
 
-    js = """
-    (() => {
+    js_extract_grid = """
+    ((tierKey, tierLabel) => {
         const grid = document.querySelector('#picker-modal-body .hunt-grid');
         if (!grid) return JSON.stringify([]);
-        
-        const cards = Array.from(grid.children);
+
+        const cards = Array.from(grid.querySelectorAll('.stage-row'));
         const hunts = [];
-        
-        cards.forEach((card, index) => {
-            const b = card.querySelector('b'); 
+
+        cards.forEach((card) => {
+            const b = card.querySelector('.stage-name-line b') || card.querySelector('b');
+            if (!b) return;
+            const name = b.innerText.trim();
+            if (!name) return;
+
             const lvlSpan = card.querySelector('.stage-lvl');
             let level = null;
             if (lvlSpan) {
-                const match = lvlSpan.innerText.match(/\\d+/);
+                const cleanDigits = lvlSpan.innerText.replace(/\\./g, '');
+                const match = cleanDigits.match(/\\d+/);
                 if (match) level = parseInt(match[0], 10);
             }
-            const lean = card.querySelector('.stage-lean');
-            if (b) {
-                hunts.push({
-                    index: index + 1,
-                    name: b.innerText.trim(),
-                    level: level,
-                    raw_level: lvlSpan ? lvlSpan.innerText.trim() : null,
-                    type: lean ? lean.innerText.trim() : null
-                });
-            }
-        });
-        return JSON.stringify(hunts);
-    })()
-    """
-    result = await tab.execute_script(js)
-    data = parse_json_result(result)
-    
-    # Fechar modal para o jogo voltar ao normal
-    js_close = "(() => { const btn = document.getElementById('picker-modal-close'); if(btn) btn.click(); })()"
-    await tab.execute_script(js_close)
-    
-    if data:
-        save_hunts_cache(data)
-        return data
 
-    return load_hunts_cache()
+            const lean = card.querySelector('.stage-lean:not(.tower-only)');
+            const veilEl = card.querySelector('.stage-veil');
+            const btn = card.querySelector('button.stage-go');
+            const btnText = btn ? btn.innerText.trim().toLowerCase() : '';
+            const isCurrent = (btnText === 'atual') || card.classList.contains('pick-current');
+            const hasWhyLock = Boolean(card.querySelector('.stage-why'));
+            const isLocked = card.classList.contains('locked') || hasWhyLock || (Boolean(btn && btn.disabled) && !isCurrent);
+
+            // Em Nightmare e Hell, hunts bloqueadas ou sem botão Caçar disponível não entram na lista
+            if (tierKey !== 'normal') {
+                if (!btn || isLocked || (btn.disabled && !isCurrent)) {
+                    return;
+                }
+            }
+
+            hunts.push({
+                name: name,
+                tier: tierKey,
+                tier_label: tierLabel,
+                display_name: tierKey === 'normal' ? name : `${name} · ${tierLabel}`,
+                level: level,
+                raw_level: lvlSpan ? lvlSpan.innerText.trim() : null,
+                veil: veilEl ? veilEl.innerText.trim() : null,
+                type: lean ? lean.innerText.trim() : null,
+                locked: isLocked
+            });
+        });
+
+        return JSON.stringify(hunts);
+    })
+    """
+
+    all_hunts = []
+    try:
+        for t_key in HUNT_TIERS:
+            ok_tab, _ = await _select_picker_tier_tab(tab, t_key)
+            if not ok_tab:
+                continue
+            raw_res = await tab.execute_script(f"({js_extract_grid})({json.dumps(t_key)}, {json.dumps(TIER_LABELS[t_key])})")
+            tier_hunts = parse_json_result(raw_res) or []
+            all_hunts.extend(tier_hunts)
+    finally:
+        await close_hunts_menu(tab)
+
+    if all_hunts:
+        for idx, h in enumerate(all_hunts, start=1):
+            h["index"] = idx
+        save_hunts_cache(all_hunts)
+        if filter_tier:
+            return [h for h in all_hunts if normalize_tier(h.get("tier")) == filter_tier]
+        return all_hunts
+
+    cached = load_hunts_cache()
+    if filter_tier:
+        return [h for h in cached if normalize_tier(h.get("tier")) == filter_tier]
+    return cached
 
 
 def is_same_hunt(current_loc: str, target: str | int | dict) -> bool:
@@ -339,23 +528,34 @@ async def close_hunts_menu(tab):
         pass
 
 
-async def change_hunt(tab, hunt_identifier):
-    """Procura a hunt pelo nome ou índice, clica nela e clica em Caçar."""
+async def change_hunt(tab, hunt_identifier, tier: str | None = None):
+    """Procura a hunt na dificuldade escolhida (Normal, Nightmare ou Hell), clica nela e clica em Caçar."""
     if not tab:
         return False, "Aba indisponível."
 
-    # Normaliza o identificador para o nome canônico oficial se estiver no cache (ex: "darkthais" -> "Dark Thais")
-    info = get_hunt_info(str(hunt_identifier))
-    if info and info.get("name"):
-        hunt_identifier = info["name"]
+    # Se for índice numérico do cache, resolve nome e tier diretamente
+    if isinstance(hunt_identifier, int) or (isinstance(hunt_identifier, str) and hunt_identifier.strip().isdigit()):
+        info = get_hunt_info(hunt_identifier)
+        if not info or not info.get("name"):
+            return False, f"Hunt #{hunt_identifier} não encontrada no cache. Atualize a lista com /hunts."
+        target_name = info["name"]
+        target_tier = normalize_tier(tier if tier is not None else info.get("tier"))
+    else:
+        target_name, target_tier = parse_hunt_and_tier(hunt_identifier, tier)
+        info = get_hunt_info(target_name, tier=target_tier)
+        if info and info.get("name"):
+            target_name = info["name"]
 
-    # 0. Verifica se o personagem já está na hunt de destino antes de abrir menus
+    display_target = format_hunt_with_tier(target_name, target_tier)
+
+    # 0. Verifica se o personagem já está na hunt E dificuldade de destino
     try:
         current_loc = await get_current_hunt(tab, timeout=1.0)
-        if current_loc and is_same_hunt(current_loc, hunt_identifier):
-            print(f"[change_hunt] Personagem já está no destino desejado ({current_loc}). Nenhuma troca necessária.")
+        current_tier = await get_current_hunt_tier(tab)
+        if current_loc and is_same_hunt(current_loc, target_name) and current_tier == target_tier:
+            print(f"[change_hunt] Personagem já está no destino desejado ({display_target}). Nenhuma troca necessária.")
             await close_hunts_menu(tab)
-            return True, f"Personagem já está na hunt: {current_loc}"
+            return True, f"Personagem já está na hunt: {display_target}"
     except Exception as e:
         print(f"[change_hunt] Aviso ao verificar localização atual: {e}")
 
@@ -363,36 +563,47 @@ async def change_hunt(tab, hunt_identifier):
         return False, "Não foi possível abrir o menu de Hunts."
 
     try:
+        # 0.5 Seleciona a aba de dificuldade (Normal / Nightmare / Hell)
+        ok_tab, tab_reason = await _select_picker_tier_tab(tab, target_tier)
+        if not ok_tab:
+            await close_hunts_menu(tab)
+            return False, f"Modo {TIER_LABELS[target_tier]} não disponível ({tab_reason})."
+
         # 1. Procurar a Hunt na Grid, clicar para expandir e guardar o ÍNDICE EXATO dela
         js_click_card = f"""
         (() => {{
-            const identifier = {json.dumps(hunt_identifier)};
+            const identifier = {json.dumps(target_name)};
             const grid = document.querySelector('#picker-modal-body .hunt-grid');
             if (!grid) return JSON.stringify({{success: false, error: "Grid não encontrada"}});
             
-            const cards = Array.from(grid.children);
-            let target = null;
-            let targetIndex = -1;
-            
+            const cards = Array.from(grid.querySelectorAll('.stage-row'));
             const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             const targetNorm = norm(identifier);
             
-            if (!isNaN(identifier) && Number(identifier) > 0 && Number(identifier) <= cards.length) {{
-                targetIndex = Number(identifier) - 1;
-                target = cards[targetIndex];
-            }} else {{
-                targetIndex = cards.findIndex(c => {{
-                    const b = c.querySelector('b');
-                    if (!b) return false;
-                    const txt = b.innerText.trim();
-                    return txt.toLowerCase() === String(identifier).toLowerCase() || (targetNorm && norm(txt) === targetNorm);
-                }});
-                if (targetIndex !== -1) {{
-                    target = cards[targetIndex];
-                }}
-            }}
+            const targetIndex = cards.findIndex(c => {{
+                const b = c.querySelector('.stage-name-line b') || c.querySelector('b');
+                if (!b) return false;
+                const txt = b.innerText.trim();
+                return txt.toLowerCase() === String(identifier).toLowerCase() || (targetNorm && norm(txt) === targetNorm);
+            }});
             
-            if (!target) return JSON.stringify({{success: false, error: "Hunt não encontrada na lista."}});
+            if (targetIndex === -1) {{
+                return JSON.stringify({{success: false, error: "Hunt não encontrada nesta dificuldade."}});
+            }}
+
+            const target = cards[targetIndex];
+            const btn = target.querySelector('button.stage-go');
+            const btnText = btn ? btn.innerText.trim().toLowerCase() : '';
+            const isCurrent = btnText === 'atual' || target.classList.contains('pick-current');
+            if (isCurrent) {{
+                return JSON.stringify({{success: true, already_current: true, index: targetIndex}});
+            }}
+
+            const whyEl = target.querySelector('.stage-why');
+            if (!btn || (btn.disabled && !isCurrent) || ({json.dumps(target_tier != 'normal')} && target.classList.contains('locked'))) {{
+                const reason = whyEl ? whyEl.innerText.trim() : 'Bloqueada neste modo';
+                return JSON.stringify({{success: false, error: `Hunt bloqueada (${{reason}}).`}});
+            }}
             
             target.click(); 
             return JSON.stringify({{success: true, index: targetIndex}});
@@ -403,20 +614,26 @@ async def change_hunt(tab, hunt_identifier):
         
         if not data1 or not data1.get("success"):
             await close_hunts_menu(tab)
-            return False, data1.get("error", "Erro ao encontrar/clicar no card da hunt.")
+            return False, (data1 or {}).get("error", "Erro ao encontrar/clicar no card da hunt.")
+
+        if data1.get("already_current"):
+            await close_hunts_menu(tab)
+            return True, f"Personagem já está na hunt: {display_target}"
 
         card_index = data1.get("index")
-        await asyncio.sleep(1) 
+        await asyncio.sleep(0.8) 
 
-        # 2. Clicar no botão 'Caçar' ESPECÍFICO do card que expandimos
+        # 2. Clicar no botão 'Caçar' ESPECÍFICO do card selecionado
         js_click_go = f"""
         (() => {{
             const grid = document.querySelector('#picker-modal-body .hunt-grid');
-            const targetCard = grid.children[{card_index}];
+            const cards = grid ? Array.from(grid.querySelectorAll('.stage-row')) : [];
+            const targetCard = cards[{card_index}];
             if (!targetCard) return JSON.stringify({{success: false, error: "Card desapareceu da tela."}});
             
             const btn = targetCard.querySelector('button.stage-go');
             if (!btn) return JSON.stringify({{success: false, error: "Botão 'Caçar' não encontrado neste card."}});
+            if (btn.disabled) return JSON.stringify({{success: false, error: "Botão 'Caçar' está desabilitado."}});
             
             btn.click();
             return JSON.stringify({{success: true}});
@@ -427,14 +644,13 @@ async def change_hunt(tab, hunt_identifier):
         
         if not data2 or not data2.get("success"):
             await close_hunts_menu(tab)
-            return False, data2.get("error", "Erro ao clicar no botão Caçar.")
+            return False, (data2 or {}).get("error", "Erro ao clicar no botão Caçar.")
 
         await asyncio.sleep(2)
-        current = await get_current_hunt(tab)
+        current = await get_current_hunt_with_tier(tab)
         
         return True, f"Mudança solicitada com sucesso! Local atual: {current}"
     finally:
-        # Garante que o menu de hunts e teleporte sejam fechados caso tenham permanecido abertos
         await close_hunts_menu(tab)
 
 async def debug_hunts_dom(tab):

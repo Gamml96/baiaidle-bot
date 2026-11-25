@@ -1,611 +1,1154 @@
 [
   {
-    "index": 1,
+    "name": "Infernal Demon",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Infernal Demon",
+    "level": 800,
+    "raw_level": "lvl 800",
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 1
+  },
+  {
     "name": "Troll Cave",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Troll Cave",
     "level": 1,
     "raw_level": "lvl 1",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 2
   },
   {
-    "index": 2,
     "name": "Elf",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Elf",
     "level": 8,
     "raw_level": "lvl 8",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 3
   },
   {
-    "index": 3,
     "name": "Amazon",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Amazon",
     "level": 9,
     "raw_level": "lvl 9",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 4
   },
   {
-    "index": 4,
     "name": "Minotaur",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Minotaur",
     "level": 10,
     "raw_level": "lvl 10",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 5
   },
   {
-    "index": 5,
     "name": "Kongra",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Kongra",
     "level": 10,
     "raw_level": "lvl 10",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 6
   },
   {
-    "index": 6,
     "name": "Cyclopolis",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Cyclopolis",
     "level": 15,
     "raw_level": "lvl 15",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 7
   },
   {
-    "index": 7,
     "name": "Corym Skirmisher",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Corym Skirmisher",
     "level": 30,
     "raw_level": "lvl 30",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 8
   },
   {
-    "index": 8,
     "name": "Stone Refiner",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Stone Refiner",
     "level": 30,
     "raw_level": "lvl 30",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 9
   },
   {
-    "index": 9,
     "name": "Giant Spider",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Giant Spider",
     "level": 50,
     "raw_level": "lvl 50",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 10
   },
   {
-    "index": 10,
     "name": "Crawler",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Crawler",
     "level": 50,
     "raw_level": "lvl 50",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 11
   },
   {
-    "index": 11,
     "name": "Glooth Bandit",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Glooth Bandit",
     "level": 60,
     "raw_level": "lvl 60",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 12
   },
   {
-    "index": 12,
     "name": "Hero",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Hero",
     "level": 60,
     "raw_level": "lvl 60",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 13
   },
   {
-    "index": 13,
     "name": "Cult",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Cult",
     "level": 80,
     "raw_level": "lvl 80",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 14
   },
   {
-    "index": 14,
     "name": "Dragon Lair",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Dragon Lair",
     "level": 80,
     "raw_level": "lvl 80",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 15
   },
   {
-    "index": 15,
     "name": "Werebadge",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Werebadge",
     "level": 90,
     "raw_level": "lvl 90",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 16
   },
   {
-    "index": 16,
     "name": "Hydra",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Hydra",
     "level": 100,
     "raw_level": "lvl 100",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 17
   },
   {
-    "index": 17,
     "name": "Behemoth",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Behemoth",
     "level": 100,
     "raw_level": "lvl 100",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 18
   },
   {
-    "index": 18,
     "name": "Orclops",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Orclops",
     "level": 100,
     "raw_level": "lvl 100",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 19
   },
   {
-    "index": 19,
     "name": "Crumbling Caverns",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Crumbling Caverns",
     "level": 130,
     "raw_level": "lvl 130",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 20
   },
   {
-    "index": 20,
     "name": "Grim Reaper",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Grim Reaper",
     "level": 130,
     "raw_level": "lvl 130",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 21
   },
   {
-    "index": 21,
     "name": "Wyrm",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Wyrm",
     "level": 130,
     "raw_level": "lvl 130",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 22
   },
   {
-    "index": 22,
     "name": "Candia",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Candia",
     "level": 140,
     "raw_level": "lvl 140",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 23
   },
   {
-    "index": 23,
     "name": "Werehyaena",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Werehyaena",
     "level": 140,
     "raw_level": "lvl 140",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 24
   },
   {
-    "index": 24,
     "name": "Asuras",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Asuras",
     "level": 150,
     "raw_level": "lvl 150",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 25
   },
   {
-    "index": 25,
     "name": "Dark Torturer",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Dark Torturer",
     "level": 150,
     "raw_level": "lvl 150",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 26
   },
   {
-    "index": 26,
     "name": "Wereliones",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Wereliones",
     "level": 170,
     "raw_level": "lvl 170",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 27
   },
   {
-    "index": 27,
     "name": "Draken",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Draken",
     "level": 180,
     "raw_level": "lvl 180",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 28
   },
   {
-    "index": 28,
     "name": "Mitmah Seer",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Mitmah Seer",
     "level": 180,
     "raw_level": "lvl 180",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 29
   },
   {
-    "index": 29,
     "name": "Cobras",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Cobras",
     "level": 190,
     "raw_level": "lvl 190",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 30
   },
   {
-    "index": 30,
     "name": "Undead Dragon",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Undead Dragon",
     "level": 200,
     "raw_level": "lvl 200",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 31
   },
   {
-    "index": 31,
     "name": "Cliff Strider",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Cliff Strider",
     "level": 200,
     "raw_level": "lvl 200",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 32
   },
   {
-    "index": 32,
     "name": "Hideous Fungus",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Hideous Fungus",
     "level": 200,
     "raw_level": "lvl 200",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 33
   },
   {
-    "index": 33,
     "name": "Magma Crawler",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Magma Crawler",
     "level": 200,
     "raw_level": "lvl 200",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 34
   },
   {
-    "index": 34,
     "name": "Dread Intruder",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Dread Intruder",
     "level": 200,
     "raw_level": "lvl 200",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 35
   },
   {
-    "index": 35,
     "name": "Falcon",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Falcon",
     "level": 210,
     "raw_level": "lvl 210",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 36
   },
   {
-    "index": 36,
     "name": "Vexclaw",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Vexclaw",
     "level": 210,
     "raw_level": "lvl 210",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 37
   },
   {
-    "index": 37,
     "name": "Grimeleech",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Grimeleech",
     "level": 220,
     "raw_level": "lvl 220",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 38
   },
   {
-    "index": 38,
     "name": "Choking Fear",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Choking Fear",
     "level": 240,
     "raw_level": "lvl 240",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 39
   },
   {
-    "index": 39,
     "name": "Crazed Elf's",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Crazed Elf's",
     "level": 240,
     "raw_level": "lvl 240",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 40
   },
   {
-    "index": 40,
     "name": "Guzzlemaw",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Guzzlemaw",
     "level": 250,
     "raw_level": "lvl 250",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 41
   },
   {
-    "index": 41,
     "name": "Raubritter",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Raubritter",
     "level": 250,
     "raw_level": "lvl 250",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 42
   },
   {
-    "index": 42,
     "name": "Catacomb",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Catacomb",
     "level": 250,
     "raw_level": "lvl 250",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 43
   },
   {
-    "index": 43,
     "name": "Prison",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Prison",
     "level": 250,
     "raw_level": "lvl 250",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 44
   },
   {
-    "index": 44,
     "name": "Lion Knight",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Lion Knight",
     "level": 270,
     "raw_level": "lvl 270",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 45
   },
   {
-    "index": 45,
     "name": "Mega Dragon",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Mega Dragon",
     "level": 290,
     "raw_level": "lvl 290",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 46
   },
   {
-    "index": 46,
     "name": "Naga Lair",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Naga Lair",
     "level": 300,
     "raw_level": "lvl 300",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 47
   },
   {
-    "index": 47,
     "name": "True Azura",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "True Azura",
     "level": 300,
     "raw_level": "lvl 300",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 48
   },
   {
-    "index": 48,
     "name": "Freakish Lost Soul",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Freakish Lost Soul",
     "level": 300,
     "raw_level": "lvl 300",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 49
   },
   {
-    "index": 49,
     "name": "Moonstone Crater",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Moonstone Crater",
     "level": 310,
     "raw_level": "lvl 310",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 50
   },
   {
-    "index": 50,
     "name": "Weretiger",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Weretiger",
     "level": 330,
     "raw_level": "lvl 330",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 51
   },
   {
-    "index": 51,
     "name": "Feral Werecrocodile",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Feral Werecrocodile",
     "level": 340,
     "raw_level": "lvl 340",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 52
   },
   {
-    "index": 52,
     "name": "Bulltaur",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Bulltaur",
     "level": 350,
     "raw_level": "lvl 350",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 53
   },
   {
-    "index": 53,
     "name": "Gazer",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Gazer",
     "level": 350,
     "raw_level": "lvl 350",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 54
   },
   {
-    "index": 54,
     "name": "Skeleton Elite Warrior",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Skeleton Elite Warrior",
     "level": 350,
     "raw_level": "lvl 350",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 55
   },
   {
-    "index": 55,
     "name": "Bashmu",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Bashmu",
     "level": 350,
     "raw_level": "lvl 350",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 56
   },
   {
-    "index": 56,
     "name": "Forbidden Gardens",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Forbidden Gardens",
     "level": 370,
     "raw_level": "lvl 370",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 57
   },
   {
-    "index": 57,
     "name": "Asura Citadel",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Asura Citadel",
     "level": 420,
     "raw_level": "lvl 420",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 58
   },
   {
-    "index": 58,
     "name": "Dark Carnisylvan",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Dark Carnisylvan",
     "level": 430,
     "raw_level": "lvl 430",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 59
   },
   {
-    "index": 59,
     "name": "Inferniarch",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Inferniarch",
     "level": 450,
     "raw_level": "lvl 450",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 60
   },
   {
-    "index": 60,
     "name": "girtablilu warrior",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "girtablilu warrior",
     "level": 460,
     "raw_level": "lvl 460",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 61
   },
   {
-    "index": 61,
     "name": "Livraria ICE",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Livraria ICE",
     "level": 500,
     "raw_level": "lvl 500",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 62
   },
   {
-    "index": 62,
     "name": "Livraria FIRE",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Livraria FIRE",
     "level": 500,
     "raw_level": "lvl 500",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 63
   },
   {
-    "index": 63,
     "name": "Livraria EARTH",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Livraria EARTH",
     "level": 500,
     "raw_level": "lvl 500",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 64
   },
   {
-    "index": 64,
     "name": "Livraria ENERGY",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Livraria ENERGY",
     "level": 500,
     "raw_level": "lvl 500",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 65
   },
   {
-    "index": 65,
     "name": "Thalassara Surroundings",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Thalassara Surroundings",
     "level": 510,
     "raw_level": "lvl 510",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 66
   },
   {
-    "index": 66,
     "name": "Quara Raider",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Quara Raider",
     "level": 600,
     "raw_level": "lvl 600",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 67
   },
   {
-    "index": 67,
     "name": "Norcferatu Nightweaver",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Norcferatu Nightweaver",
     "level": 600,
     "raw_level": "lvl 600",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 68
   },
   {
-    "index": 68,
     "name": "Lavafungos",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Lavafungos",
     "level": 610,
     "raw_level": "lvl 610",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 69
   },
   {
-    "index": 69,
     "name": "Afflicted Strider",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Afflicted Strider",
     "level": 610,
     "raw_level": "lvl 610",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 70
   },
   {
-    "index": 70,
     "name": "Varnished Diremaw",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Varnished Diremaw",
     "level": 610,
     "raw_level": "lvl 610",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 71
   },
   {
-    "index": 71,
     "name": "Crypt Construct",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Crypt Construct",
     "level": 700,
     "raw_level": "lvl 700",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": false,
+    "index": 72
   },
   {
-    "index": 72,
     "name": "Crystal Enigma",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Crystal Enigma",
     "level": 800,
     "raw_level": "lvl 800",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 73
   },
   {
-    "index": 73,
     "name": "Rotten Golem",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Rotten Golem",
     "level": 800,
     "raw_level": "lvl 800",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 74
   },
   {
-    "index": 74,
     "name": "Cloak Of Terror",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Cloak Of Terror",
     "level": 800,
     "raw_level": "lvl 800",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 75
   },
   {
-    "index": 75,
     "name": "Monster Graveyard",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Monster Graveyard",
     "level": 800,
     "raw_level": "lvl 800",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 76
   },
   {
-    "index": 76,
     "name": "Sparkling Pools",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Sparkling Pools",
     "level": 800,
     "raw_level": "lvl 800",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 77
   },
   {
-    "index": 77,
-    "name": "Infernal Demon",
-    "level": 800,
-    "raw_level": "lvl 800",
-    "type": "LOOT"
-  },
-  {
-    "index": 78,
     "name": "Bony Sea Devil",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Bony Sea Devil",
     "level": 800,
     "raw_level": "lvl 800",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 78
   },
   {
-    "index": 79,
     "name": "Dark Thais",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Dark Thais",
     "level": 800,
     "raw_level": "lvl 800",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 79
   },
   {
-    "index": 80,
     "name": "bloated man-maggot",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "bloated man-maggot",
     "level": 1500,
     "raw_level": "lvl 1500",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": true,
+    "index": 80
   },
   {
-    "index": 81,
     "name": "Rotten man-maggot",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Rotten man-maggot",
     "level": 1500,
     "raw_level": "lvl 1500",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": true,
+    "index": 81
   },
   {
-    "index": 82,
     "name": "Darklight Source",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Darklight Source",
     "level": 1500,
     "raw_level": "lvl 1500",
-    "type": "LOOT"
+    "veil": null,
+    "type": "LOOT",
+    "locked": true,
+    "index": 82
   },
   {
-    "index": 83,
     "name": "Wandering Pillar",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Wandering Pillar",
     "level": 1500,
     "raw_level": "lvl 1500",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": true,
+    "index": 83
   },
   {
-    "index": 84,
     "name": "Radiant Skyhold",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Radiant Skyhold",
     "level": 2000,
     "raw_level": "lvl 2000",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": true,
+    "index": 84
   },
   {
-    "index": 85,
     "name": "Radiant Ascendancy",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Radiant Ascendancy",
     "level": 2000,
     "raw_level": "lvl 2000",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": true,
+    "index": 85
   },
   {
-    "index": 86,
     "name": "Devoted Radiant Skyhold",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Devoted Radiant Skyhold",
     "level": 2500,
     "raw_level": "lvl 2500",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": true,
+    "index": 86
   },
   {
-    "index": 87,
     "name": "Devoted Radiant Ascendancy",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Devoted Radiant Ascendancy",
     "level": 2500,
     "raw_level": "lvl 2500",
-    "type": "EXP"
+    "veil": null,
+    "type": "EXP",
+    "locked": true,
+    "index": 87
+  },
+  {
+    "name": "Troll Cave",
+    "tier": "nm",
+    "tier_label": "Nightmare",
+    "display_name": "Troll Cave · Nightmare",
+    "level": 30,
+    "raw_level": "lvl 30",
+    "veil": "Véu 100",
+    "type": "LOOT",
+    "locked": false,
+    "index": 88
+  },
+  {
+    "name": "Elf",
+    "tier": "nm",
+    "tier_label": "Nightmare",
+    "display_name": "Elf · Nightmare",
+    "level": 110,
+    "raw_level": "lvl 110",
+    "veil": "Véu 100",
+    "type": "LOOT",
+    "locked": false,
+    "index": 89
+  },
+  {
+    "name": "Amazon",
+    "tier": "nm",
+    "tier_label": "Nightmare",
+    "display_name": "Amazon · Nightmare",
+    "level": 110,
+    "raw_level": "lvl 110",
+    "veil": "Véu 100",
+    "type": "LOOT",
+    "locked": false,
+    "index": 90
+  },
+  {
+    "name": "Minotaur",
+    "tier": "nm",
+    "tier_label": "Nightmare",
+    "display_name": "Minotaur · Nightmare",
+    "level": 120,
+    "raw_level": "lvl 120",
+    "veil": "Véu 100",
+    "type": "LOOT",
+    "locked": false,
+    "index": 91
+  },
+  {
+    "name": "Kongra",
+    "tier": "nm",
+    "tier_label": "Nightmare",
+    "display_name": "Kongra · Nightmare",
+    "level": 160,
+    "raw_level": "lvl 160",
+    "veil": "Véu 100",
+    "type": "EXP",
+    "locked": false,
+    "index": 92
+  },
+  {
+    "name": "Cyclopolis",
+    "tier": "nm",
+    "tier_label": "Nightmare",
+    "display_name": "Cyclopolis · Nightmare",
+    "level": 200,
+    "raw_level": "lvl 200",
+    "veil": "Véu 100",
+    "type": "EXP",
+    "locked": false,
+    "index": 93
+  },
+  {
+    "name": "Corym Skirmisher",
+    "tier": "nm",
+    "tier_label": "Nightmare",
+    "display_name": "Corym Skirmisher · Nightmare",
+    "level": 290,
+    "raw_level": "lvl 290",
+    "veil": "Véu 100",
+    "type": "EXP",
+    "locked": false,
+    "index": 94
+  },
+  {
+    "name": "Stone Refiner",
+    "tier": "nm",
+    "tier_label": "Nightmare",
+    "display_name": "Stone Refiner · Nightmare",
+    "level": 360,
+    "raw_level": "lvl 360",
+    "veil": "Véu 100",
+    "type": "LOOT",
+    "locked": false,
+    "index": 95
+  },
+  {
+    "name": "Giant Spider",
+    "tier": "nm",
+    "tier_label": "Nightmare",
+    "display_name": "Giant Spider · Nightmare",
+    "level": 330,
+    "raw_level": "lvl 330",
+    "veil": "Véu 100",
+    "type": "EXP",
+    "locked": false,
+    "index": 96
   }
 ]
