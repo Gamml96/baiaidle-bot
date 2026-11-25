@@ -7,6 +7,7 @@ from baiaidle.hunts import get_current_hunt, change_hunt, get_hunt_info
 from baiaidle.actions import get_party_average_level
 
 CODEX_ATTRIBUTES = {
+    "all": "Todos os atributos",
     "critDmg": "Dano Crítico",
     "critChance": "Chance de Crítico",
     "atkPct": "Ataque",
@@ -592,7 +593,8 @@ async def get_codex_attribute_queue(tab, attribute: str = "critDmg", max_party_l
     await tab.execute_script(js_tab)
     await asyncio.sleep(0.5)
 
-    safe_attr = json.dumps(attribute)
+    select_val = "" if attribute in ("all", "") else attribute
+    safe_attr = json.dumps(select_val)
     js_filter = f"""
     (() => {{
         // Garante novamente a seleção da aba Hunts caso necessário

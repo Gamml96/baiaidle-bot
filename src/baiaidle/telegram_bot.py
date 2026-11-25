@@ -1668,6 +1668,8 @@ class TelegramController:
                 )
                 return
             new_attr = args[1]
+            if new_attr.lower() in ["todos", "all"]:
+                new_attr = "all"
             if new_attr not in CODEX_ATTRIBUTES:
                 match = next((k for k in CODEX_ATTRIBUTES if k.lower() == new_attr.lower()), None)
                 if not match:
@@ -3612,6 +3614,12 @@ class TelegramController:
             [
                 InlineKeyboardButton(toggle_label, callback_data="btn_codex_toggle"),
                 InlineKeyboardButton("📋 Ver Fila & Progresso", callback_data="btn_codex_queue"),
+            ],
+            [
+                InlineKeyboardButton(
+                    "✅ 🌐 Todos os Atributos" if focus_attr == "all" else "🌐 Todos os Atributos",
+                    callback_data="btn_codex_set_all",
+                ),
             ],
         ]
 

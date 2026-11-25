@@ -9,12 +9,12 @@
   "auto_missions_after_boss": true,
   "auto_tree_enabled": true,
   "auto_halloween_invasion": true,
-  "codex_focus_enabled": false,
-  "codex_focus_attribute": "critDmg",
-  "codex_focus_hunt": null,
+  "codex_focus_enabled": true,
+  "codex_focus_attribute": "onslaught",
+  "codex_focus_hunt": "Infernal Demon",
   "default_hunt": "Infernal Demon",
   "expedition_default_character": "",
-  "bp_delivery_item": "demonic essence",
-  "bp_delivery_marked_no_sell": true,
-  "bp_delivery_hunt": "Prison"
+  "bp_delivery_item": "",
+  "bp_delivery_marked_no_sell": false,
+  "bp_delivery_hunt": ""
 }
