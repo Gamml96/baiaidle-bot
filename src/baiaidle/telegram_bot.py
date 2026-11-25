@@ -80,6 +80,8 @@ from baiaidle.expedition import (
     create_expedition_room,
     leave_expedition_lobby,
     list_expedition_characters,
+    list_expedition_rooms,
+    join_expedition_room,
 )
 from baiaidle.tree import get_tree_status, run_auto_tree
 from baiaidle.halloween import (
@@ -143,6 +145,7 @@ class TelegramController:
         self.application = None
         self.chat_id = TELEGRAM_ALLOWED_USER_ID
         self.action_lock = asyncio.Lock()
+        self._last_expedition_rooms = []
 
         # Vincula o envio de mensagens do GameBot ao Telegram
         self.bot.on_message = self.send_hunt_msg
@@ -2129,6 +2132,57 @@ class TelegramController:
                 finally:
                     self.bot.resume_hunt()
 
+        elif data in ["btn_expedicao_rooms", "btn_expedicao_rooms_all"]:
+            if self.action_lock.locked():
+                await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            only_fit = (data == "btn_expedicao_rooms")
+            await query.answer("🔍 Buscando salas de expedição...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    res = await list_expedition_rooms(self.bot.tab, only_fit=only_fit)
+                finally:
+                    self.bot.resume_hunt()
+            await self._render_expedition_rooms_menu(update, res, only_fit=only_fit, edit=True)
+
+        elif data.startswith("exp_join_"):
+            if self.auto_boss_instance and self.auto_boss_instance.state.running:
+                await query.answer("⚠️ AutoBoss em execução.", show_alert=True)
+                return
+            if self.action_lock.locked():
+                await query.answer("⏳ Outra ação em andamento. Aguarde.", show_alert=True)
+                return
+            try:
+                room_idx = int(data.replace("exp_join_", "").strip())
+            except ValueError:
+                await query.answer("Sala inválida.", show_alert=True)
+                return
+            target_room = next((r for r in self._last_expedition_rooms if r.get("index") == room_idx), None)
+            if not target_room:
+                await query.answer("⚠️ Lista expirada. Atualize as salas.", show_alert=True)
+                return
+            await query.answer(f"🚪 Entrando em {target_room.get('name')}...", show_alert=False)
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    res = await join_expedition_room(
+                        self.bot.tab,
+                        room_name=target_room.get("name", ""),
+                        leader=target_room.get("leader", ""),
+                        level=target_room.get("level"),
+                    )
+                finally:
+                    self.bot.resume_hunt()
+            if res.get("success"):
+                await query.message.reply_text(
+                    f"✅ *{res.get('message')}*\n👥 {res.get('members_count', '')}",
+                    parse_mode="Markdown",
+                )
+                await self.show_expedicao_menu(update, context)
+            else:
+                await query.message.reply_text(f"⚠️ {res.get('message')}")
+
         elif data in ["sub_expedicao", "btn_action_expedicao_status"]:
             await self.show_expedicao_menu(update, context)
 
@@ -3050,6 +3104,34 @@ class TelegramController:
                     await update.message.reply_text(f"❌ Erro na expedição: {e}")
                 finally:
                     self.bot.resume_hunt()
+            return
+
+        if subcmd in ["salas", "rooms", "lista"]:
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    res = await list_expedition_rooms(self.bot.tab, only_fit=True)
+                finally:
+                    self.bot.resume_hunt()
+            await self._render_expedition_rooms_menu(update, res, only_fit=True, edit=False)
+            return
+
+        if subcmd in ["entrar", "join"]:
+            if len(args) < 2:
+                await update.message.reply_text("Uso: `/expedicao entrar <nome da sala>`", parse_mode="Markdown")
+                return
+            room_name = " ".join(args[1:]).strip()
+            await update.message.reply_text(f"⏳ Tentando entrar na sala *{room_name}*...", parse_mode="Markdown")
+            async with self.action_lock:
+                self.bot.pause_hunt()
+                try:
+                    res = await join_expedition_room(self.bot.tab, room_name=room_name)
+                finally:
+                    self.bot.resume_hunt()
+            if res.get("success"):
+                await update.message.reply_text(f"✅ {res.get('message')}")
+            else:
+                await update.message.reply_text(f"⚠️ {res.get('message')}")
             return
 
         if subcmd in ["sair", "leave", "desfazer"]:
@@ -4199,16 +4281,99 @@ class TelegramController:
             )
             keyboard = [
                 [
+                    InlineKeyboardButton("🚪 Ver Salas Abertas", callback_data="btn_expedicao_rooms"),
                     InlineKeyboardButton("🚀 Criar Sala (Go 10 / Max)", callback_data="btn_action_expedicao_create"),
+                ],
+                [
                     InlineKeyboardButton(f"👤 Personagem ({def_char or 'Ativo'})", callback_data="sub_expedicao_chars"),
+                    InlineKeyboardButton("🔄 Atualizar", callback_data="sub_expedicao"),
                 ],
                 [
                     InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
-                    InlineKeyboardButton("🔄 Atualizar", callback_data="sub_expedicao"),
                 ],
             ]
 
         await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
+
+    async def _render_expedition_rooms_menu(self, update: Update, res: dict, only_fit: bool = True, edit: bool = True):
+        """Exibe a lista de salas de expedição com botões para entrar nas salas disponíveis."""
+        if not res.get("success"):
+            msg = f"❌ {res.get('message', 'Erro ao buscar salas de expedição.')}"
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Voltar à Expedição", callback_data="sub_expedicao")]])
+            if edit:
+                await self.show_or_edit_menu(update, msg, kb)
+            elif update.message:
+                await update.message.reply_text(msg, reply_markup=kb)
+            return
+
+        rooms = res.get("rooms") or []
+        self._last_expedition_rooms = rooms
+        char_str = res.get("character") or "Ativo"
+        voc_str = res.get("active_voc") or ""
+        filtro_str = "Só onde eu caibo" if only_fit else "Todas as salas"
+
+        lines = [
+            f"🚪 *SALAS DE EXPEDIÇÃO* (`{filtro_str}`)",
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━",
+            f"👤 *Personagem:* {self._md(char_str)}",
+            "",
+        ]
+
+        joinable_rooms = [r for r in rooms if r.get("joinable")]
+        blocked_rooms = [r for r in rooms if not r.get("joinable")]
+
+        if not rooms:
+            lines.append("_Nenhuma sala aberta encontrada com este filtro._")
+        else:
+            if joinable_rooms:
+                lines.append(f"🟢 *Disponíveis para entrar ({len(joinable_rooms)}):*")
+                for r in joinable_rooms[:12]:
+                    lvl_t = f"lvl {r['level']}" if r.get("level") is not None else "lvl ?"
+                    chips = " · ".join(c["text"] for c in r.get("voc_chips", []))
+                    chips_t = f" [{chips}]" if chips else ""
+                    lines.append(
+                        f"• `{r['index']}` *{self._md(r['name'])}* (`{r['count']}`) — {self._md(r.get('leader') or '?')} · {lvl_t}{chips_t}"
+                    )
+            else:
+                lines.append("_Nenhuma sala aberta disponível para sua classe/sem senha no momento._")
+
+            if blocked_rooms:
+                lines.append(f"\n⛔ *Indisponíveis ({len(blocked_rooms)}):*")
+                for r in blocked_rooms[:8]:
+                    icon = "🔒" if r.get("is_private") else ("🚫" if r.get("voc_full") else "🔴")
+                    lines.append(
+                        f"• {icon} {self._md(r['name'])} (`{r['count']}`) — _{self._md(r.get('block_reason') or 'Indisponível')}_"
+                    )
+
+        kb = []
+        for r in joinable_rooms[:10]:
+            lvl_b = f"lvl {r['level']}" if r.get("level") is not None else ""
+            lbl = f"🚪 Entrar: {r['name']} ({r['count']}) {lvl_b}".strip()
+            kb.append([InlineKeyboardButton(lbl[:60], callback_data=f"exp_join_{r['index']}")])
+
+        toggle_btn = (
+            InlineKeyboardButton("🌐 Mostrar Todas", callback_data="btn_expedicao_rooms_all")
+            if only_fit
+            else InlineKeyboardButton("🎯 Só Onde Caibo", callback_data="btn_expedicao_rooms")
+        )
+        refresh_cb = "btn_expedicao_rooms" if only_fit else "btn_expedicao_rooms_all"
+        kb.append([
+            toggle_btn,
+            InlineKeyboardButton("🔄 Atualizar Salas", callback_data=refresh_cb),
+        ])
+        kb.append([
+            InlineKeyboardButton("🚀 Criar Sala", callback_data="btn_action_expedicao_create"),
+            InlineKeyboardButton("🔙 Voltar", callback_data="sub_expedicao"),
+        ])
+
+        text = "\n".join(lines)
+        markup = InlineKeyboardMarkup(kb)
+        if edit:
+            await self.show_or_edit_menu(update, text, markup)
+        elif update.callback_query and update.callback_query.message:
+            await update.callback_query.message.reply_text(text, reply_markup=markup, parse_mode="Markdown")
+        elif update.message:
+            await update.message.reply_text(text, reply_markup=markup, parse_mode="Markdown")
 
     @authorized_only
     async def text_menu_router(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4351,6 +4516,8 @@ class TelegramController:
 • /halloween [on|off|entrar] (ou /invasao) - Gerencia Invasão de Halloween
 • /daily - Coleta a recompensa diária
 • /expedicao - Status do salão de expedição do dia e cooldown
+• /expedicao salas - Lista salas abertas para entrar direto pelo bot
+• /expedicao entrar <nome> - Entra em uma sala aberta pelo nome
 • /criarsala - Cria sala de expedição ('Go 10' com maior nível dinâmico)
 • /setexpchar <nome/voc> - Define o personagem padrão para expedições
 • /expedicao criar [nome] [auto_start] [nivel] - Cria sala personalizada

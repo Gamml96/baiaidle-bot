@@ -603,6 +603,363 @@ async def create_expedition_room(
     return await _action()
 
 
+async def list_expedition_rooms(tab, only_fit: bool = True, max_pages: int = 3) -> Dict[str, Any]:
+    """
+    Abre o Salão de Expedição (#expedition-hall), seleciona o personagem padrão (se configurado),
+    atualiza a listagem de salas e retorna todas as salas encontradas com análise de entrada:
+      - is_private: sala exige senha (.exp-room-lock)
+      - voc_full: limite da vocação do personagem ativo já atingido (.exp-voc-chip.full)
+      - is_full_or_running: sala cheia ou em curso (botão disabled)
+      - joinable: True se é possível entrar diretamente (sem senha, vaga geral e vaga da classe)
+      - block_reason: motivo caso joinable=False
+    """
+    opened = await open_expedition_hall(tab)
+    if not opened:
+        return {"success": False, "message": "Não foi possível abrir o Salão de Expedição.", "rooms": []}
+
+    try:
+        # Garante que está na lista (não na tela de criação)
+        await tab.execute_script("""
+        (() => {
+            const hall = document.getElementById('expedition-hall');
+            if (!hall) return;
+            const btnVoltar = Array.from(hall.querySelectorAll('button')).find(b => b.innerText.trim() === 'Voltar');
+            if (btnVoltar) btnVoltar.click();
+        })()
+        """)
+        await asyncio.sleep(0.25)
+
+        chosen_char = get_setting("expedition_default_character", "")
+        if chosen_char:
+            await select_expedition_character(tab, chosen_char)
+
+        # Configura filtro "Só onde eu caibo" e clica em Atualizar
+        want_fit = "true" if only_fit else "false"
+        await tab.execute_script(f"""
+        (() => {{
+            const hall = document.getElementById('expedition-hall');
+            if (!hall) return;
+            const fitChk = hall.querySelector('.exp-filter-fit input[type="checkbox"]');
+            if (fitChk && fitChk.checked !== {want_fit}) {{
+                fitChk.click();
+            }}
+            const btnRef = Array.from(hall.querySelectorAll('.exp-row-actions button'))
+                .find(b => b.innerText.trim().toLowerCase() === 'atualizar');
+            if (btnRef) btnRef.click();
+        }})()
+        """)
+
+        # Aguarda até 3s pelo carregamento das salas (.exp-room ou .exp-empty não-Carregando)
+        for _ in range(12):
+            await asyncio.sleep(0.25)
+            loaded = extract_execute_result(await tab.execute_script("""
+            (() => {
+                const list = document.querySelector('#expedition-hall .exp-list');
+                if (!list) return false;
+                if (list.querySelector('.exp-room')) return true;
+                const emp = list.querySelector('.exp-empty');
+                return Boolean(emp && !emp.innerText.toLowerCase().includes('carregando'));
+            })()
+            """))
+            if loaded:
+                break
+
+        js_read_page = """
+        (() => {
+            const hall = document.getElementById('expedition-hall');
+            if (!hall) return JSON.stringify({ error: 'Salão ausente' });
+
+            const who = hall.querySelector('.exp-pick-who')?.innerText?.trim() || '';
+            const activeCharBtn = hall.querySelector('.exp-pick button.bar-char.active');
+            const activeVoc = activeCharBtn ? activeCharBtn.innerText.trim().toUpperCase() : '';
+            const errEl = hall.querySelector('.exp-err, [class*="exp-err"]');
+            const countText = hall.querySelector('.exp-count')?.innerText?.trim() || '';
+            const pageText = hall.querySelector('.exp-nav-page')?.innerText?.trim() || '';
+
+            const rooms = Array.from(hall.querySelectorAll('.exp-list .exp-room')).map((r, idx) => {
+                const nameEl = r.querySelector('.exp-room-name');
+                const isPrivate = Boolean(r.querySelector('.exp-room-lock'));
+                const name = nameEl ? nameEl.innerText.trim() : '';
+                const meta = r.querySelector('.exp-room-meta')?.innerText?.trim() || '';
+                const count = r.querySelector('.exp-room-count')?.innerText?.trim() || '';
+
+                const vocChips = Array.from(r.querySelectorAll('.exp-voc-chip')).map(ch => ({
+                    text: ch.innerText.trim(),
+                    full: ch.classList.contains('full')
+                }));
+
+                const vocFull = Boolean(
+                    activeVoc && vocChips.some(ch => ch.full && ch.text.toUpperCase().startsWith(activeVoc + ' '))
+                );
+
+                const btn = Array.from(r.querySelectorAll('button')).pop();
+                const btnText = btn ? btn.innerText.trim() : '';
+                const isOwnRoom = btnText.toLowerCase().includes('voltar');
+                const isFullOrRunning = Boolean(btn && btn.disabled && !isOwnRoom);
+
+                // Parse leader, map e level de meta: "{leader} · {map} · nível {lvl}"
+                let leader = '', expMap = '', level = null;
+                const parts = meta.split('·').map(p => p.trim());
+                if (parts.length >= 1) leader = parts[0];
+                if (parts.length >= 2) expMap = parts[1];
+                if (parts.length >= 3) {
+                    const m = parts[2].match(/(\\d+)/);
+                    if (m) level = parseInt(m[1], 10);
+                }
+
+                let blockReason = '';
+                if (isPrivate) blockReason = 'Senha';
+                else if (isFullOrRunning) blockReason = btnText || 'Cheia/Em curso';
+                else if (vocFull) blockReason = `Classe cheia (${activeVoc})`;
+
+                return {
+                    page_index: idx,
+                    name,
+                    leader,
+                    map: expMap,
+                    level,
+                    meta,
+                    count,
+                    voc_chips: vocChips,
+                    is_private: isPrivate,
+                    voc_full: vocFull,
+                    is_full_or_running: isFullOrRunning,
+                    is_own_room: isOwnRoom,
+                    joinable: !isPrivate && !isFullOrRunning && !vocFull,
+                    block_reason: blockReason,
+                    btn_text: btnText
+                };
+            });
+
+            const nextBtn = Array.from(hall.querySelectorAll('.exp-nav button'))
+                .find(b => b.innerText.toLowerCase().includes('próxima') || b.innerText.toLowerCase().includes('proxima'));
+            const hasNext = Boolean(nextBtn && !nextBtn.disabled);
+
+            return JSON.stringify({
+                character: who,
+                active_voc: activeVoc,
+                count_text: countText,
+                page_text: pageText,
+                has_next: hasNext,
+                rooms
+            });
+        })()
+        """
+
+        all_rooms = []
+        character = ""
+        active_voc = ""
+        count_text = ""
+
+        for p_idx in range(max_pages):
+            page_data = parse_json_result(await tab.execute_script(js_read_page)) or {}
+            if not character:
+                character = page_data.get("character", "")
+            if not active_voc:
+                active_voc = page_data.get("active_voc", "")
+            if not count_text:
+                count_text = page_data.get("count_text", "")
+
+            for rm in page_data.get("rooms", []):
+                rm["page"] = p_idx + 1
+                rm["index"] = len(all_rooms) + 1
+                all_rooms.append(rm)
+
+            if not page_data.get("has_next") or p_idx >= max_pages - 1:
+                break
+
+            clicked_next = extract_execute_result(await tab.execute_script("""
+            (() => {
+                const nextBtn = Array.from(document.querySelectorAll('#expedition-hall .exp-nav button'))
+                    .find(b => b.innerText.toLowerCase().includes('próxima') || b.innerText.toLowerCase().includes('proxima'));
+                if (nextBtn && !nextBtn.disabled) {
+                    nextBtn.click();
+                    return true;
+                }
+                return false;
+            })()
+            """))
+            if not clicked_next:
+                break
+            await asyncio.sleep(0.8)
+
+        return {
+            "success": True,
+            "character": character,
+            "active_voc": active_voc,
+            "count_text": count_text,
+            "rooms": all_rooms,
+        }
+    finally:
+        await close_expedition_hall(tab)
+
+
+async def join_expedition_room(
+    tab,
+    room_name: str,
+    leader: str = "",
+    level: Optional[int] = None,
+    char_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Abre o Salão de Expedição, localiza a sala escolhida (não privada e com vaga para a classe)
+    e clica em 'Entrar'.
+    """
+    opened = await open_expedition_hall(tab)
+    if not opened:
+        return {"success": False, "message": "Não foi possível abrir o Salão de Expedição."}
+
+    await tab.execute_script("""
+    (() => {
+        const hall = document.getElementById('expedition-hall');
+        if (!hall) return;
+        const btnVoltar = Array.from(hall.querySelectorAll('button')).find(b => b.innerText.trim() === 'Voltar');
+        if (btnVoltar) btnVoltar.click();
+    })()
+    """)
+    await asyncio.sleep(0.25)
+
+    chosen_char = char_name or get_setting("expedition_default_character", "")
+    if chosen_char:
+        await select_expedition_character(tab, chosen_char)
+
+    # Atualiza e filtra pelo nome da sala para localizar rapidamente mesmo com várias páginas
+    safe_search = json.dumps(room_name.strip())
+    await tab.execute_script(f"""
+    (() => {{
+        const hall = document.getElementById('expedition-hall');
+        if (!hall) return;
+        const inp = hall.querySelector('input.exp-input');
+        if (inp) {{
+            inp.value = {safe_search};
+            inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+        }}
+        const fitChk = hall.querySelector('.exp-filter-fit input[type="checkbox"]');
+        if (fitChk && fitChk.checked) {{
+            fitChk.click();
+        }}
+        const btnRef = Array.from(hall.querySelectorAll('.exp-row-actions button'))
+            .find(b => b.innerText.trim().toLowerCase() === 'atualizar');
+        if (btnRef) btnRef.click();
+    }})()
+    """)
+
+    for _ in range(12):
+        await asyncio.sleep(0.25)
+        loaded = extract_execute_result(await tab.execute_script("""
+        (() => {
+            const list = document.querySelector('#expedition-hall .exp-list');
+            if (!list) return false;
+            if (list.querySelector('.exp-room')) return true;
+            const emp = list.querySelector('.exp-empty');
+            return Boolean(emp && !emp.innerText.toLowerCase().includes('carregando'));
+        })()
+        """))
+        if loaded:
+            break
+
+    js_join = f"""
+    (() => {{
+        const hall = document.getElementById('expedition-hall');
+        if (!hall) return JSON.stringify({{ success: false, message: 'Salão ausente.' }});
+
+        const targetName = {safe_search}.toLowerCase();
+        const targetLeader = {json.dumps((leader or '').strip().lower())};
+        const targetLevel = {json.dumps(level)};
+        const activeCharBtn = hall.querySelector('.exp-pick button.bar-char.active');
+        const activeVoc = activeCharBtn ? activeCharBtn.innerText.trim().toUpperCase() : '';
+
+        const rooms = Array.from(hall.querySelectorAll('.exp-list .exp-room'));
+        const match = rooms.find(r => {{
+            const nm = (r.querySelector('.exp-room-name')?.innerText || '').trim().toLowerCase();
+            const meta = (r.querySelector('.exp-room-meta')?.innerText || '').trim().toLowerCase();
+            if (nm !== targetName && !nm.includes(targetName)) return false;
+            if (targetLeader && !meta.includes(targetLeader)) return false;
+            if (targetLevel !== null && !meta.includes(String(targetLevel))) return false;
+            return true;
+        }}) || rooms.find(r => {{
+            const nm = (r.querySelector('.exp-room-name')?.innerText || '').trim().toLowerCase();
+            return nm === targetName || nm.includes(targetName);
+        }});
+
+        if (!match) {{
+            return JSON.stringify({{ success: false, message: 'Sala não encontrada (pode ter iniciado ou fechado).' }});
+        }}
+        if (match.querySelector('.exp-room-lock')) {{
+            return JSON.stringify({{ success: false, message: 'Esta sala exige senha.' }});
+        }}
+        const vocChips = Array.from(match.querySelectorAll('.exp-voc-chip'));
+        if (activeVoc && vocChips.some(c => c.classList.contains('full') && c.innerText.trim().toUpperCase().startsWith(activeVoc + ' '))) {{
+            return JSON.stringify({{ success: false, message: `Limite da classe ${{activeVoc}} já atingido nesta sala.` }});
+        }}
+        const btn = Array.from(match.querySelectorAll('button')).pop();
+        if (!btn) {{
+            return JSON.stringify({{ success: false, message: 'Botão Entrar não encontrado.' }});
+        }}
+        const btnTxt = btn.innerText.trim().toLowerCase();
+        if (btn.disabled && !btnTxt.includes('voltar')) {{
+            return JSON.stringify({{ success: false, message: `Sala indisponível (${{btn.innerText.trim()}}).` }});
+        }}
+
+        btn.click();
+        return JSON.stringify({{ success: true, clicked: true, room: match.querySelector('.exp-room-name')?.innerText?.trim() || targetName }});
+    }})()
+    """
+    res_click = parse_json_result(await tab.execute_script(js_join)) or {"success": False, "message": "Erro ao clicar em Entrar."}
+    if not res_click.get("success"):
+        await close_expedition_hall(tab)
+        return res_click
+
+    await asyncio.sleep(1.0)
+
+    # Verifica se abriu modal de confirmação (ex.: trocar de grupo)
+    confirm_clicked = extract_execute_result(await tab.execute_script("""
+    (() => {
+        const yes = document.getElementById('confirm-yes');
+        if (yes && yes.offsetParent !== null) {
+            yes.click();
+            return true;
+        }
+        return false;
+    })()
+    """))
+    if confirm_clicked:
+        await asyncio.sleep(1.0)
+
+    # Verifica resultado: entrou no lobby (.exp-lobby-card) ou recebeu erro visível
+    status_after = parse_json_result(await tab.execute_script("""
+    (() => {
+        const lobby = document.querySelector('.exp-lobby-card');
+        if (lobby && lobby.offsetParent !== null) {
+            return JSON.stringify({
+                in_lobby: true,
+                room_name: lobby.querySelector('.im-title')?.innerText?.trim() || '',
+                members_count: lobby.querySelector('.exp-group-head')?.innerText?.trim() || ''
+            });
+        }
+        const hall = document.getElementById('expedition-hall');
+        const err = Array.from(hall?.querySelectorAll('div, span') || [])
+            .find(el => el.offsetParent !== null && /espere|fechada|boss|dungeon|cheia|limite|não foi possível/i.test(el.innerText || ''));
+        return JSON.stringify({
+            in_lobby: false,
+            error: err ? err.innerText.trim() : ''
+        });
+    })()
+    """)) or {}
+
+    if status_after.get("in_lobby"):
+        return {
+            "success": True,
+            "room_name": status_after.get("room_name") or res_click.get("room"),
+            "members_count": status_after.get("members_count", ""),
+            "message": f"Entrou na sala '{status_after.get('room_name') or res_click.get('room')}'!",
+        }
+
+    await close_expedition_hall(tab)
+    err_msg = status_after.get("error") or "Não foi possível entrar na sala (verifique cooldown, classe ou se a sala fechou)."
+    return {"success": False, "message": err_msg}
+
+
 async def leave_expedition_lobby(tab, action_lock: Optional[asyncio.Lock] = None) -> Dict[str, Any]:
     """
     Sai da sala/lobby de expedição ou desfaz o grupo.
