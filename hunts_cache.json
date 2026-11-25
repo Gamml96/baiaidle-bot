@@ -1,11 +1,11 @@
 [
   {
-    "name": "Minotaur",
+    "name": "Infernal Demon",
     "tier": "normal",
     "tier_label": "Normal",
-    "display_name": "Minotaur",
-    "level": 10,
-    "raw_level": "lvl 10",
+    "display_name": "Infernal Demon",
+    "level": 800,
+    "raw_level": "lvl 800",
     "veil": null,
     "type": "LOOT",
     "locked": false,
@@ -48,6 +48,18 @@
     "index": 4
   },
   {
+    "name": "Minotaur",
+    "tier": "normal",
+    "tier_label": "Normal",
+    "display_name": "Minotaur",
+    "level": 10,
+    "raw_level": "lvl 10",
+    "veil": null,
+    "type": "LOOT",
+    "locked": false,
+    "index": 5
+  },
+  {
     "name": "Kongra",
     "tier": "normal",
     "tier_label": "Normal",
@@ -57,7 +69,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 5
+    "index": 6
   },
   {
     "name": "Cyclopolis",
@@ -69,7 +81,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 6
+    "index": 7
   },
   {
     "name": "Corym Skirmisher",
@@ -81,7 +93,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 7
+    "index": 8
   },
   {
     "name": "Stone Refiner",
@@ -93,7 +105,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 8
+    "index": 9
   },
   {
     "name": "Giant Spider",
@@ -105,7 +117,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 9
+    "index": 10
   },
   {
     "name": "Crawler",
@@ -117,7 +129,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 10
+    "index": 11
   },
   {
     "name": "Glooth Bandit",
@@ -129,7 +141,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 11
+    "index": 12
   },
   {
     "name": "Hero",
@@ -141,7 +153,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 12
+    "index": 13
   },
   {
     "name": "Cult",
@@ -153,7 +165,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 13
+    "index": 14
   },
   {
     "name": "Dragon Lair",
@@ -165,7 +177,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 14
+    "index": 15
   },
   {
     "name": "Werebadge",
@@ -177,7 +189,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 15
+    "index": 16
   },
   {
     "name": "Hydra",
@@ -189,7 +201,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 16
+    "index": 17
   },
   {
     "name": "Behemoth",
@@ -201,7 +213,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 17
+    "index": 18
   },
   {
     "name": "Orclops",
@@ -213,7 +225,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 18
+    "index": 19
   },
   {
     "name": "Crumbling Caverns",
@@ -225,7 +237,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 19
+    "index": 20
   },
   {
     "name": "Grim Reaper",
@@ -237,7 +249,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 20
+    "index": 21
   },
   {
     "name": "Wyrm",
@@ -249,7 +261,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 21
+    "index": 22
   },
   {
     "name": "Candia",
@@ -261,7 +273,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 22
+    "index": 23
   },
   {
     "name": "Werehyaena",
@@ -273,7 +285,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 23
+    "index": 24
   },
   {
     "name": "Asuras",
@@ -285,7 +297,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 24
+    "index": 25
   },
   {
     "name": "Dark Torturer",
@@ -297,7 +309,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 25
+    "index": 26
   },
   {
     "name": "Wereliones",
@@ -309,7 +321,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 26
+    "index": 27
   },
   {
     "name": "Draken",
@@ -321,7 +333,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 27
+    "index": 28
   },
   {
     "name": "Mitmah Seer",
@@ -333,7 +345,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 28
+    "index": 29
   },
   {
     "name": "Cobras",
@@ -345,7 +357,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 29
+    "index": 30
   },
   {
     "name": "Undead Dragon",
@@ -357,7 +369,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 30
+    "index": 31
   },
   {
     "name": "Cliff Strider",
@@ -369,7 +381,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 31
+    "index": 32
   },
   {
     "name": "Hideous Fungus",
@@ -381,7 +393,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 32
+    "index": 33
   },
   {
     "name": "Magma Crawler",
@@ -393,7 +405,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 33
+    "index": 34
   },
   {
     "name": "Dread Intruder",
@@ -405,7 +417,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 34
+    "index": 35
   },
   {
     "name": "Falcon",
@@ -417,7 +429,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 35
+    "index": 36
   },
   {
     "name": "Vexclaw",
@@ -429,7 +441,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 36
+    "index": 37
   },
   {
     "name": "Grimeleech",
@@ -441,7 +453,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 37
+    "index": 38
   },
   {
     "name": "Choking Fear",
@@ -453,7 +465,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 38
+    "index": 39
   },
   {
     "name": "Crazed Elf's",
@@ -465,7 +477,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 39
+    "index": 40
   },
   {
     "name": "Guzzlemaw",
@@ -477,7 +489,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 40
+    "index": 41
   },
   {
     "name": "Raubritter",
@@ -489,7 +501,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 41
+    "index": 42
   },
   {
     "name": "Catacomb",
@@ -501,7 +513,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 42
+    "index": 43
   },
   {
     "name": "Prison",
@@ -513,7 +525,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 43
+    "index": 44
   },
   {
     "name": "Lion Knight",
@@ -525,7 +537,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 44
+    "index": 45
   },
   {
     "name": "Mega Dragon",
@@ -537,7 +549,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 45
+    "index": 46
   },
   {
     "name": "Naga Lair",
@@ -549,7 +561,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 46
+    "index": 47
   },
   {
     "name": "True Azura",
@@ -561,7 +573,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 47
+    "index": 48
   },
   {
     "name": "Freakish Lost Soul",
@@ -573,7 +585,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 48
+    "index": 49
   },
   {
     "name": "Moonstone Crater",
@@ -585,7 +597,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 49
+    "index": 50
   },
   {
     "name": "Weretiger",
@@ -597,7 +609,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 50
+    "index": 51
   },
   {
     "name": "Feral Werecrocodile",
@@ -609,7 +621,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 51
+    "index": 52
   },
   {
     "name": "Bulltaur",
@@ -621,7 +633,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 52
+    "index": 53
   },
   {
     "name": "Gazer",
@@ -633,7 +645,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 53
+    "index": 54
   },
   {
     "name": "Skeleton Elite Warrior",
@@ -645,7 +657,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 54
+    "index": 55
   },
   {
     "name": "Bashmu",
@@ -657,7 +669,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 55
+    "index": 56
   },
   {
     "name": "Forbidden Gardens",
@@ -669,7 +681,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 56
+    "index": 57
   },
   {
     "name": "Asura Citadel",
@@ -681,7 +693,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 57
+    "index": 58
   },
   {
     "name": "Dark Carnisylvan",
@@ -693,7 +705,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 58
+    "index": 59
   },
   {
     "name": "Inferniarch",
@@ -705,7 +717,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 59
+    "index": 60
   },
   {
     "name": "girtablilu warrior",
@@ -717,7 +729,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 60
+    "index": 61
   },
   {
     "name": "Livraria ICE",
@@ -729,7 +741,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 61
+    "index": 62
   },
   {
     "name": "Livraria FIRE",
@@ -741,7 +753,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 62
+    "index": 63
   },
   {
     "name": "Livraria EARTH",
@@ -753,7 +765,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 63
+    "index": 64
   },
   {
     "name": "Livraria ENERGY",
@@ -765,7 +777,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 64
+    "index": 65
   },
   {
     "name": "Thalassara Surroundings",
@@ -777,7 +789,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 65
+    "index": 66
   },
   {
     "name": "Quara Raider",
@@ -789,7 +801,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 66
+    "index": 67
   },
   {
     "name": "Norcferatu Nightweaver",
@@ -801,7 +813,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 67
+    "index": 68
   },
   {
     "name": "Lavafungos",
@@ -813,7 +825,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 68
+    "index": 69
   },
   {
     "name": "Afflicted Strider",
@@ -825,7 +837,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 69
+    "index": 70
   },
   {
     "name": "Varnished Diremaw",
@@ -837,7 +849,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 70
+    "index": 71
   },
   {
     "name": "Crypt Construct",
@@ -849,7 +861,7 @@
     "veil": null,
     "type": "EXP",
     "locked": false,
-    "index": 71
+    "index": 72
   },
   {
     "name": "Crystal Enigma",
@@ -861,7 +873,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 72
+    "index": 73
   },
   {
     "name": "Rotten Golem",
@@ -873,7 +885,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 73
+    "index": 74
   },
   {
     "name": "Cloak Of Terror",
@@ -885,7 +897,7 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 74
+    "index": 75
   },
   {
     "name": "Monster Graveyard",
@@ -897,25 +909,13 @@
     "veil": null,
     "type": "LOOT",
     "locked": false,
-    "index": 75
+    "index": 76
   },
   {
     "name": "Sparkling Pools",
     "tier": "normal",
     "tier_label": "Normal",
     "display_name": "Sparkling Pools",
-    "level": 800,
-    "raw_level": "lvl 800",
-    "veil": null,
-    "type": "LOOT",
-    "locked": false,
-    "index": 76
-  },
-  {
-    "name": "Infernal Demon",
-    "tier": "normal",
-    "tier_label": "Normal",
-    "display_name": "Infernal Demon",
     "level": 800,
     "raw_level": "lvl 800",
     "veil": null,
