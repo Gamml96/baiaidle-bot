@@ -387,6 +387,23 @@ class GameBot:
             # REGISTRO DE NÍVEIS INICIAIS DA PARTY
             # ====================================================
             await self.record_initial_party()
+
+            # ====================================================
+            # EVENTO ATIVO (NOTIFICAÇÃO ÚNICA AO INICIAR)
+            # ====================================================
+            try:
+                from baiaidle.overlays import get_overlay_states, has_active_event, get_event_text
+                states = await get_overlay_states(self.tab)
+                if has_active_event(states):
+                    event_text = get_event_text(states)
+                    if event_text:
+                        print(f"🎉 [EVENTO] Evento ativo detectado: {event_text[:120]}")
+                        if self.on_message:
+                            r = self.on_message(f"🎉 *Evento detectado!*\n{event_text[:500]}")
+                            if asyncio.iscoroutine(r):
+                                await r
+            except Exception:
+                pass
             # ====================================================
             # TWITCH CHAT (recompensa de Streaming Coin)
             # ====================================================

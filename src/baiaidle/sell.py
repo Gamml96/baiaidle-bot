@@ -28,7 +28,12 @@ from baiaidle.hunts import (
 from baiaidle.actions import get_party_average_level
 from baiaidle.guild import get_tracked_task_progress, process_guild_tasks, auto_select_best_guild_task
 from baiaidle.codex import process_codex_routine, check_and_advance_codex_focus
-from baiaidle.battlepass import get_tracked_battlepass_progress, process_battlepass, auto_select_best_battlepass
+from baiaidle.battlepass import (
+    get_tracked_battlepass_progress,
+    get_battlepass_delivery_progress,
+    process_battlepass,
+    auto_select_best_battlepass,
+)
 from baiaidle.tree import run_auto_tree
 from baiaidle.halloween import (
     is_halloween_invasion_open,
@@ -92,7 +97,6 @@ class HuntStats:
     training_type: str = ""
     is_in_invasion: bool = False
     last_hunt: str = ""
-    last_charm_hunt: str = ""
 
     def reset(self):
         """Zera todos os dados da sessão."""
@@ -117,7 +121,6 @@ class HuntStats:
         self.session_platinum_coins = 0
         self.session_gold_coins = 0
         self.last_hunt = ""
-        self.last_charm_hunt = ""
         self.total_coin_gold = 0
         self.is_in_training = False
         self.training_type = ""
@@ -420,17 +423,22 @@ async def resolve_target_hunt(tab, stats: HuntStats | None = None) -> str:
     try:
         from baiaidle.battlepass import get_tracked_battlepass_progress
         from baiaidle.guild import get_tracked_task_progress
-        bp_data = await get_tracked_battlepass_progress(tab)
-        if bp_data and not bp_data.get("finished"):
-            bp_hunt = bp_data["hunt_name"]
-            info = get_hunt_info(bp_hunt)
-            fallback = info["name"] if info and info.get("name") else bp_hunt
+        bp_delivery_hunt = get_setting("bp_delivery_hunt", "")
+        if bp_delivery_hunt:
+            info = get_hunt_info(bp_delivery_hunt)
+            fallback = info["name"] if info and info.get("name") else bp_delivery_hunt
         else:
-            task_data = await get_tracked_task_progress(tab)
-            if task_data and not task_data.get("finished"):
-                task_hunt = task_data["name"]
-                info = get_hunt_info(task_hunt)
-                fallback = info["name"] if info and info.get("name") else task_hunt
+            bp_data = await get_tracked_battlepass_progress(tab)
+            if bp_data and not bp_data.get("finished") and bp_data.get("requires_hunt_change"):
+                bp_hunt = bp_data["hunt_name"]
+                info = get_hunt_info(bp_hunt)
+                fallback = info["name"] if info and info.get("name") else bp_hunt
+            else:
+                task_data = await get_tracked_task_progress(tab)
+                if task_data and not task_data.get("finished"):
+                    task_hunt = task_data["name"]
+                    info = get_hunt_info(task_hunt)
+                    fallback = info["name"] if info and info.get("name") else task_hunt
     except Exception:
         pass
 
@@ -1227,28 +1235,6 @@ async def run_sell(
                     stats.training_type = ""
                     if current_loc and not is_city_location(current_loc) and current_loc.lower() not in ["hunt desconhecida", "carregando...", ""]:
                         stats.last_hunt = current_loc
-
-                        # ====================================================
-                        # APLICAR PRESET DE CHARMS CONFORME A HUNT
-                        # ====================================================
-                        try:
-                            from baiaidle.charms import apply_charm_preset, get_charm_presets
-                            if current_loc and current_loc != getattr(stats, "last_charm_hunt", ""):
-                                presets = await get_charm_presets(tab)
-                                preset_names = [p.get("name", "") for p in presets]
-                                if current_loc in preset_names:
-                                    print(f"[Charms] Aplicando preset '{current_loc}' para a hunt atual...")
-                                    if on_message:
-                                        await on_message(f"🔮 *Aplicando preset de Charms:* {current_loc}")
-                                    ok, msg = await apply_charm_preset(tab, current_loc)
-                                    if ok:
-                                        stats.last_charm_hunt = current_loc
-                                        if on_message:
-                                            await on_message(f"✅ {msg}")
-                                    else:
-                                        print(f"[Charms] {msg}")
-                        except Exception as e:
-                            print(f"[Charms] Aviso ao aplicar preset: {e}")
                 # ====================================================
 
                 if not pause_event.is_set():
@@ -1316,6 +1302,25 @@ async def run_sell(
                                     await on_message(bp_msg)
                                 except Exception as e:
                                     print(f"Erro ao enviar aviso de Passe: {e}")
+
+                        # Se houver missão de entrega do Passe ativa, atualiza x/y coletadas
+                        bp_deliv_item = get_setting("bp_delivery_item", "")
+                        if bp_deliv_item:
+                            try:
+                                deliv_prog = await get_battlepass_delivery_progress(tab, bp_deliv_item)
+                                if deliv_prog:
+                                    d_have = deliv_prog["have"]
+                                    d_goal = deliv_prog["goal"]
+                                    d_pct = (d_have / d_goal * 100) if d_goal > 0 else 0
+                                    deliv_msg = (
+                                        f"📦 *Entrega do Passe:* `{d_have}/{d_goal}` "
+                                        f"`{deliv_prog['item_name']}` coletadas ({d_pct:.1f}%)"
+                                    )
+                                    print(f"\n{deliv_msg.replace('*', '').replace('`', '')}")
+                                    if on_message and get_setting("notify_tasks", True):
+                                        await on_message(deliv_msg)
+                            except Exception as e:
+                                print(f"Erro ao verificar progresso de entrega do Passe: {e}")
                     # ====================================================
 
                     sleep_time = min(1, remaining)
@@ -1353,11 +1358,12 @@ async def run_sell(
                             if get_setting("codex_focus_enabled", False):
                                 bp_active = await get_tracked_battlepass_progress(tab)
                                 guild_active = await get_tracked_task_progress(tab)
-                                has_active_mission = (bp_active and not bp_active.get("finished")) or (guild_active and not guild_active.get("finished"))
+                                bp_blocks_codex = bool(bp_active and not bp_active.get("finished") and bp_active.get("requires_hunt_change"))
+                                has_active_mission = bp_blocks_codex or (guild_active and not guild_active.get("finished"))
                                 if not has_active_mission:
                                     await check_and_advance_codex_focus(tab, on_message)
                                 else:
-                                    active_label = f"Passe ({bp_active['hunt_name']})" if (bp_active and not bp_active.get("finished")) else f"Task ({guild_active['name']})"
+                                    active_label = f"Passe ({bp_active['hunt_name']})" if bp_blocks_codex else f"Task ({guild_active['name']})"
                                     print(f"[Codex Foco] Pausado temporariamente enquanto {active_label} estiver em andamento.")
                     else:
                         stats.is_in_invasion = True
@@ -1481,9 +1487,19 @@ async def run_sell(
                 # ====================================================
                 if not stop_event.is_set() and pause_event.is_set() and not stats.is_in_invasion:
                     bp_data = await get_tracked_battlepass_progress(tab)
+                    bp_deliv_item = get_setting("bp_delivery_item", "")
+                    bp_deliv_ready = False
+                    if bp_deliv_item and not (bp_data and bp_data.get("finished")):
+                        try:
+                            deliv_check = await get_battlepass_delivery_progress(tab, bp_deliv_item)
+                            if deliv_check and deliv_check.get("ready"):
+                                bp_deliv_ready = True
+                        except Exception:
+                            pass
 
-                    if bp_data and bp_data.get("finished"):
-                        msg = f"✅ *Missão do Passe Finalizada!* ({bp_data['hunt_name']})\nIndo até o Passe entregar e verificar as próximas..."
+                    if (bp_data and bp_data.get("finished")) or bp_deliv_ready:
+                        label_fin = bp_deliv_item if bp_deliv_ready else bp_data['hunt_name']
+                        msg = f"✅ *Missão do Passe Finalizada!* ({label_fin})\nIndo até o Passe entregar e verificar as próximas..."
                         print(msg.replace('*', ''))
 
                         if on_message:

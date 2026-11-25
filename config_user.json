@@ -13,5 +13,8 @@
   "codex_focus_attribute": "critDmg",
   "codex_focus_hunt": null,
   "default_hunt": "Infernal Demon",
-  "expedition_default_character": ""
+  "expedition_default_character": "",
+  "bp_delivery_item": "demonic essence",
+  "bp_delivery_marked_no_sell": true,
+  "bp_delivery_hunt": "Prison"
 }

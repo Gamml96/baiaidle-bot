@@ -298,8 +298,6 @@ class TelegramController:
             BotCommand("debughunt", "🐞 Salvar HTML das hunts para depuração"),
             BotCommand("eventos", "🎉 Ver eventos ativos"),
             BotCommand("overlays", "🧩 Ver overlays ativos"),
-            BotCommand("charms", "🔮 Ver charms e presets"),
-            BotCommand("charmpreset", "🔮 Aplicar preset de charms"),
             BotCommand("twitch", "📺 Twitch Streaming Coin"),
             BotCommand("reset", "🧹 Zerar estatísticas e Analyzer"),
             BotCommand("help", "❓ Mostrar lista de ajuda"),
@@ -385,7 +383,7 @@ class TelegramController:
 
         # 1. TENTA O PASSE DE BATALHA
         bp_tracked = await get_tracked_battlepass_progress(self.bot.tab)
-        if bp_tracked and not bp_tracked.get("finished"):
+        if bp_tracked and not bp_tracked.get("finished") and bp_tracked.get("requires_hunt_change"):
             bp_desc = f"Já em andamento ({bp_tracked['hunt_name']})"
             await change_hunt(self.bot.tab, bp_tracked["hunt_name"])
             started_new_hunt = True
@@ -1873,36 +1871,11 @@ class TelegramController:
         elif data == "sub_eventos":
             await self.show_eventos_menu(update, context)
 
-        elif data == "sub_charms":
-            await self.show_charms_menu(update, context)
-
         elif data == "sub_twitch":
             await self.show_twitch_menu(update, context)
 
         elif data == "sub_expedicao":
             await self.show_expedicao_menu(update, context)
-
-        elif data.startswith("charm_apply_"):
-            try:
-                index = int(data.rsplit("_", 1)[1])
-            except (ValueError, IndexError):
-                await query.answer("Preset inválido.", show_alert=True)
-                return
-            from baiaidle.charms import apply_charm_preset, get_charm_presets
-            await query.answer("Aplicando preset...")
-            async with self.action_lock:
-                presets = await get_charm_presets(self.bot.tab)
-                if index < 0 or index >= len(presets):
-                    await query.message.reply_text("⚠️ Preset não encontrado. Atualize o painel de charms.")
-                    return
-                nome = presets[index].get("name") or ""
-                ok, msg = await apply_charm_preset(self.bot.tab, nome)
-                if ok:
-                    self.bot.hunt_stats.last_charm_hunt = nome
-                    await query.message.reply_text(f"✅ {msg}")
-                else:
-                    await query.message.reply_text(f"⚠️ {msg}")
-            await self.show_charms_menu(update, context)
 
         elif data == "btn_twitch_start":
             await query.answer("Iniciando chat da Twitch...")
@@ -2052,6 +2025,10 @@ class TelegramController:
                 self.bot.pause_hunt()
                 try:
                     await self.run_auto_missions(on_message=self.bot.on_message)
+                    if hasattr(self.bot, "hunt_stats") and self.bot.hunt_stats:
+                        self.bot.hunt_stats.is_in_training = False
+                        self.bot.hunt_stats.training_type = ""
+                        self.bot.hunt_stats.force_sell = True
                 except Exception as e:
                     await query.message.reply_text(f"❌ Erro ao executar auto missões: {e}")
                 finally:
@@ -3257,34 +3234,6 @@ class TelegramController:
         await self.show_eventos_menu(update, context)
 
     # ============================================================
-    # CHARMS
-    # ============================================================
-    @authorized_only
-    async def charms(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        await self.show_charms_menu(update, context)
-
-    @authorized_only
-    @require_bot_running
-    async def charmpreset(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        args = context.args if context.args else []
-        if not args:
-            await update.message.reply_text("Uso: /charmpreset <nome do preset>", parse_mode="Markdown")
-            return
-        name = " ".join(args)
-        await update.message.reply_text(f"Aplicando preset de charms: {name}...", parse_mode="Markdown")
-        async with self.action_lock:
-            try:
-                from baiaidle.charms import apply_charm_preset
-                ok, msg = await apply_charm_preset(self.bot.tab, name)
-                if ok:
-                    self.bot.hunt_stats.last_charm_hunt = name
-                    await self.reply_safe(update, f"✅ {msg}", parse_mode="Markdown")
-                else:
-                    await self.reply_safe(update, f"⚠️ {msg}", parse_mode="Markdown")
-            except Exception as e:
-                await self.reply_safe(update, f"Erro ao aplicar preset: {e}")
-
-    # ============================================================
     # MÉTODOS AUXILIARES: TECLADOS INLINE & CONFIGURAÇÕES
     # ============================================================
 
@@ -3369,9 +3318,8 @@ class TelegramController:
             ["🎛️ Menu Principal", "📊 Status"],
             ["🗺️ Hunts", "🎯 Missões"],
             ["⚔️ Expedição", "🧘‍♂️ Treino / Casa"],
-            ["🔮 Charms", "🎉 Eventos"],
-            ["📺 Twitch", "⚙️ Configurações"],
-            ["❓ Ajuda"],
+            ["🎉 Eventos", "📺 Twitch"],
+            ["⚙️ Configurações", "❓ Ajuda"],
         ]
         return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -3480,11 +3428,10 @@ class TelegramController:
                 InlineKeyboardButton("⚙️ Configurações", callback_data="btn_config"),
             ],
             [
-                InlineKeyboardButton("🔮 Charms", callback_data="sub_charms"),
                 InlineKeyboardButton("⚡ Ações Rápidas", callback_data="sub_acoes"),
+                InlineKeyboardButton("📺 Twitch", callback_data="sub_twitch"),
             ],
             [
-                InlineKeyboardButton("📺 Twitch", callback_data="sub_twitch"),
                 InlineKeyboardButton("🎉 Eventos & Overlays", callback_data="sub_eventos"),
             ],
             [
@@ -4000,79 +3947,6 @@ class TelegramController:
         ]
         await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
 
-    async def show_charms_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
-        """Submenu: Slots, pontos e presets VIP de charms."""
-        status = {}
-        ocupado = False
-        if self.bot.tab:
-            async with self._try_action_lock() as free:
-                ocupado = not free
-                if free:
-                    try:
-                        from baiaidle.charms import get_charm_status
-                        status = await get_charm_status(self.bot.tab)
-                    except Exception:
-                        status = {}
-
-        if not status.get("found"):
-            aviso = "⏳ Outra ação está em andamento. Tente de novo em instantes." if ocupado else (
-                "Não consegui ler o status dos charms.\n"
-                "Verifique se o bot está rodando e com a aba do jogo aberta."
-            )
-            text = (
-                "🔮 *SISTEMA • CHARMS*\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"{aviso}"
-            )
-            keyboard = [
-                [InlineKeyboardButton("🔄 Tentar de Novo", callback_data="sub_charms")],
-                [InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu")],
-            ]
-            await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
-            return
-
-        presets = status.get("presets", [])
-        linhas = []
-        slots = status.get("slots")
-        if slots:
-            linhas.append(f"🔹 *Slots:* `{slots['used']}/{slots['total']}`")
-        if status.get("points"):
-            linhas.append(f"💠 *Pontos:* `{status['points']}`")
-        if presets:
-            linhas.append("\n*Presets VIP:*")
-            for p in presets:
-                nome = self._md(p.get("name") or "?")
-                marca = " ✅" if p.get("applied") else ""
-                custo = f" — {self._md(p.get('cost'))}" if p.get("cost") else ""
-                linhas.append(f"• {nome}{marca}{custo}")
-        else:
-            linhas.append("\n_Nenhum preset VIP encontrado._")
-
-        text = (
-            "🔮 *SISTEMA • CHARMS*\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            + "\n".join(linhas)
-            + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            "_O bot aplica o preset com o nome exato da hunt ao trocar de hunt._\n"
-            "_Toque em um preset para aplicar agora ou use /charmpreset <nome>:_"
-        )
-
-        keyboard = []
-        for i, p in enumerate(presets[:10]):
-            nome = p.get("name") or f"Preset {i + 1}"
-            if p.get("applied"):
-                label = f"✅ {nome} (aplicado)"
-            elif p.get("apply_disabled"):
-                label = f"🔒 {nome}"
-            else:
-                label = f"🔮 {nome}"
-            keyboard.append([InlineKeyboardButton(label, callback_data=f"charm_apply_{i}")])
-        keyboard.append([
-            InlineKeyboardButton("🔄 Atualizar", callback_data="sub_charms"),
-            InlineKeyboardButton("🔙 Menu Principal", callback_data="btn_menu"),
-        ])
-        await self.show_or_edit_menu(update, text, InlineKeyboardMarkup(keyboard))
-
     async def show_twitch_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE = None):
         """Submenu: Chat e verificador da contagem da Twitch."""
         from baiaidle.twitch import (
@@ -4207,8 +4081,6 @@ class TelegramController:
             await self.config(update, context)
         elif text in ["📖 Codex", "Codex", "codex"]:
             await self.show_codex_menu(update, context)
-        elif text in ["🔮 Charms", "Charms", "charms"]:
-            await self.show_charms_menu(update, context)
         elif text in ["🎉 Eventos", "Eventos", "Eventos & Overlays", "eventos", "overlays"]:
             await self.show_eventos_menu(update, context)
         elif text in ["📺 Twitch", "Twitch", "twitch"]:
@@ -4338,11 +4210,6 @@ class TelegramController:
 • /recuperar (ou /fechar) - Fecha modais/avisos e recupera a sessão
 • /reiniciar (ou /restart) - Recarrega a página (/jogar) e reinicia a sessão
 
-🔮 Charms:
-• /charms - Mostra slots, pontos e presets VIP de charms
-• /charmpreset <nome> - Aplica um preset VIP de charms pelo nome
-• O bot também aplica o preset com o nome exato da hunt ao trocar de hunt
-
 📺 Twitch (Streaming Coin):
 • /twitch - Mostra status do chat e a última contagem lida
 • /twitch start - Inicia o chat da Twitch (conta vinculada)
@@ -4447,8 +4314,6 @@ async def main():
     application.add_handler(CommandHandler("restart", controller.reiniciar))
     application.add_handler(CommandHandler("eventos", controller.eventos))
     application.add_handler(CommandHandler("overlays", controller.overlays))
-    application.add_handler(CommandHandler("charms", controller.charms))
-    application.add_handler(CommandHandler("charmpreset", controller.charmpreset))
     application.add_handler(CommandHandler("twitch", controller.twitch))
     application.add_handler(CommandHandler("print", controller.print_screen))
     application.add_handler(CommandHandler("help", controller.help))

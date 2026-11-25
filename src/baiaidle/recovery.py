@@ -283,6 +283,10 @@ async def dismiss_welcome_and_popups(tab, max_passes: int = 3) -> dict:
             '.gw-modal',
             '#daily-modal-body',
             '#codex-modal-body',
+            '#bp-modal-body',
+            '#bp-modal',
+            '#farmspots-body',
+            '#cyclopedia-modal',
             '#battlepass-modal-body'
         ];
 
@@ -617,8 +621,6 @@ async def monitor_page_recovery(bot):
                         is_connection_lost,
                         is_in_queue,
                         is_maintenance,
-                        has_active_event,
-                        get_event_text,
                         wait_for_queue_exit,
                     )
                     states = await get_overlay_states(bot.tab)
@@ -703,22 +705,6 @@ async def monitor_page_recovery(bot):
                             await restart_game_session(bot, on_message=bot.on_message)
                             await asyncio.sleep(2.0)
                             continue
-
-                    # Evento ativo
-                    if has_active_event(states):
-                        event_text = get_event_text(states)
-                        last_event = getattr(bot, "_last_event_notified", None)
-                        if event_text and event_text != last_event:
-                            bot._last_event_notified = event_text
-                            log_recovery(f"\n🎉 [OVERLAY] Evento ativo detectado: {event_text[:120]}")
-                            notifier = getattr(bot, "on_message", None)
-                            if notifier:
-                                try:
-                                    r = notifier(f"🎉 *Evento detectado!*\n{event_text[:500]}")
-                                    if asyncio.iscoroutine(r):
-                                        await r
-                                except Exception:
-                                    pass
                 except Exception:
                     pass
 

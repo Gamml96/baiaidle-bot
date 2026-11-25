@@ -2,7 +2,9 @@ import asyncio
 import json
 import re
 
-from baiaidle.hunts import change_hunt, get_hunt_level, get_hunt_info, is_same_hunt
+from baiaidle.cyclopedia import get_item_farmspots_and_protect, set_item_no_sell
+from baiaidle.hunts import change_hunt
+from baiaidle.settings import get_setting, set_setting
 
 
 def extract_execute_result(result):
@@ -23,8 +25,16 @@ def parse_json_result(result):
 
 
 async def open_battlepass(tab) -> bool:
-    """Abre a aba do Passe de Batalha (Temporada)."""
+    """Abre a janela do Passe de Batalha (#bp-modal) na tela inicial e aguarda o conteúdo carregar."""
     print("Abrindo menu do Passe de Batalha...")
+    # Se já estiver aberto (ex.: em 'main' de um passe específico), fecha primeiro para voltar à 'previa'
+    is_open = extract_execute_result(await tab.execute_script(
+        "(() => { const m = document.getElementById('bp-modal'); return Boolean(m && !m.classList.contains('hidden')); })()"
+    ))
+    if is_open:
+        await close_battlepass(tab)
+        await asyncio.sleep(0.4)
+
     js = """
     (() => {
         const btnBP = document.getElementById('tab-battlepass');
@@ -37,393 +47,586 @@ async def open_battlepass(tab) -> bool:
     """
     res = await tab.execute_script(js)
     success = extract_execute_result(res)
-    await asyncio.sleep(2.0)
-    return bool(success)
+    if not success:
+        return False
+
+    # Aguarda até 8s pelo conteúdo real (.bp-pv ou .bp-hero), evitando ler "Carregando..."
+    for _ in range(32):
+        await asyncio.sleep(0.25)
+        view = await _ensure_previa_or_main(tab)
+        if view in ("previa", "main"):
+            await asyncio.sleep(0.4)
+            return True
+    return False
 
 
 async def close_battlepass(tab):
-    """Fecha a janela do Passe de Batalha ou modais relacionados."""
+    """Fecha a janela do Passe de Batalha (#bp-modal) ou modais relacionados."""
     js_close = """
     (() => {
-        // 1. Tenta botão fechar específico
-        const closeBtn = document.getElementById('battlepass-modal-close')
-            || document.getElementById('bp-modal-close')
-            || document.getElementById('passe-modal-close')
-            || document.querySelector('.bp-close')
-            || document.querySelector('#battlepass-modal .close')
-            || document.querySelector('#battlepass-modal .btn-close')
-            || document.querySelector('#battlepass-modal [data-dismiss="modal"]')
-            || document.querySelector('#battlepass-modal [data-bs-dismiss="modal"]')
-            || document.querySelector('#battlepass-modal-body')?.closest('.modal')?.querySelector('.close, .btn-close, [data-dismiss="modal"], .gw-x, .modal-close')
-            || document.querySelector('.modal-close')
-            || document.querySelector('.im-close')
-            || document.querySelector('.gw-x');
-        if (closeBtn) {
-            closeBtn.click();
-            return true;
+        const modal = document.getElementById('bp-modal');
+        if (modal && !modal.classList.contains('hidden')) {
+            const closeBtn = document.getElementById('bp-modal-close')
+                || modal.querySelector('.bp-close, .close, .btn-close, .modal-close');
+            if (closeBtn) {
+                closeBtn.click();
+                return true;
+            }
         }
 
-        // 2. Se houver modal de confirmação aberto, clica em Cancelar
         const cancelBtn = document.getElementById('confirm-no');
         if (cancelBtn && cancelBtn.offsetParent !== null) {
             cancelBtn.click();
             return true;
         }
 
-        // 3. Fallback: tecla Escape
         window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27 }));
         return true;
     })()
     """
     await tab.execute_script(js_close)
-    await asyncio.sleep(1.0)
+    for _ in range(8):
+        await asyncio.sleep(0.2)
+        closed = extract_execute_result(await tab.execute_script(
+            "(() => { const m = document.getElementById('bp-modal'); return !m || m.classList.contains('hidden'); })()"
+        ))
+        if closed:
+            return
+    await asyncio.sleep(0.3)
+
+
+async def _ensure_previa_or_main(tab):
+    """Retorna o modo atual do #bp-modal ('previa', 'main', 'empty', 'closed')."""
+    js = """
+    (() => {
+        const modal = document.getElementById('bp-modal');
+        if (!modal || modal.classList.contains('hidden')) return 'closed';
+        const body = document.getElementById('bp-modal-body');
+        if (!body) return 'empty';
+        if (body.querySelector('.bp-pv')) return 'previa';
+        if (body.querySelector('.bp-hero')) return 'main';
+        return 'other';
+    })()
+    """
+    res = await tab.execute_script(js)
+    return extract_execute_result(res) or "other"
+
+
+async def _collect_all_in_current_view(tab) -> dict:
+    """
+    Na vista atual do #bp-modal ('previa' ou 'main'), clica em:
+    - .bp-pv-tudo ("Coletar todas as recompensas") se habilitado
+    - .bp-hero-tudo ("Retirar tudo") se habilitado
+    - botões "Entregar" habilitados dentro de .bp-dcard
+    Retorna {"claims": int, "deliveries": int}.
+    """
+    js = """
+    (() => {
+        const body = document.getElementById('bp-modal-body');
+        if (!body) return JSON.stringify({ claims: 0, deliveries: 0 });
+        let claims = 0;
+        let deliveries = 0;
+
+        // 1. Coletar todas as recompensas na prévia (.bp-pv-tudo)
+        const pvTudo = body.querySelector('.bp-pv-tudo');
+        if (pvTudo && !pvTudo.disabled) {
+            pvTudo.click();
+            claims++;
+        }
+
+        // 2. Retirar tudo na tela principal de um passe (.bp-hero-tudo)
+        const heroTudo = body.querySelector('.bp-hero-tudo');
+        if (heroTudo && !heroTudo.disabled) {
+            heroTudo.click();
+            claims++;
+        }
+
+        // 3. Entregar missões de entrega prontas (.bp-dcard .bp-dcard-a button)
+        const delivBtns = Array.from(body.querySelectorAll('.bp-dcard .bp-dcard-a button'));
+        for (const btn of delivBtns) {
+            if (!btn.disabled) {
+                btn.click();
+                deliveries++;
+            }
+        }
+
+        return JSON.stringify({ claims, deliveries });
+    })()
+    """
+    res = parse_json_result(await tab.execute_script(js)) or {"claims": 0, "deliveries": 0}
+    if res.get("claims", 0) or res.get("deliveries", 0):
+        await asyncio.sleep(1.2)
+    return res
 
 
 async def get_battlepass_missions(tab) -> list:
     """
-    Lê as missões do dia no Passe de Batalha:
-    Extrai nome, dificuldade (facil, media, dificil), descrição, recompensas e status.
+    Lê o resumo dos passes e missões ativas no #bp-modal (suporta vista 'previa' e 'main').
     """
     js = """
     (() => {
-        const mrow = document.querySelector('.bp-mrow');
-        if (!mrow) return JSON.stringify([]);
+        const body = document.getElementById('bp-modal-body');
+        if (!body) return JSON.stringify([]);
 
-        const btns = Array.from(mrow.querySelectorAll('.bp-mini'));
-        const missions = btns.map((btn, idx) => {
-            const nameEl = btn.querySelector('.bp-mini-nm');
-            const bandEl = btn.querySelector('.bp-band');
-            const descEl = btn.querySelector('.bp-mini-l');
-            const xpEl = btn.querySelector('.bp-mxp');
-            const lockEl = btn.querySelector('.bp-mlock');
+        const cards = Array.from(body.querySelectorAll('.bp-pv-card'));
+        if (cards.length > 0) {
+            return JSON.stringify(cards.map((card, idx) => {
+                const nameEl = card.querySelector('.bp-pv-tt b');
+                const ringEl = card.querySelector('.bp-pv-ring');
+                const misEl = card.querySelector('.bp-pv-mis');
+                const claimBtn = card.querySelector('.bp-pv-go');
+                return {
+                    index: idx,
+                    name: nameEl ? nameEl.innerText.trim() : `Passe ${idx + 1}`,
+                    level_text: ringEl ? ringEl.innerText.replace(/\\s+/g, ' ').trim() : '',
+                    description: misEl ? misEl.innerText.replace(/^🎯\\s*/, '').trim() : '',
+                    has_claimable: Boolean(claimBtn && !claimBtn.disabled),
+                    deliveries_ready: 0,
+                    type: 'pass_card'
+                };
+            }));
+        }
 
-            let diff = 'desconhecida';
-            if (bandEl) {
-                const raw = bandEl.innerText.trim().toLowerCase();
-                diff = raw.replace('á', 'a').replace('é', 'e').replace('í', 'i');
-            } else if (btn.querySelector('.bp-band-easy')) {
-                diff = 'facil';
-            } else if (btn.querySelector('.bp-band-medium')) {
-                diff = 'media';
-            } else if (btn.querySelector('.bp-band-hard')) {
-                diff = 'dificil';
-            }
+        // Vista 'main' (passe único)
+        const seasonEl = body.querySelector('.bp-season');
+        const levelEl = body.querySelector('.bp-meta-level');
+        const delivCards = Array.from(body.querySelectorAll('.bp-dcard'));
+        const readyCount = delivCards.filter(c => {
+            const btn = c.querySelector('.bp-dcard-a button');
+            return btn && !btn.disabled;
+        }).length;
+        const delivDesc = delivCards.map(c => {
+            const nm = c.querySelector('.bp-dcard-nm')?.innerText.trim() || '';
+            const st = c.querySelector('.bp-mdone, .bp-mxp')?.innerText.trim() || '';
+            return nm ? `${nm} (${st})` : '';
+        }).filter(Boolean).join(' | ');
 
-            const isLocked = btn.classList.contains('locked') || btn.disabled;
-            const btnText = (btn.innerText || '').toLowerCase();
-            const isDone = btn.classList.contains('done') || btn.classList.contains('completed') || btnText.includes('concluid') || btnText.includes('entregue');
-            const canDeliver = btnText.includes('entregar') || btnText.includes('receber') || btnText.includes('resgatar');
-
-            return {
-                index: idx,
-                name: nameEl ? nameEl.innerText.trim() : '',
-                difficulty: diff,
-                description: descEl ? descEl.innerText.trim() : '',
-                rewards: xpEl ? xpEl.innerText.trim() : '',
-                locked: isLocked,
-                lock_reason: lockEl ? lockEl.innerText.trim() : '',
-                completed: isDone,
-                deliverable: canDeliver
-            };
-        });
-
-        return JSON.stringify(missions);
+        return JSON.stringify([{
+            index: 0,
+            name: seasonEl ? seasonEl.innerText.trim() : 'Passe de Batalha',
+            level_text: levelEl ? levelEl.innerText.trim() : '',
+            description: delivDesc || 'Missão de kill ativa (qualquer caçada)',
+            has_claimable: Boolean(body.querySelector('.bp-hero-tudo:not([disabled])')),
+            deliveries_ready: readyCount,
+            type: 'pass_main'
+        }]);
     })()
     """
     result = await tab.execute_script(js)
-    missions = parse_json_result(result) or []
-    for m in missions:
-        m_name = m.get("name", "")
-        info = get_hunt_info(m_name)
-        if info and info.get("name"):
-            m["name"] = info["name"]
-            m["level"] = info.get("level")
-        else:
-            m["level"] = get_hunt_level(m_name)
-    return missions
+    return parse_json_result(result) or []
 
 
-async def deliver_battlepass_mission(tab) -> bool:
-    """Tenta entregar missões concluídas no Passe de Batalha."""
-    js_deliver = """
+def _parse_delivery_card(card: dict) -> dict | None:
+    """Extrai item_name, goal, have e ready de um card .bp-dcard."""
+    nm = (card.get("nm") or "").strip()
+    st = (card.get("st") or "").strip()
+    ready = bool(card.get("ready"))
+    if not nm or "saiu do cat" in nm.lower():
+        return None
+
+    # Ex: "Entrega 1/20 · 340x demonic skeletal hand"
+    part = nm.split("·", 1)[1].strip() if "·" in nm else nm
+    if "de gold" in part.lower() or part.lower() == "gold coin":
+        return None
+
+    m_qty = re.match(r"^([\d.,]+)\s*x\s+(.+)$", part, re.IGNORECASE)
+    if m_qty:
+        goal = int(m_qty.group(1).replace(".", "").replace(",", "") or 0)
+        item_name = m_qty.group(2).strip()
+    else:
+        goal = 0
+        item_name = part
+
+    have = 0
+    m_have = re.search(r"([\d.,]+)\s*/\s*([\d.,]+)", st)
+    if m_have:
+        have = int(m_have.group(1).replace(".", "").replace(",", "") or 0)
+        if not goal:
+            goal = int(m_have.group(2).replace(".", "").replace(",", "") or 0)
+
+    if not item_name:
+        return None
+
+    return {
+        "item_name": item_name,
+        "have": have,
+        "goal": goal,
+        "ready": ready,
+        "raw_title": nm,
+        "raw_status": st,
+    }
+
+
+async def _read_delivery_cards_in_current_view(tab) -> list[dict]:
+    js = """
     (() => {
-        // 1. Procura botão explícito de entregar no DOM
-        const buttons = Array.from(document.querySelectorAll('.bp-strip button, #confirm-modal-body button, .confirm-actions button, .bp-missions-line button'));
-        const deliverBtn = buttons.find(b => {
-            const txt = (b.innerText || '').toLowerCase().trim();
-            return (txt.includes('entregar') || txt.includes('receber') || txt.includes('resgatar') || txt.includes('completar')) && !b.disabled;
-        });
-        if (deliverBtn) {
-            deliverBtn.click();
-            return true;
-        }
-
-        // 2. Se houver algum card de missão concluído/entregar
-        const mrow = document.querySelector('.bp-mrow');
-        if (mrow) {
-            const miniBtns = Array.from(mrow.querySelectorAll('.bp-mini'));
-            for (const m of miniBtns) {
-                const txt = (m.innerText || '').toLowerCase();
-                if (txt.includes('entregar') || txt.includes('concluid') || txt.includes('resgatar')) {
-                    m.click();
-                    return true;
-                }
-            }
-        }
-
-        return false;
+        const body = document.getElementById('bp-modal-body');
+        if (!body) return JSON.stringify([]);
+        const cards = Array.from(body.querySelectorAll('.bp-dcard'));
+        return JSON.stringify(cards.map(c => ({
+            nm: c.querySelector('.bp-dcard-nm')?.innerText.trim() || '',
+            st: c.querySelector('.bp-mdone, .bp-mxp')?.innerText.trim() || '',
+            ready: Boolean(c.querySelector('.bp-dcard-a button') && !c.querySelector('.bp-dcard-a button').disabled)
+        })));
     })()
     """
-    res = await tab.execute_script(js_deliver)
-    clicked = extract_execute_result(res)
-    if clicked:
-        await asyncio.sleep(1.0)
-        # Se abriu modal de confirmação para entrega, confirma
-        js_confirm = """
+    raw = parse_json_result(await tab.execute_script(js)) or []
+    out = []
+    for c in raw:
+        parsed = _parse_delivery_card(c)
+        if parsed:
+            out.append(parsed)
+    return out
+
+
+async def deliver_battlepass_mission(tab) -> tuple[bool, list[dict]]:
+    """
+    Coleta recompensas pendentes e entrega missões de entrega prontas no Passe de Batalha.
+    Suporta múltiplos passes na vista 'previa' (entrando em cada passe para verificar .bp-dcard).
+    Também coleta todas as missões de entrega ainda pendentes (não prontas) encontradas.
+    Retorna (acted: bool, pending_deliveries: list[dict]).
+    """
+    total_claims = 0
+    total_deliveries = 0
+    pending_deliveries = []
+    view = await _ensure_previa_or_main(tab)
+
+    if view == "previa":
+        r0 = await _collect_all_in_current_view(tab)
+        total_claims += r0.get("claims", 0)
+        total_deliveries += r0.get("deliveries", 0)
+
+        # Seleciona apenas índices dos passes que têm entregas ou missões pendentes (ignora os já concluídos)
+        js_indices = """
         (() => {
-            const confirmBtn = document.getElementById('confirm-yes');
-            if (confirmBtn && confirmBtn.offsetParent !== null) {
-                confirmBtn.click();
-                return true;
-            }
-            return false;
+            const cards = Array.from(document.querySelectorAll('#bp-modal-body .bp-pv-card'));
+            const indices = [];
+            cards.forEach((c, idx) => {
+                const mis = (c.querySelector('.bp-pv-mis')?.innerText || '').toLowerCase();
+                const hasClaim = Boolean(c.querySelector('.bp-pv-go') && !c.querySelector('.bp-pv-go').disabled);
+                const done = mis.includes('já concluídas') || mis.includes('ja concluidas') || mis.includes('temporada encerrada');
+                if (!done || hasClaim) {
+                    indices.push(idx);
+                }
+            });
+            return JSON.stringify(indices);
         })()
         """
-        await tab.execute_script(js_confirm)
-        await asyncio.sleep(1.0)
-        return True
-    return False
+        target_indices = parse_json_result(await tab.execute_script(js_indices)) or []
+
+        for pos, idx in enumerate(target_indices):
+            js_open_card = f"""
+            (() => {{
+                const btns = Array.from(document.querySelectorAll('#bp-modal-body .bp-pv-card .bp-pv-abrir'));
+                if (btns.length > {idx}) {{
+                    btns[{idx}].click();
+                    return true;
+                }}
+                return false;
+            }})()
+            """
+            if not extract_execute_result(await tab.execute_script(js_open_card)):
+                continue
+            for _ in range(20):
+                await asyncio.sleep(0.25)
+                if await _ensure_previa_or_main(tab) == "main":
+                    await asyncio.sleep(0.4)
+                    break
+
+            r_card = await _collect_all_in_current_view(tab)
+            total_claims += r_card.get("claims", 0)
+            total_deliveries += r_card.get("deliveries", 0)
+
+            cards = await _read_delivery_cards_in_current_view(tab)
+            for c in cards:
+                if not c["ready"]:
+                    pending_deliveries.append(c)
+
+            if pos < len(target_indices) - 1:
+                await close_battlepass(tab)
+                await open_battlepass(tab)
+    elif view == "main":
+        r_main = await _collect_all_in_current_view(tab)
+        total_claims += r_main.get("claims", 0)
+        total_deliveries += r_main.get("deliveries", 0)
+        cards = await _read_delivery_cards_in_current_view(tab)
+        for c in cards:
+            if not c["ready"]:
+                pending_deliveries.append(c)
+
+    # Se alguma entrega foi concluída e o bot tinha marcado "Não vender", restaura agora
+    if total_deliveries > 0 and get_setting("bp_delivery_marked_no_sell", False):
+        tracked_item = get_setting("bp_delivery_item", "")
+        if tracked_item:
+            await close_battlepass(tab)
+            await set_item_no_sell(tab, tracked_item, enable=False)
+            set_setting("bp_delivery_marked_no_sell", False)
+            set_setting("bp_delivery_item", "")
+            set_setting("bp_delivery_hunt", "")
+
+    return (total_claims + total_deliveries) > 0, pending_deliveries
+
+
+async def get_battlepass_delivery_progress(tab, item_name: str | None = None) -> dict | None:
+    """
+    Abre o Passe (#bp-modal) rapidamente para ler o progresso (have/goal) da missão
+    de entrega do item `item_name` (ou da primeira missão de entrega encontrada).
+    Retorna {"item_name": str, "have": int, "goal": int, "ready": bool} ou None.
+    """
+    if not await open_battlepass(tab):
+        return None
+
+    try:
+        view = await _ensure_previa_or_main(tab)
+        target_lower = (item_name or "").strip().lower()
+        found = None
+
+        if view == "previa":
+            js_indices = """
+            (() => {
+                const cards = Array.from(document.querySelectorAll('#bp-modal-body .bp-pv-card'));
+                const indices = [];
+                cards.forEach((c, idx) => {
+                    const mis = (c.querySelector('.bp-pv-mis')?.innerText || '').toLowerCase();
+                    if (mis.includes('entrega')) {
+                        indices.push(idx);
+                    }
+                });
+                return JSON.stringify(indices);
+            })()
+            """
+            target_indices = parse_json_result(await tab.execute_script(js_indices)) or []
+            for pos, idx in enumerate(target_indices):
+                js_open_card = f"""
+                (() => {{
+                    const btns = Array.from(document.querySelectorAll('#bp-modal-body .bp-pv-card .bp-pv-abrir'));
+                    if (btns.length > {idx}) {{
+                        btns[{idx}].click();
+                        return true;
+                    }}
+                    return false;
+                }})()
+                """
+                if not extract_execute_result(await tab.execute_script(js_open_card)):
+                    continue
+                for _ in range(20):
+                    await asyncio.sleep(0.25)
+                    if await _ensure_previa_or_main(tab) == "main":
+                        await asyncio.sleep(0.4)
+                        break
+                cards = await _read_delivery_cards_in_current_view(tab)
+                for c in cards:
+                    if not target_lower or c["item_name"].lower() == target_lower:
+                        found = c
+                        break
+                if found:
+                    break
+                if pos < len(target_indices) - 1:
+                    await close_battlepass(tab)
+                    await open_battlepass(tab)
+        elif view == "main":
+            cards = await _read_delivery_cards_in_current_view(tab)
+            for c in cards:
+                if not target_lower or c["item_name"].lower() == target_lower:
+                    found = c
+                    break
+
+        return found
+    finally:
+        await close_battlepass(tab)
+
+
+async def setup_battlepass_delivery_farm(
+    tab,
+    pending_deliveries: list[dict],
+    avg_char_level: int | None = None,
+    on_message=None,
+) -> tuple[bool, str]:
+    """
+    Para a primeira missão de entrega pendente:
+    1. Abre a Cyclopedia, marca "Não vender" e lê "Onde farmar" (#farmspots-body).
+    2. Escolhe a melhor hunt compatível (preferindo level <= avg_char_level).
+    3. Vai para a hunt com change_hunt().
+    """
+    if not pending_deliveries:
+        return False, "sem_entregas_pendentes"
+
+    target = pending_deliveries[0]
+    item_name = target["item_name"]
+    have = target["have"]
+    goal = target["goal"]
+
+    saved_item = get_setting("bp_delivery_item", "")
+    saved_hunt = get_setting("bp_delivery_hunt", "")
+    if saved_item and saved_item.lower() == item_name.lower() and saved_hunt and "(boss)" not in saved_hunt.lower():
+        prot = await set_item_no_sell(tab, item_name, enable=True)
+        if not prot.get("confirmed"):
+            if on_message:
+                await on_message(
+                    f"⚠️ *Entrega do Passe:* `{goal}x {item_name}` (`{have}/{goal}`)\n"
+                    f"Não foi possível confirmar a flag *Não vender* na Cyclopedia. A hunt não foi alterada por segurança."
+                )
+            return False, "nao_vender_nao_confirmado"
+        if prot.get("changed"):
+            set_setting("bp_delivery_marked_no_sell", True)
+        ok_ch, ch_msg = await change_hunt(tab, saved_hunt)
+        if on_message:
+            if ok_ch:
+                await on_message(
+                    f"📦 *Entrega do Passe em andamento:* `{goal}x {item_name}` (`{have}/{goal}`)\n"
+                    f"🛡️ Flag *Não vender* confirmada.\n"
+                    f"🏹 Indo/mantendo caçada em *{saved_hunt}*."
+                )
+            else:
+                await on_message(
+                    f"⚠️ *Entrega do Passe:* `{goal}x {item_name}` (`{have}/{goal}`)\n"
+                    f"Erro ao ir para *{saved_hunt}*: {ch_msg}"
+                )
+        return ok_ch, f"delivery_farm:{saved_hunt}" if ok_ch else ch_msg
+
+    info = await get_item_farmspots_and_protect(tab, item_name, protect_no_sell=True)
+    if not info.get("no_sell_confirmed"):
+        if on_message:
+            await on_message(
+                f"⚠️ *Entrega do Passe:* `{goal}x {item_name}` (`{have}/{goal}`)\n"
+                f"Não foi possível confirmar a flag *Não vender* na Cyclopedia. A hunt não foi alterada por segurança."
+            )
+        return False, "nao_vender_nao_confirmado"
+    spots = info.get("spots") or []
+    if not spots:
+        if on_message:
+            await on_message(
+                f"⚠️ *Entrega do Passe:* `{goal}x {item_name}` ({have}/{goal})\n"
+                f"Não encontrei nenhuma hunt no *Onde farmar* da Cyclopedia para esse item."
+            )
+        return False, "sem_farmspot"
+
+    chosen = None
+    if avg_char_level is not None:
+        chosen = next((s for s in spots if s["level"] is None or s["level"] <= avg_char_level), None)
+    level_warning = False
+    if chosen is None:
+        chosen = spots[0]
+        if avg_char_level is not None and chosen.get("level") and chosen["level"] > avg_char_level:
+            level_warning = True
+
+    hunt_name = chosen["hunt_name"]
+    set_setting("bp_delivery_item", item_name)
+    set_setting("bp_delivery_marked_no_sell", bool(info.get("marked_no_sell_by_bot")))
+    set_setting("bp_delivery_hunt", hunt_name)
+
+    ok_ch, ch_msg = await change_hunt(tab, hunt_name)
+
+    if on_message:
+        lvl_txt = f"lvl {chosen['level']}" if chosen.get("level") else "lvl ?"
+        mon_txt = chosen.get("monster") or "?"
+        warn_txt = f"\n⚠️ Atenção: hunt acima do nível médio da party ({avg_char_level})." if level_warning else ""
+        prot_txt = "🛡️ Item marcado como *Não vender* na Cyclopedia.\n" if info.get("marked_no_sell_by_bot") else "🛡️ Item já estava protegido (*Não vender*).\n"
+        hunt_line = (
+            f"🏹 Indo farmar em *{hunt_name}* ({lvl_txt} · {mon_txt})."
+            if ok_ch
+            else f"⚠️ Falha ao trocar para *{hunt_name}* ({lvl_txt} · {mon_txt}): {ch_msg}"
+        )
+        await on_message(
+            f"📦 *Missão de Entrega do Passe:* `{goal}x {item_name}` (`{have}/{goal}`)\n"
+            f"{prot_txt}"
+            f"{hunt_line}{warn_txt}"
+        )
+
+    return ok_ch, f"delivery_farm:{hunt_name}" if ok_ch else ch_msg
 
 
 async def choose_battlepass_mission(tab, difficulty_choice: str, mode: str = "Normal", on_message=None):
     """
-    Seleciona e inicia uma missão do Passe de Batalha:
-    1. Abre o Passe
-    2. Clica no card da dificuldade escolhida (facil, media, dificil)
-    3. Seleciona o modo 'Normal' no modal
-    4. Clica em 'Escolher' (#confirm-yes)
-    5. Clica em 'Acompanhar na tela'
-    6. Clica em 'ir para cacada' (ou usa change_hunt)
+    No novo Passe de Batalha não há mais escolha de dificuldade (facil/media/dificil) nem hunt fixa:
+    qualquer monstro em qualquer caçada conta para as missões de kill.
     """
-    clean_diff = difficulty_choice.lower().replace("á", "a").replace("é", "e").replace("í", "i")
-
-    if not await open_battlepass(tab):
-        return False, "Não foi possível abrir o menu do Passe de Batalha."
-
-    missions = await get_battlepass_missions(tab)
-    if not missions:
-        await close_battlepass(tab)
-        return False, "Nenhuma missão encontrada no Passe de Batalha."
-
-    target_mission = None
-    for m in missions:
-        if m["difficulty"] == clean_diff:
-            target_mission = m
-            break
-
-    if not target_mission:
-        await close_battlepass(tab)
-        return False, f"Missão de dificuldade '{difficulty_choice}' não encontrada."
-
-    if target_mission["locked"]:
-        reason = target_mission.get("lock_reason", "Bloqueada")
-        await close_battlepass(tab)
-        return False, f"A missão {target_mission['name']} ({clean_diff.capitalize()}) está bloqueada: {reason}"
-
-    if target_mission["completed"]:
-        await close_battlepass(tab)
-        return False, f"A missão {target_mission['name']} ({clean_diff.capitalize()}) já foi concluída hoje."
-
-    target_name = target_mission["name"]
-    target_idx = target_mission["index"]
-    target_lvl = target_mission.get("level") if target_mission.get("level") is not None else get_hunt_level(target_name)
-    lvl_str = f" [lvl {target_lvl}]" if target_lvl is not None else ""
-
-    print(f"Selecionando missão {target_name} ({clean_diff}){lvl_str}...")
-
-    # Passo 1: Clicar no botão da missão na lista
-    js_click_mission = f"""
-    (() => {{
-        const mrow = document.querySelector('.bp-mrow');
-        if (!mrow) return false;
-        const btns = Array.from(mrow.querySelectorAll('.bp-mini'));
-        if (btns.length > {target_idx}) {{
-            btns[{target_idx}].click();
-            return true;
-        }}
-        return false;
-    }})()
-    """
-    await tab.execute_script(js_click_mission)
-    await asyncio.sleep(1.0)
-
-    # Passo 2: Selecionar o modo 'Normal' e clicar em 'Escolher' (#confirm-yes)
-    js_select_mode_and_confirm = """
-    (() => {
-        // Seleciona Normal se não estiver ativo
-        const normalBtn = Array.from(document.querySelectorAll('.bp-dif button, .bp-dif-c')).find(b => {
-            const txt = (b.innerText || '').toLowerCase();
-            return txt.includes('normal') || (!b.classList.contains('dem') && !b.disabled);
-        });
-        if (normalBtn) {
-            normalBtn.click();
-        }
-
-        // Clica em 'Escolher'
-        const confirmBtn = document.getElementById('confirm-yes');
-        if (confirmBtn) {
-            confirmBtn.click();
-            return true;
-        }
-        return false;
-    })()
-    """
-    await tab.execute_script(js_select_mode_and_confirm)
-    await asyncio.sleep(1.2)
-
-    # Passo 3: Clicar em 'Acompanhar na tela'
-    print("Ativando 'Acompanhar na tela'...")
-    js_track = """
-    (() => {
-        const buttons = Array.from(document.querySelectorAll('button, .btn, [role="button"], span'));
-        const trackBtn = buttons.find(b => {
-            const txt = (b.innerText || '').toLowerCase().trim();
-            return txt.includes('acompanhar') || txt.includes('rastrear');
-        });
-        if (trackBtn) {
-            trackBtn.click();
-            return true;
-        }
-        return false;
-    })()
-    """
-    await tab.execute_script(js_track)
-    await asyncio.sleep(0.8)
-
-    # Passo 4: Clicar em 'ir para cacada'
-    print("Clicando em 'ir para cacada'...")
-    js_go_hunt = """
-    (() => {
-        const buttons = Array.from(document.querySelectorAll('button, .btn, [role="button"]'));
-        const huntBtn = buttons.find(b => {
-            const txt = (b.innerText || '').toLowerCase().trim();
-            return txt.includes('cacada') || txt.includes('caçada') || (txt.includes('ir') && txt.includes('para'));
-        });
-        if (huntBtn) {
-            huntBtn.click();
-            return true;
-        }
-        return false;
-    })()
-    """
-    res_hunt = await tab.execute_script(js_go_hunt)
-    went_to_hunt = extract_execute_result(res_hunt)
-
-    await asyncio.sleep(1.0)
-    await close_battlepass(tab)
-
-    # Se o botão 'ir para cacada' não disparou, usa o change_hunt como garantia
-    if not went_to_hunt and target_name:
-        await change_hunt(tab, target_name)
-        await asyncio.sleep(0.5)
-        await close_battlepass(tab)
-
-    msg = f"Iniciando missão do Passe: {target_name} ({clean_diff.capitalize()}){lvl_str}"
-    if on_message:
-        await on_message(f"📜 *Missão do Passe Aceita!*\n🎯 {target_name} ({clean_diff.capitalize()}){lvl_str}\n{target_mission['description']}")
-
-    return True, msg
+    msg = (
+        "O Passe de Batalha foi atualizado no jogo: não há mais seleção de dificuldade "
+        "(facil/media/dificil). As missões de kill contam em qualquer caçada e as "
+        "entregas/recompensas são coletadas automaticamente ou via /passe."
+    )
+    return False, msg
 
 
 async def get_tracked_battlepass_progress(tab) -> dict | None:
     """
-    Lê a caixa do HUD com o progresso do Passe de Batalha:
-    <div class="gtk-box acx-box">
-      <div class="gtk-hdr">Passe</div>
-      <button class="acx-row bpk-row" title="amazon-camp — 18/600 · Limpe 600 criaturas.">
-        <span class="bpk-num">18/600</span>
-      </button>
+    Lê a caixa do HUD (#bptrack-overlay) com o progresso do Passe de Batalha:
+    <div id="bptrack-overlay">
+      <div class="gtk-box bpk-box">
+        <div class="gtk-hdr">Passe</div>
+        <button class="bpk-row" title="...">
+          <span class="bpk-txt">
+            <span class="bpk-l">Kill 3/20</span>
+            <span class="bpk-n">18 / 600</span>
+          </span>
+        </button>
+      </div>
     </div>
     """
     js = """
     (() => {
-        // Procura a caixinha do Passe no HUD
-        const headers = Array.from(document.querySelectorAll('.gtk-box .gtk-hdr, .acx-box .gtk-hdr'));
-        const bpHeader = headers.find(h => (h.innerText || '').toLowerCase().includes('passe'));
-
-        let box = null;
-        if (bpHeader) {
-            box = bpHeader.closest('.gtk-box, .acx-box');
-        } else {
-            box = document.querySelector('.acx-box, .bpk-row')?.closest('.gtk-box, .acx-box');
+        const overlay = document.getElementById('bptrack-overlay');
+        if (!overlay || overlay.classList.contains('hidden')) {
+            return JSON.stringify({ error: "Nenhum passe rastreado" });
         }
 
-        if (!box) return JSON.stringify({ error: "Nenhum passe rastreado" });
-
-        const rowBtn = box.querySelector('.bpk-row, .acx-row');
-        const numEl = box.querySelector('.bpk-num');
-
-        const countText = numEl ? numEl.innerText.trim() : '';
-        const tipText = rowBtn ? (rowBtn.getAttribute('title') || rowBtn.getAttribute('data-tip') || '') : '';
-        const waveTitleEl = document.getElementById('wave-title');
-        const waveTitle = waveTitleEl ? waveTitleEl.innerText.trim() : '';
-
-        let huntName = "";
-        if (tipText) {
-            const parts = tipText.split(/[—–-]/);
-            if (parts.length > 0) {
-                huntName = parts[0].trim();
-            }
+        const rows = Array.from(overlay.querySelectorAll('.bpk-row'));
+        if (!rows.length) {
+            return JSON.stringify({ error: "Nenhuma linha no passe rastreado" });
         }
 
-        return JSON.stringify({
-            hunt_name: huntName,
-            count_text: countText,
-            tip: tipText,
-            wave_title: waveTitle
+        const parsed = rows.map(row => {
+            const labelEl = row.querySelector('.bpk-l');
+            const numEl = row.querySelector('.bpk-n');
+            const label = labelEl ? labelEl.innerText.replace(/\\s+/g, ' ').trim() : 'Passe';
+            const countText = numEl ? numEl.innerText.trim() : '';
+            const tipText = row.getAttribute('title') || '';
+            const isReady = row.querySelector('.bpk-n.ok') !== null
+                || countText.toLowerCase().includes('pronta')
+                || countText.toLowerCase().includes('entregar');
+            return { label, count_text: countText, tip: tipText, is_ready: isReady };
         });
+
+        // Prefere alguma linha que esteja pronta para entregar/concluída, senão a primeira
+        const chosen = parsed.find(r => r.is_ready) || parsed[0];
+        return JSON.stringify(chosen);
     })()
     """
     result = await tab.execute_script(js)
     data = parse_json_result(result)
 
-    if not data or "error" in data or not data.get("count_text"):
+    if not data or "error" in data:
+        return None
+
+    label = data.get("label") or "Passe"
+    count_text = data.get("count_text") or ""
+    is_ready = bool(data.get("is_ready"))
+
+    if is_ready:
+        return {
+            "hunt_name": label,
+            "level": None,
+            "current": 1,
+            "max": 1,
+            "finished": True,
+            "requires_hunt_change": False,
+        }
+
+    if "/" not in count_text:
         return None
 
     try:
-        count_text = data["count_text"]
-        if "/" not in count_text:
-            return None
-
-        current_str, max_str = count_text.split("/")
-        current_kills = int(current_str.replace(".", "").strip())
-        max_kills = int(max_str.replace(".", "").strip())
-
-        hunt_name = data.get("hunt_name") or "Passe"
-        wave_title = (data.get("wave_title") or "").strip()
-
-        # Se o wave-title estiver disponível e ativo na tela, e coincidir com o passe
-        # (ex: "Dark Thais" vs "darkthais"), prefere o wave-title oficial!
-        if wave_title and wave_title.lower() not in ["hunt desconhecida", "treino online", "casa", "carregando...", ""]:
-            from baiaidle.sell import is_training_location
-            is_train, _ = is_training_location(wave_title)
-            if not is_train and (is_same_hunt(wave_title, hunt_name) or is_same_hunt(wave_title, data.get("tip", ""))):
-                hunt_name = wave_title
-
-        # Resolve via cache de hunts para garantir o nome canônico oficial (ex: "darkthais" -> "Dark Thais")
-        info = get_hunt_info(hunt_name)
-        if info and info.get("name"):
-            hunt_name = info["name"]
-            lvl = info.get("level")
-        else:
-            lvl = get_hunt_level(hunt_name)
-
+        current_str, max_str = count_text.split("/", 1)
+        current_kills = int(current_str.replace(".", "").replace(",", "").strip())
+        max_kills = int(max_str.replace(".", "").replace(",", "").strip())
         return {
-            "hunt_name": hunt_name,
-            "level": lvl,
+            "hunt_name": label,
+            "level": None,
             "current": current_kills,
             "max": max_kills,
-            "finished": current_kills >= max_kills
+            "finished": max_kills > 0 and current_kills >= max_kills,
+            "requires_hunt_change": False,
         }
     except Exception:
         return None
@@ -431,158 +634,61 @@ async def get_tracked_battlepass_progress(tab) -> dict | None:
 
 async def process_battlepass(tab, on_message=None):
     """
-    Rotina autônoma do Passe de Batalha:
-    1. Entrega missões concluídas.
-    2. Retoma missão em andamento se já houver uma ativa.
-    3. Lista missões disponíveis e envia opções interativas no Telegram.
+    Rotina do Passe de Batalha:
+    1. Abre o Passe (#bp-modal).
+    2. Coleta recompensas pendentes e entrega missões de entrega prontas.
+    3. Se houver missão de entrega pendente, protege na Cyclopedia, busca Onde farmar e vai para a hunt.
+    4. Envia um resumo do progresso dos passes no Telegram.
     """
     if not await open_battlepass(tab):
         return False, "Não foi possível abrir o menu do Passe."
 
-    # 1. Tentar entregar missão se estiver completa
-    delivered = await deliver_battlepass_mission(tab)
-    if delivered:
-        if on_message:
-            await on_message("🎁 *Missão do Passe Entregue!*\nRecompensas diárias coletadas.")
-        await asyncio.sleep(1.5)
+    delivered, pending_deliveries = await deliver_battlepass_mission(tab)
+    if delivered and on_message:
+        await on_message("🎁 *Passe de Batalha atualizado!*\nRecompensas e/ou entregas prontas foram coletadas.")
 
-    # 2. Ler missões atuais
+    # Garante que estamos vendo o resumo (reabre se necessário) e lê os cards
+    await close_battlepass(tab)
+    await open_battlepass(tab)
     missions = await get_battlepass_missions(tab)
     await close_battlepass(tab)
 
-    if not missions:
-        return False, "Nenhuma missão encontrada no Passe."
+    if missions and on_message:
+        lines = ["🎟️ *Status do Passe de Batalha:*\n"]
+        for m in missions:
+            lvl_txt = f" ({m['level_text']})" if m.get("level_text") else ""
+            lines.append(f"• *{m['name']}*{lvl_txt}\n  🎯 {m['description']}")
+        lines.append("\n_As missões de kill contam em qualquer caçada._")
+        await on_message("\n".join(lines))
 
-    # 3. Verificar se há missão já em andamento rastreada no HUD
-    tracked = await get_tracked_battlepass_progress(tab)
-    if tracked and not tracked.get("finished"):
-        hunt_name = tracked["hunt_name"]
-        pct = (tracked["current"] / tracked["max"] * 100) if tracked["max"] > 0 else 0
-        lvl = tracked.get("level") if tracked.get("level") is not None else get_hunt_level(hunt_name)
-        lvl_str = f" [lvl {lvl}]" if lvl is not None else ""
-        if on_message:
-            await on_message(
-                f"🔄 *Retomando Missão do Passe em Andamento!*\n"
-                f"Local: {hunt_name}{lvl_str} (Progresso: {pct:.1f}% - {tracked['current']}/{tracked['max']})"
-            )
-        await change_hunt(tab, hunt_name)
-        return True, "recuperada"
+    if pending_deliveries:
+        ok_farm, farm_msg = await setup_battlepass_delivery_farm(tab, pending_deliveries, on_message=on_message)
+        if ok_farm:
+            return True, farm_msg
 
-    # 4. Filtrar missões disponíveis (não bloqueadas e não concluídas)
-    available_missions = [m for m in missions if not m["locked"] and not m["completed"]]
-
-    if available_missions:
-        msg = "🎟️ *Missões do Passe de Batalha de Hoje!*\n\n"
-        emojis = {"facil": "🟢", "media": "🟡", "dificil": "🔴"}
-
-        buttons = []
-        for m in available_missions:
-            emoji = emojis.get(m["difficulty"], "⚪")
-            diff_label = m["difficulty"].capitalize()
-            lvl = m.get("level") if m.get("level") is not None else get_hunt_level(m.get("name", ""))
-            lvl_str = f" [lvl {lvl}]" if lvl is not None else ""
-
-            msg += f"{emoji} *{m['name']}* ({diff_label}){lvl_str}\n"
-            msg += f"🎯 {m['description']}\n"
-            msg += f"💰 {m['rewards']}\n\n"
-
-            buttons.append({
-                "text": f"{emoji} Iniciar {diff_label}{lvl_str}",
-                "callback_data": f"bp_{m['difficulty']}"
-            })
-
-        msg += "_Escolha qual missão deseja iniciar clicando em um dos botões abaixo:_"
-
-        if on_message:
-            import inspect
-            if "buttons" in inspect.signature(on_message).parameters:
-                await on_message(msg, buttons=buttons)
-            else:
-                msg_txt = msg + "\n"
-                for b in buttons:
-                    msg_txt += f"\n{b['text']} -> Digite /passetask {b['callback_data'].split('_')[1]}"
-                await on_message(msg_txt)
-
-        return True, "aguardando_escolha"
-
-    # Se todas as missões foram finalizadas ou entregues
     return True, "finalizado"
 
 
 async def auto_select_best_battlepass(tab, avg_char_level: int, on_message=None):
     """
-    Seleção autônoma da melhor missão do Passe de Batalha:
-    1. Entrega missões concluídas.
-    2. Retoma missão se já houver uma ativa no HUD.
-    3. Analisa as missões disponíveis na ordem de prioridade: 'dificil' -> 'media' -> 'facil'.
-    4. Se o level da hunt for compatível (hunt_lvl <= avg_char_level), aceita e inicia.
+    Rotina autônoma do Passe de Batalha:
+    1. Abre o Passe, coleta recompensas pendentes e entrega missões de entrega prontas.
+    2. Se houver missão de entrega pendente, configura Cyclopedia ("Não vender" + "Onde farmar") e vai para a hunt.
+    3. Caso contrário, fecha o Passe e retorna ('finalizado') para seguir o fluxo normal (Tasks/Hunt).
     """
     if not await open_battlepass(tab):
         return False, "Não foi possível abrir o menu do Passe."
 
-    # 1. Entrega missões concluídas
-    delivered = await deliver_battlepass_mission(tab)
-    if delivered:
-        if on_message:
-            await on_message("🎁 *Missão do Passe Entregue!*\nRecompensas diárias coletadas.")
-        await asyncio.sleep(1.5)
-
-    # 2. Ler missões atuais
-    missions = await get_battlepass_missions(tab)
+    delivered, pending_deliveries = await deliver_battlepass_mission(tab)
     await close_battlepass(tab)
 
-    if not missions:
-        return False, "Nenhuma missão encontrada no Passe."
+    if delivered and on_message:
+        await on_message("🎁 *AutoPasse:* Recompensas e/ou entregas do Passe coletadas automaticamente!")
 
-    # 3. Retoma se já houver uma em andamento
-    tracked = await get_tracked_battlepass_progress(tab)
-    if tracked and not tracked.get("finished"):
-        hunt_name = tracked["hunt_name"]
-        pct = (tracked["current"] / tracked["max"] * 100) if tracked["max"] > 0 else 0
-        lvl = tracked.get("level") if tracked.get("level") is not None else get_hunt_level(hunt_name)
-        lvl_str = f" [lvl {lvl}]" if lvl is not None else ""
-        if on_message:
-            await on_message(
-                f"🔄 *Retomando Missão do Passe em Andamento!*\n"
-                f"Local: {hunt_name}{lvl_str} (Progresso: {pct:.1f}% - {tracked['current']}/{tracked['max']})"
-            )
-        await change_hunt(tab, hunt_name)
-        return True, "recuperada"
+    if pending_deliveries:
+        ok_farm, farm_msg = await setup_battlepass_delivery_farm(
+            tab, pending_deliveries, avg_char_level=avg_char_level, on_message=on_message
+        )
+        return ok_farm, farm_msg
 
-    # 4. Filtra missões disponíveis
-    available_missions = [m for m in missions if not m["locked"] and not m["completed"]]
-    if not available_missions:
-        return True, "finalizado"
-
-    # 5. Prioridade: difícil -> média -> fácil
-    priority_order = ["dificil", "media", "facil"]
-    chosen_mission = None
-
-    for diff in priority_order:
-        cand = next((m for m in available_missions if m["difficulty"] == diff), None)
-        if cand:
-            hunt_lvl = cand.get("level") if cand.get("level") is not None else get_hunt_level(cand.get("name", ""))
-            # Se não soubermos o level ou se o level for compatível com a média da party
-            if hunt_lvl is None or hunt_lvl <= avg_char_level:
-                chosen_mission = cand
-                break
-            else:
-                print(f"[AutoPasse] Missão {cand['name']} ({diff}) ignorada: hunt lvl {hunt_lvl} > party avg {avg_char_level}")
-
-    if chosen_mission:
-        target_diff = chosen_mission["difficulty"]
-        h_lvl = chosen_mission.get("level")
-        lvl_disp = f" [lvl {h_lvl}]" if h_lvl is not None else ""
-        if on_message:
-            await on_message(
-                f"🤖 *AutoPasse:* Selecionando automaticamente a missão *{chosen_mission['name']}* "
-                f"({target_diff.capitalize()}){lvl_disp}.\n"
-                f"📊 Nível médio da Party: `{avg_char_level}`."
-            )
-        success, msg = await choose_battlepass_mission(tab, target_diff, on_message=on_message)
-        return success, msg
-    else:
-        msg = f"⚠️ *AutoPasse:* Nenhuma missão compatível com o nível médio da party ({avg_char_level}). Todas as disponíveis requerem level maior."
-        if on_message:
-            await on_message(msg)
-        return False, "nenhuma_compativel"
+    return True, "finalizado"
