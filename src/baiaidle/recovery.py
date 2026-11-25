@@ -715,8 +715,15 @@ async def monitor_page_recovery(bot):
                 tc = getattr(bot, "telegram_controller", None)
                 auto_boss = getattr(bot, "auto_boss_instance", None) or (getattr(tc, "auto_boss_instance", None) if tc else None)
                 is_autoboss = bool(auto_boss and getattr(auto_boss, "state", None) and auto_boss.state.running)
+                is_expedition = bool(getattr(getattr(bot, "hunt_stats", None), "is_in_expedition", False))
+                if not is_expedition and bot.tab:
+                    try:
+                        from baiaidle.expedition import is_in_expedition_run
+                        is_expedition = await is_in_expedition_run(bot.tab)
+                    except Exception:
+                        pass
 
-                if is_autoboss:
+                if is_autoboss or is_expedition:
                     if hasattr(bot, "touch_activity"):
                         bot.touch_activity()
                     periodic_popup_counter = 0

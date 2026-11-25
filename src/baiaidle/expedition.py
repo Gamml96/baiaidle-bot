@@ -603,6 +603,80 @@ async def create_expedition_room(
     return await _action()
 
 
+async def get_expedition_run_info(tab) -> Dict[str, Any]:
+    """Verifica pelo #wave-title[data-kind] e #wave-sub se o personagem está em uma run de Expedição."""
+    if not tab:
+        return {"in_expedition": False, "room_name": "", "phase_text": "", "kind": ""}
+    js = """
+    (() => {
+        const wt = document.getElementById('wave-title');
+        const ws = document.getElementById('wave-sub');
+        const kind = wt ? (wt.dataset.kind || '') : '';
+        const name = wt ? wt.innerText.trim() : '';
+        const phase = ws ? ws.innerText.trim() : '';
+        const kLow = kind.toLowerCase();
+        const inExp = kLow.includes('expediç') || kLow.includes('expedic') || kLow.includes('expedition');
+        return JSON.stringify({
+            in_expedition: inExp,
+            room_name: name,
+            phase_text: phase,
+            kind: kind
+        });
+    })()
+    """
+    return parse_json_result(await tab.execute_script(js)) or {
+        "in_expedition": False,
+        "room_name": "",
+        "phase_text": "",
+        "kind": "",
+    }
+
+
+async def is_in_expedition_run(tab) -> bool:
+    """Retorna True se #wave-title[data-kind] indicar que uma Expedição está em andamento."""
+    info = await get_expedition_run_info(tab)
+    return bool(info.get("in_expedition"))
+
+
+async def monitor_expedition_run(tab, stop_event, on_message=None, bot=None):
+    """
+    Acompanha uma Expedição em andamento mantendo as demais rotinas pausadas
+    e atualizando o last_activity_time para evitar disparo do watchdog.
+    """
+    info = await get_expedition_run_info(tab)
+    room_name = info.get("room_name") or "Expedição"
+    phase_text = info.get("phase_text") or ""
+    sub = f" ({phase_text})" if phase_text else ""
+
+    log_expedition(f"Run de Expedição detectada via #wave-title: {room_name}{sub}. Pausando atividades...")
+    if on_message:
+        try:
+            await on_message(
+                f"⚔️ *Expedição em andamento!* `{room_name}`{sub}\n"
+                f"⏸️ Vendas, Codex, tasks e demais rotinas pausadas até a conclusão."
+            )
+        except Exception:
+            pass
+
+    while not stop_event.is_set():
+        if bot and hasattr(bot, "touch_activity"):
+            bot.touch_activity()
+        try:
+            if not await is_in_expedition_run(tab):
+                break
+        except Exception:
+            pass
+        await asyncio.sleep(2.5)
+
+    if not stop_event.is_set():
+        log_expedition("Expedição concluída (#wave-title retornou ao normal). Retomando rotinas.")
+        if on_message:
+            try:
+                await on_message("🏁 *Expedição finalizada!* Retomando vendas, Codex e rotinas normais.")
+            except Exception:
+                pass
+
+
 async def list_expedition_rooms(tab, only_fit: bool = True, max_pages: int = 3) -> Dict[str, Any]:
     """
     Abre o Salão de Expedição (#expedition-hall), seleciona o personagem padrão (se configurado),

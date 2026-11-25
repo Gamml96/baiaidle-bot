@@ -82,6 +82,8 @@ from baiaidle.expedition import (
     list_expedition_characters,
     list_expedition_rooms,
     join_expedition_room,
+    is_in_expedition_run,
+    get_expedition_run_info,
 )
 from baiaidle.tree import get_tree_status, run_auto_tree
 from baiaidle.halloween import (
@@ -647,8 +649,20 @@ class TelegramController:
             except Exception:
                 current_hunt = "Desconhecida"
 
+        is_in_exp = False
+        exp_info = {}
+        if self.bot.tab:
+            try:
+                exp_info = await get_expedition_run_info(self.bot.tab)
+                is_in_exp = bool(exp_info.get("in_expedition"))
+            except Exception:
+                pass
+
         is_train, train_type = is_training_location(current_hunt)
-        if getattr(self.bot.hunt_stats, "is_in_training", False) or is_train:
+        if getattr(self.bot.hunt_stats, "is_in_expedition", False) or is_in_exp:
+            phase = exp_info.get("phase_text") or "Em andamento"
+            activity_str = f"⚔️ EXPEDIÇÃO ({phase})"
+        elif getattr(self.bot.hunt_stats, "is_in_training", False) or is_train:
             activity_str = "🏠 CASA (DUMMIES)" if train_type == "casa" else "🧘‍♂️ TREINO ONLINE"
         else:
             activity_str = "🏹 HUNT"
@@ -3467,12 +3481,24 @@ class TelegramController:
 
         default_hunt = getattr(self.bot.hunt_stats, "default_hunt", None) or "Infernal Demon"
 
+        is_in_exp = False
+        exp_info = {}
+        if self.bot.tab:
+            try:
+                exp_info = await get_expedition_run_info(self.bot.tab)
+                is_in_exp = bool(exp_info.get("in_expedition"))
+            except Exception:
+                pass
+
         is_train, train_type = is_training_location(current_hunt)
         is_in_training = getattr(self.bot.hunt_stats, "is_in_training", False) or is_train
 
         if not self.bot.is_running():
             status_bot = "🔴 Parado"
             mode_str = "Offline"
+        elif getattr(self.bot.hunt_stats, "is_in_expedition", False) or is_in_exp:
+            status_bot = "⚔️ Expedição"
+            mode_str = exp_info.get("phase_text") or "Em run de Expedição (rotinas pausadas)"
         elif self.auto_boss_instance and self.auto_boss_instance.state.running:
             status_bot = "⚔️ AutoBoss"
             mode_str = f"Boss #{self.auto_boss_instance.state.current_index}"

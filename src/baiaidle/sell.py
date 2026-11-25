@@ -36,6 +36,7 @@ from baiaidle.battlepass import (
     auto_select_best_battlepass,
 )
 from baiaidle.tree import run_auto_tree
+from baiaidle.expedition import is_in_expedition_run, monitor_expedition_run
 from baiaidle.halloween import (
     is_halloween_invasion_open,
     enter_halloween_invasion,
@@ -97,6 +98,7 @@ class HuntStats:
     is_in_training: bool = False
     training_type: str = ""
     is_in_invasion: bool = False
+    is_in_expedition: bool = False
     last_hunt: str = ""
 
     def reset(self):
@@ -125,6 +127,7 @@ class HuntStats:
         self.total_coin_gold = 0
         self.is_in_training = False
         self.training_type = ""
+        self.is_in_expedition = False
         if not getattr(self, "default_hunt", None):
             self.default_hunt = DEFAULT_HUNT
 
@@ -1158,6 +1161,18 @@ async def run_sell(
                     pass
 
                 # ====================================================
+                # PROTEÇÃO DURANTE EXPEDIÇÃO EM ANDAMENTO (#wave-title)
+                # ====================================================
+                if stats.is_in_expedition or await is_in_expedition_run(tab):
+                    stats.is_in_expedition = True
+                    await monitor_expedition_run(tab, stop_event, on_message=on_message, bot=bot)
+                    stats.is_in_expedition = False
+                    stats.force_sell = True
+                    if bot and hasattr(bot, "touch_activity"):
+                        bot.touch_activity()
+                    continue
+
+                # ====================================================
                 # PROTEÇÃO DURANTE INVASÃO DE HALLOWEEN
                 # ====================================================
                 if stats.is_in_invasion or await is_in_halloween_invasion(tab):
@@ -1329,6 +1344,18 @@ async def run_sell(
                     remaining -= sleep_time
 
                     # ====================================================
+                    # ACORDAR IMEDIATAMENTE SE ENTRAR EM EXPEDIÇÃO
+                    # ====================================================
+                    if int(remaining) % 5 == 0 and not stop_event.is_set() and pause_event.is_set():
+                        try:
+                            if await is_in_expedition_run(tab):
+                                print("[Expedição] Expedição iniciada (#wave-title)! Pausando atividades imediatamente...")
+                                stats.is_in_expedition = True
+                                break
+                        except Exception:
+                            pass
+
+                    # ====================================================
                     # ACORDAR IMEDIATAMENTE SE A INVASÃO DE HALLOWEEN ABRIR
                     # ====================================================
                     if int(remaining) % 15 == 0 and not stop_event.is_set() and pause_event.is_set():
@@ -1341,7 +1368,7 @@ async def run_sell(
                             except Exception:
                                 pass
 
-                if stop_event.is_set() or stats.force_action:
+                if stop_event.is_set() or stats.force_action or stats.is_in_expedition:
                     continue
 
                 if not pause_event.is_set():
@@ -1350,7 +1377,10 @@ async def run_sell(
                 # ====================================================
                 # VERIFICAR CODEX ANTES DA VENDA
                 # ====================================================
-                if not stop_event.is_set() and pause_event.is_set() and not stats.force_action and not stats.is_in_invasion:
+                if not stop_event.is_set() and pause_event.is_set() and not stats.force_action and not stats.is_in_invasion and not stats.is_in_expedition:
+                    if await is_in_expedition_run(tab):
+                        stats.is_in_expedition = True
+                        continue
                     if not await is_in_halloween_invasion(tab):
                         current_hunt = await get_current_hunt(tab)
                         if current_hunt and current_hunt != "Hunt Desconhecida":
@@ -1402,6 +1432,10 @@ async def run_sell(
                         continue
                 except Exception:
                     pass
+
+                if await is_in_expedition_run(tab):
+                    stats.is_in_expedition = True
+                    continue
 
                 success = await execute_sale(
                     tab,
@@ -1460,7 +1494,7 @@ async def run_sell(
                 # ====================================================
                 # VERIFICAR SE A TASK DA GUILDA FOI FINALIZADA
                 # ====================================================
-                if not stop_event.is_set() and pause_event.is_set() and not stats.is_in_invasion:
+                if not stop_event.is_set() and pause_event.is_set() and not stats.is_in_invasion and not stats.is_in_expedition:
                     task_data = await get_tracked_task_progress(tab)
                     
                     if task_data and task_data.get("finished"):
@@ -1486,7 +1520,7 @@ async def run_sell(
                 # ====================================================
                 # VERIFICAR SE O PASSE DE BATALHA FOI FINALIZADO
                 # ====================================================
-                if not stop_event.is_set() and pause_event.is_set() and not stats.is_in_invasion:
+                if not stop_event.is_set() and pause_event.is_set() and not stats.is_in_invasion and not stats.is_in_expedition:
                     bp_data = await get_tracked_battlepass_progress(tab)
                     bp_deliv_item = get_setting("bp_delivery_item", "")
                     bp_deliv_ready = False
@@ -1534,7 +1568,7 @@ async def run_sell(
                 # ====================================================
                 # VERIFICAR ÁRVORE DE HABILIDADES PERIODICAMENTE (600s)
                 # ====================================================
-                if not stop_event.is_set() and pause_event.is_set():
+                if not stop_event.is_set() and pause_event.is_set() and not stats.is_in_expedition:
                     now = time.time()
                     if now - last_tree_check > 600:
                         last_tree_check = now
@@ -1556,7 +1590,7 @@ async def run_sell(
                 # ====================================================
                 # VERIFICAR INVASÃO DE HALLOWEEN PERIODICAMENTE (20s)
                 # ====================================================
-                if not stop_event.is_set() and pause_event.is_set():
+                if not stop_event.is_set() and pause_event.is_set() and not stats.is_in_expedition:
                     now = time.time()
                     if now - last_halloween_check > 20:
                         last_halloween_check = now
